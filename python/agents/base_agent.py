@@ -13,8 +13,6 @@ logger = structlog.get_logger()
 
 
 class BaseAgent(ABC):
-    """All agents inherit from this base class with retry, timeout, and fallback."""
-
     def __init__(self, name: str, timeout: float = 10.0, max_retries: int = 2):
         self.name = name
         self.timeout = timeout
@@ -27,12 +25,11 @@ class BaseAgent(ABC):
         """Core logic implemented by each concrete agent."""
 
     async def run(self, **kwargs: Any) -> AgentResult:
-        """Public entry: wraps _execute with timing, retries, and fallback."""
         start = time.perf_counter()
         self._call_count += 1
 
         try:
-            result = await self._retry_execute(**kwargs)
+            result = await self._run_with_retries(**kwargs)
             result.latency_ms = (time.perf_counter() - start) * 1000
             logger.info(
                 "agent.success",
@@ -46,7 +43,7 @@ class BaseAgent(ABC):
             logger.error("agent.failed", agent=self.name, error=str(exc))
             return self._fallback(latency_ms, exc)
 
-    async def _retry_execute(self, **kwargs: Any) -> AgentResult:
+    async def _run_with_retries(self, **kwargs: Any) -> AgentResult:
         @retry(
             stop=stop_after_attempt(self.max_retries),
             wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
@@ -58,7 +55,6 @@ class BaseAgent(ABC):
         return await _inner()
 
     def _fallback(self, latency_ms: float, exc: Exception) -> AgentResult:
-        """Return a degraded but valid result when the agent fails."""
         return AgentResult(
             agent_name=self.name,
             success=False,

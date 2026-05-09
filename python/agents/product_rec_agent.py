@@ -15,7 +15,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from config import get_settings
-from models.schemas import AgentResult, Product, ProductRecResult, UserProfile
+from models.schemas import AgentResult, Product, ProductRecallResult, UserProfile
 
 from .base_agent import BaseAgent
 
@@ -62,7 +62,7 @@ class ProductRecAgent(BaseAgent):
         settings = get_settings()
         super().__init__(
             name="product_rec",
-            timeout=settings.agent_timeout_product_rec,
+            timeout=settings.agent_timeout_product_rerank,
         )
         self.llm = ChatOpenAI(
             api_key=settings.llm_api_key,
@@ -73,7 +73,7 @@ class ProductRecAgent(BaseAgent):
         )
         self.vector_store: Any = None  # injected in Phase 2
 
-    async def _execute(self, **kwargs: Any) -> ProductRecResult:
+    async def _execute(self, **kwargs: Any) -> ProductRecallResult:
         user_profile: UserProfile | None = kwargs.get("user_profile")
         num_items: int = kwargs.get("num_items", 10)
 
@@ -92,7 +92,7 @@ class ProductRecAgent(BaseAgent):
                     if len(final_products) >= num_items:
                         break
 
-        return ProductRecResult(
+        return ProductRecallResult(
             success=True,
             products=final_products[:num_items],
             recall_strategy="collaborative_filter+vector+hot",

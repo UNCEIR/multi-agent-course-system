@@ -42,7 +42,7 @@ public abstract class BaseAgent {
                     AgentResult result = execute(params);
                     double latency = (System.nanoTime() - start) / 1_000_000.0;
                     result.setLatencyMs(latency);
-                    log.info("[{}] success in {:.1f}ms", name, latency);
+                    log.info("[{}] success in {}ms", name, String.format("%.1f", latency));
                     return result;
                 } catch (Exception e) {
                     lastError = e;

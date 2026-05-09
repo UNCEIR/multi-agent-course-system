@@ -1,25 +1,147 @@
 version: "3.8"
 
 services:
-  # Python API Server
-  api:
+  frontend:
     build:
-      context: ./python
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - gateway-service
+    restart: unless-stopped
+
+  gateway-service:
+    build:
+      context: ./services/gateway-service
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - USER_SERVICE_URL=http://user-service:8081
+      - PRODUCT_SERVICE_URL=http://product-service:8082
+      - ORDER_SERVICE_URL=http://order-service:8083
+      - PAYMENT_SERVICE_URL=http://payment-service:8084
+      - AI_AGENT_URL=http://ai-agents:8000
+    depends_on:
+      - user-service
+      - product-service
+      - order-service
+      - payment-service
+    restart: unless-stopped
+
+  user-service:
+    build:
+      context: ./services/user-service
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/ecommerce_user
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=ecommerce123
+      - SPRING_REDIS_HOST=redis
+      - SPRING_RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - mysql
+      - redis
+      - rabbitmq
+    restart: unless-stopped
+
+  product-service:
+    build:
+      context: ./services/product-service
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/ecommerce_product
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=ecommerce123
+      - SPRING_REDIS_HOST=redis
+      - SPRING_RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - mysql
+      - redis
+      - rabbitmq
+    restart: unless-stopped
+
+  order-service:
+    build:
+      context: ./services/order-service
+      dockerfile: Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/ecommerce_order
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=ecommerce123
+      - SPRING_REDIS_HOST=redis
+      - SPRING_RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - mysql
+      - redis
+      - rabbitmq
+    restart: unless-stopped
+
+  payment-service:
+    build:
+      context: ./services/payment-service
+      dockerfile: Dockerfile
+    ports:
+      - "8084:8084"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/ecommerce_payment
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=ecommerce123
+      - SPRING_REDIS_HOST=redis
+      - SPRING_RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - mysql
+      - redis
+      - rabbitmq
+    restart: unless-stopped
+
+  ai-agents:
+    build:
+      context: ./ai-agents
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
     environment:
-      - ECOM_LLM_API_KEY=${ECOM_LLM_API_KEY:-your_api_key_here}
-      - ECOM_LLM_BASE_URL=${ECOM_LLM_BASE_URL:-https://api.minimax.chat/v1}
-      - ECOM_LLM_MODEL=${ECOM_LLM_MODEL:-MiniMax-M1}
-      - ECOM_REDIS_URL=redis://redis:6379/0
-      - ECOM_MILVUS_HOST=milvus
-      - ECOM_DATABASE_URL=sqlite:///./ecommerce.db
+      - LLM_API_KEY=${ECOM_LLM_API_KEY:-your_api_key_here}
+      - LLM_BASE_URL=${ECOM_LLM_BASE_URL:-https://api.deepseek.com}
+      - LLM_MODEL=${ECOM_LLM_MODEL:-deepseek-v4-pro}
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=mysql+pymysql://root:ecommerce123@mysql:3306/ecommerce_ai
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
     depends_on:
+      - mysql
       - redis
+      - rabbitmq
     restart: unless-stopped
 
-  # Redis - Feature Store
+  mysql:
+    image: mysql:8.0
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=ecommerce123
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   redis:
     image: redis:7-alpine
     ports:
@@ -29,32 +151,24 @@ services:
     command: redis-server --appendonly yes
     restart: unless-stopped
 
-  # Milvus - Vector Database (standalone mode)
-  milvus:
-    image: milvusdb/milvus:v2.4-latest
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
     ports:
-      - "19530:19530"
-      - "9091:9091"
+      - "5672:5672"
+      - "15672:15672"
     environment:
-      - ETCD_USE_EMBED=true
-      - COMMON_STORAGETYPE=local
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
     volumes:
-      - milvus_data:/var/lib/milvus
+      - rabbitmq_data:/var/lib/rabbitmq
     restart: unless-stopped
-
-  # MySQL - Business Data
-  mysql:
-    image: mysql:8.0
-    ports:
-      - "3306:3306"
-    environment:
-      - MYSQL_ROOT_PASSWORD=ecommerce123
-      - MYSQL_DATABASE=ecommerce
-    volumes:
-      - mysql_data:/var/lib/mysql
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
-  redis_data:
-  milvus_data:
   mysql_data:
+  redis_data:
+  rabbitmq_data:

@@ -1,10 +1,3 @@
-"""
-用户画像Agent
-- 实时特征提取：浏览/点击/购买/收藏行为 -> Redis Feature Store
-- 用户分群：RFM模型 + 实时标签
-- 画像合并：离线标签(T+1) + 在线标签(实时)
-"""
-
 from __future__ import annotations
 
 import json
@@ -23,15 +16,16 @@ from models.schemas import (
 
 from .base_agent import BaseAgent
 
-SYSTEM_PROMPT = """你是一个电商用户画像分析专家。根据用户的行为数据,分析用户特征并生成画像。
+SYSTEM_PROMPT = """你是一个电商用户画像分析专家。
+根据用户的行为数据,分析用户特征并生成画像。
 
-你需要输出以下JSON格式:
+输出JSON格式:
 {
   "segments": ["new_user"|"active"|"high_value"|"price_sensitive"|"churn_risk"],
   "preferred_categories": ["类目1", "类目2"],
   "price_range": [最低价, 最高价],
   "rfm_score": {"recency": 0-1, "frequency": 0-1, "monetary": 0-1},
-  "real_time_tags": {"活跃时段": "...", "偏好风格": "..."}
+  "real_time_tags": {"活跃时段": "...", "偏好风格": "...", "品牌偏好": "..."}
 }
 
 只输出JSON,不要其他内容。"""
@@ -51,31 +45,23 @@ class UserProfileAgent(BaseAgent):
             temperature=0.3,
             max_tokens=1024,
         )
-        self.feature_store: Any = None  # injected in Phase 2
+        self.feature_store: Any = None
 
     async def _execute(self, **kwargs: Any) -> UserProfileResult:
         user_id: str = kwargs["user_id"]
         context: dict = kwargs.get("context", {})
 
         behavior_data = await self._collect_behavior(user_id, context)
-
-        messages = [
-            SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=f"用户ID: {user_id}\n行为数据: {json.dumps(behavior_data, ensure_ascii=False)}"),
-        ]
-        response = await self.llm.ainvoke(messages)
-
-        profile_data = self._parse_profile(user_id, response.content)
+        profile_data = await self._analyze_profile(user_id, behavior_data)
 
         return UserProfileResult(
             success=True,
             profile=profile_data,
-            data={"raw_analysis": response.content},
+            data={"raw_behavior": behavior_data},
             confidence=0.85,
         )
 
     async def _collect_behavior(self, user_id: str, context: dict) -> dict:
-        """Collect user behavior from feature store or context fallback."""
         if self.feature_store:
             return await self.feature_store.get_user_features(user_id)
         return {
@@ -86,16 +72,19 @@ class UserProfileAgent(BaseAgent):
             "purchase_count_30d": context.get("purchase_count_30d", 3),
             "avg_order_amount": context.get("avg_order_amount", 299.0),
             "active_hours": context.get("active_hours", [20, 21, 22]),
+            "last_purchase_days": context.get("last_purchase_days", 30),
+            "device_type": context.get("device_type", "mobile"),
+            "favorite_brands": context.get("favorite_brands", []),
+            "coupon_usage_rate": context.get("coupon_usage_rate", 0.3),
         }
 
-    def _parse_profile(self, user_id: str, raw: str) -> UserProfile:
-        try:
-            cleaned = raw.strip()
-            if cleaned.startswith("```"):
-                cleaned = cleaned.split("\n", 1)[1].rsplit("```", 1)[0]
-            data = json.loads(cleaned)
-        except (json.JSONDecodeError, IndexError):
-            data = {}
+    async def _analyze_profile(self, user_id: str, behavior_data: dict) -> UserProfile:
+        messages = [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(content=f"用户ID: {user_id}\n行为数据: {json.dumps(behavior_data, ensure_ascii=False)}"),
+        ]
+        response = await self.llm.ainvoke(messages)
+        data = self._parse_json(response.content)
 
         segments = []
         for s in data.get("segments", ["active"]):
@@ -118,3 +107,12 @@ class UserProfileAgent(BaseAgent):
             rfm_score=data.get("rfm_score", {}),
             real_time_tags=data.get("real_time_tags", {}),
         )
+
+    def _parse_json(self, raw: str) -> dict:
+        try:
+            cleaned = raw.strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("\n", 1)[1].rsplit("```", 1)[0]
+            return json.loads(cleaned)
+        except (json.JSONDecodeError, IndexError):
+            return {}
