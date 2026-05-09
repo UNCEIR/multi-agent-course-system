@@ -19,6 +19,7 @@ class BaseAgent(ABC):
         self.max_retries = max_retries
         self._call_count = 0
         self._error_count = 0
+        self.logger = structlog.get_logger()
 
     @abstractmethod
     async def _execute(self, **kwargs: Any) -> AgentResult:
