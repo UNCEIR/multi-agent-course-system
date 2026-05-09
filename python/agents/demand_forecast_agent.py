@@ -60,8 +60,12 @@ class DemandForecastAgent(BaseAgent):
 
     async def _execute(self, **kwargs: Any) -> DemandForecastResult:
         product: Product | None = kwargs.get("product")
-        product_id: str = kwargs.get("product_id", product.product_id if product else "unknown")
-        current_stock: int = kwargs.get("current_stock", product.stock if product else 0)
+        product_id: str = kwargs.get("product_id") or (
+            product.product_id if product else "unknown"
+        )
+        current_stock: int = kwargs.get("current_stock")
+        if current_stock is None:
+            current_stock = product.stock if product else 0
         sales_history: list[int] = kwargs.get("sales_history", [])
         market_factors: dict = kwargs.get("market_factors", {})
 

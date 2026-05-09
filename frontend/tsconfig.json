@@ -14,11 +14,7 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"]
-    }
+    "noFallthroughCasesInSwitch": true
   },
   "include": ["src"]
 }
