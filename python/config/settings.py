@@ -15,11 +15,32 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     feature_ttl_seconds: int = 86400
 
+    mysql_host: str = "localhost"
+    mysql_port: int = 3306
+    mysql_user: str = "root"
+    mysql_password: str = "ecommerce123"
+    mysql_database: str = "ecommerce_ai"
+    mysql_pool_size: int = 10
+    mysql_max_overflow: int = 20
+
     milvus_host: str = "localhost"
     milvus_port: int = 19530
+    milvus_user: str = ""
+    milvus_password: str = ""
+    milvus_uri: str = ""
     milvus_collection: str = "product_embeddings"
+    milvus_dimension: int = 64
+    milvus_metric_type: str = "COSINE"
+    milvus_index_type: str = "AUTOINDEX"
 
     database_url: str = "sqlite:///./ecommerce.db"
+    embedding_provider: str = "local"
+    embedding_dimension: int = 64
+    embedding_base_url: str = ""
+    embedding_api_key: str = ""
+    embedding_model: str = "deterministic-local-v1"
+    embedding_batch_size: int = 32
+    embedding_timeout_seconds: float = 10.0
 
     ab_test_enabled: bool = True
     ab_test_default_bucket_count: int = 100

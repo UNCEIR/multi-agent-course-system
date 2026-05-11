@@ -26,11 +26,13 @@ def mock_chat_openai():
     """Return a mock ChatOpenAI that returns a configurable response."""
     with patch("agents.user_profile_agent.ChatOpenAI") as mock_cls, \
          patch("agents.product_rec_agent.ChatOpenAI") as mock_cls2, \
-         patch("agents.marketing_copy_agent.ChatOpenAI") as mock_cls3:
+         patch("agents.marketing_copy_agent.ChatOpenAI") as mock_cls3, \
+         patch("agents.product_rerank_agent.ChatOpenAI") as mock_cls4:
         mock_cls.return_value.ainvoke = AsyncMock()
         mock_cls2.return_value.ainvoke = AsyncMock()
         mock_cls3.return_value.ainvoke = AsyncMock()
-        yield mock_cls, mock_cls2, mock_cls3
+        mock_cls4.return_value.ainvoke = AsyncMock()
+        yield mock_cls, mock_cls2, mock_cls3, mock_cls4
 
 
 @pytest.fixture

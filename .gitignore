@@ -35,3 +35,5 @@ Thumbs.db
 
 # Docker
 docker-compose.override.yml
+
+1.csv

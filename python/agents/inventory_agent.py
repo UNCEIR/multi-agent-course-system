@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from models.schemas import InventoryResult, Product
+from repositories import MySQLRepository
 
 from .base_agent import BaseAgent
 
@@ -27,7 +28,7 @@ class InventoryAgent(BaseAgent):
             name="inventory",
             timeout=settings.agent_timeout_inventory,
         )
-        self.db: Any = None  # injected in Phase 2
+        self.mysql_repo = MySQLRepository()
 
     async def _execute(self, **kwargs: Any) -> InventoryResult:
         products: list[Product] = kwargs.get("products", [])
@@ -35,11 +36,22 @@ class InventoryAgent(BaseAgent):
         available = []
         low_stock_alerts = []
         purchase_limits: dict[str, int] = {}
+        filtered_products: list[dict[str, Any]] = []
+
+        stock_map = self.mysql_repo.fetch_stock_map([product.product_id for product in products])
 
         for product in products:
-            stock = await self._check_stock(product.product_id, product.stock)
+            stock = await self._check_stock(product.product_id, stock_map.get(product.product_id, product.stock))
 
             if stock <= 0:
+                filtered_products.append(
+                    {
+                        "product_id": product.product_id,
+                        "reason": "out_of_stock",
+                        "requested": 1,
+                        "available": 0,
+                    }
+                )
                 continue
 
             available.append(product.product_id)
@@ -73,14 +85,15 @@ class InventoryAgent(BaseAgent):
             data={
                 "total_checked": len(products),
                 "available_count": len(available),
+                "requested_count": len(products),
+                "filtered_count": len(filtered_products),
                 "alert_count": len(low_stock_alerts),
             },
+            filtered_products=filtered_products,
             confidence=0.95,
         )
 
     async def _check_stock(self, product_id: str, fallback_stock: int) -> int:
-        if self.db:
-            pass  # Phase 2: real DB query via MCP
         return fallback_stock
 
     def _calc_purchase_limit(self, product: Product, stock: int) -> int | None:

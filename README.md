@@ -440,7 +440,7 @@ cp .env.example .env
 # 用记事本/VS Code 打开 .env，填入你的 LLM_API_KEY
 
 # 5. 启动服务
-python main.py
+uvicorn main:app --host 0.0.0.0 --port 8000
 # 看到 "Uvicorn running on http://0.0.0.0:8000" 就成功了
 
 # 6. 测试推荐接口
@@ -455,6 +455,39 @@ curl -X POST http://localhost:8000/api/v1/recommend \
       "avg_order_amount": 500
     }
   }'
+```
+
+### Python 真实闭环（MySQL + Redis + Milvus + 真实 LLM）
+
+```bash
+# 0) 先安装 Python 测试依赖（在 python 子目录执行）
+cd python
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+# 1) 运行关键测试（可先跑这一条做快速验收）
+.\.venv\Scripts\python.exe -m pytest tests/test_supervisor_pipeline.py -q
+
+# 2) 启动真实闭环容器（回到仓库根目录执行）
+cd ..
+docker compose -f docker-compose.python.yml --profile python up -d --build
+
+# 3) 健康检查（包含 mysql/redis/milvus 依赖状态）
+curl http://localhost:8000/health
+
+# 4) 真实链路联调：召回(MySQL+Milvus) -> 重排(LLM) -> 库存过滤(MySQL) -> 文案(LLM)
+curl -X POST http://localhost:8000/api/v1/recommend \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "U10001",
+    "scene": "homepage",
+    "query": "降噪耳机",
+    "num_items": 5,
+    "context": {"query": "降噪耳机"}
+  }'
+
+# 5) 看容器状态与日志（用于排障）
+docker compose -f docker-compose.python.yml --profile python ps
+docker compose -f docker-compose.python.yml --profile python logs python-api --tail=120
 ```
 
 ---
@@ -589,6 +622,7 @@ multi-agent-ecommerce-system/
 ├── README.md                          # 📄 本文件（项目总览）
 ├── plan.md                            # 📋 完整项目计划（从调研到上线）
 ├── docker-compose.yml                 # 🐳 一键启动所有服务
+├── docker-compose.python.yml          # 🐍 Python 真实闭环专用编排
 │
 ├── docs/                              # 📚 面试全套文档
 │   ├── interview-guide.md             # 🎯 面试指南（八股文30题 + STAR法话术）
@@ -603,14 +637,17 @@ multi-agent-ecommerce-system/
 │   ├── agents/                        # 4 个 Agent 实现
 │   │   ├── base_agent.py              # 基类：重试/超时/降级
 │   │   ├── user_profile_agent.py      # 用户画像 Agent
-│   │   ├── product_rec_agent.py       # 商品推荐 Agent
+│   │   ├── product_recall_agent.py    # 商品召回 Agent（MySQL + Milvus）
+│   │   ├── product_rerank_agent.py    # 商品重排 Agent（真实 LLM）
 │   │   ├── marketing_copy_agent.py    # 营销文案 Agent
 │   │   └── inventory_agent.py         # 库存决策 Agent
 │   ├── orchestrator/
 │   │   ├── supervisor.py              # ⭐ Supervisor 并行编排（核心）
 │   │   └── graph.py                   # LangGraph 状态图
+│   ├── repositories/                  # 数据访问层（MySQL/Redis/Milvus）
 │   ├── services/
 │   │   ├── ab_test.py                 # A/B 测试引擎（Thompson Sampling）
+│   │   ├── embedding_client.py        # deterministic embedding 接口
 │   │   ├── feature_store.py           # Redis 实时特征服务
 │   │   └── metrics.py                 # Prometheus 监控指标
 │   ├── models/schemas.py              # Pydantic 数据模型

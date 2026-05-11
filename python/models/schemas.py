@@ -207,6 +207,7 @@ class InventoryResult(AgentResult):
     low_stock_alerts: list[dict[str, Any]] = Field(default_factory=list)
     purchase_limits: dict[str, int] = Field(default_factory=dict)
     inventory_levels: dict[str, InventoryLevel] = Field(default_factory=dict)
+    filtered_products: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class PriceOptimizationResult(AgentResult):

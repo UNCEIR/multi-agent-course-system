@@ -21,7 +21,8 @@ from langgraph.graph import END, StateGraph
 from agents import (
     InventoryAgent,
     MarketingCopyAgent,
-    ProductRecAgent,
+    ProductRecallAgent,
+    ProductRerankAgent,
     UserProfileAgent,
 )
 from models.schemas import Product, UserProfile
@@ -49,7 +50,8 @@ class PipelineState(TypedDict, total=False):
 
 
 user_profile_agent = UserProfileAgent()
-product_rec_agent = ProductRecAgent()
+product_recall_agent = ProductRecallAgent()
+product_rerank_agent = ProductRerankAgent()
 marketing_copy_agent = MarketingCopyAgent()
 inventory_agent = InventoryAgent()
 ab_engine = ABTestEngine()
@@ -75,8 +77,10 @@ async def user_profile_node(state: PipelineState) -> PipelineState:
 
 
 async def product_recall_node(state: PipelineState) -> PipelineState:
-    result = await product_rec_agent.run(
+    result = await product_recall_agent.run(
         user_profile=None,
+        context=state.get("context", {}),
+        intent="search" if state.get("context", {}).get("query") else "recommend",
         num_items=state.get("num_items", 10) * 2,
     )
     state["raw_products"] = getattr(result, "products", [])
@@ -96,8 +100,10 @@ async def parallel_phase1(state: PipelineState) -> PipelineState:
 
 
 async def rerank_node(state: PipelineState) -> PipelineState:
-    result = await product_rec_agent.run(
+    result = await product_rerank_agent.run(
         user_profile=state.get("user_profile"),
+        candidates=state.get("raw_products", []),
+        intent="search" if state.get("context", {}).get("query") else "recommend",
         num_items=state.get("num_items", 10),
     )
     state["ranked_products"] = getattr(result, "products", state.get("raw_products", []))
@@ -130,8 +136,6 @@ async def filter_node(state: PipelineState) -> PipelineState:
     avail = state.get("available_ids", set())
     num = state.get("num_items", 10)
     final = [p for p in ranked if p.product_id in avail]
-    if not final:
-        final = ranked
     state["final_products"] = final[:num]
     return state
 

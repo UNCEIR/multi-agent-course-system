@@ -29,7 +29,8 @@ import structlog
 from agents import (
     InventoryAgent,
     MarketingCopyAgent,
-    ProductRecAgent,
+    ProductRecallAgent,
+    ProductRerankAgent,
     UserProfileAgent,
 )
 from models.schemas import (
@@ -48,7 +49,8 @@ class SupervisorOrchestrator:
 
     def __init__(self, ab_engine: ABTestEngine | None = None):
         self.user_profile_agent = UserProfileAgent()
-        self.product_rec_agent = ProductRecAgent()
+        self.product_recall_agent = ProductRecallAgent()
+        self.product_rerank_agent = ProductRerankAgent()
         self.marketing_copy_agent = MarketingCopyAgent()
         self.inventory_agent = InventoryAgent()
         self.ab_engine = ab_engine or ABTestEngine()
@@ -72,8 +74,10 @@ class SupervisorOrchestrator:
                 user_id=request.user_id,
                 context=request.context,
             ),
-            self.product_rec_agent.run(
+            self.product_recall_agent.run(
                 user_profile=None,
+                context=request.context,
+                intent="search" if request.query else "recommend",
                 num_items=request.num_items * 2,
             ),
         )
@@ -82,8 +86,10 @@ class SupervisorOrchestrator:
         raw_products: list[Product] = getattr(rec_result, "products", [])
 
         # Phase 2: parallel — re-rank with profile + inventory check + copy generation
-        rerank_task = self.product_rec_agent.run(
+        rerank_task = self.product_rerank_agent.run(
             user_profile=user_profile,
+            candidates=raw_products,
+            intent="search" if request.query else "recommend",
             num_items=request.num_items,
         )
         inventory_task = self.inventory_agent.run(products=raw_products)
@@ -96,8 +102,6 @@ class SupervisorOrchestrator:
 
         available_ids = set(getattr(inventory_result, "available_products", []))
         final_products = [p for p in ranked_products if p.product_id in available_ids]
-        if not final_products:
-            final_products = ranked_products[:request.num_items]
         final_products = final_products[:request.num_items]
 
         # Phase 3: marketing copy generation with final product list
@@ -125,7 +129,8 @@ class SupervisorOrchestrator:
             experiment_group=experiment.get("group", "control"),
             agent_results={
                 "user_profile": profile_result,
-                "product_rec": rerank_result,
+                "product_recall": rec_result,
+                "product_rerank": rerank_result,
                 "marketing_copy": copy_result,
                 "inventory": inventory_result,
             },

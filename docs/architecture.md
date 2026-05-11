@@ -47,7 +47,7 @@
 | Agent | 核心职责 | 输入 | 输出 | 工具/数据源 | 超时 |
 |-------|---------|------|------|-----------|------|
 | 用户画像 | 实时特征+RFM+分群 | user_id | UserProfile | Redis Feature Store | 5s |
-| 商品推荐 | 多路召回+LLM重排 | UserProfile, num_items | Product[] | Milvus, LLM | 8s |
+| 商品召回+重排 | MySQL热度召回 + Milvus语义召回 + LLM重排 | UserProfile, num_items, query | Product[] | MySQL, Milvus, LLM | 8s |
 | 营销文案 | 模板选择+LLM生成+合规 | UserProfile, Product[] | Copy[] | LLM | 10s |
 | 库存决策 | 库存校验+预警+限购 | Product[] | available_ids, alerts | MySQL/WMS | 5s |
 
@@ -145,7 +145,7 @@ Redis (Feature Store)          Milvus (向量库)         MySQL (业务数据)
 ### 可扩展点
 1. **新Agent**: 只需实现BaseAgent接口,注册到Supervisor
 2. **新实验**: ABTestEngine.register_experiment()
-3. **新召回策略**: 在ProductRecAgent._recall()中添加
+3. **新召回策略**: 在`ProductRecallAgent`中新增召回源并在`Supervisor`编排
 4. **新文案模板**: 在PROMPT_TEMPLATES字典中添加
 
 ### 生产化路线

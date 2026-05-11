@@ -1,0 +1,107 @@
+version: "3.8"
+
+services:
+  python-api:
+    build:
+      context: ./python
+      dockerfile: Dockerfile
+    env_file:
+      - ./python/.env
+    environment:
+      - ECOM_MYSQL_HOST=mysql
+      - ECOM_MYSQL_PORT=3306
+      - ECOM_MYSQL_USER=root
+      - ECOM_MYSQL_PASSWORD=ecommerce123
+      - ECOM_MYSQL_DATABASE=ecommerce_ai
+      - ECOM_REDIS_URL=redis://redis:6379/0
+      - ECOM_MILVUS_HOST=milvus
+      - ECOM_MILVUS_PORT=19530
+      - ECOM_MILVUS_COLLECTION=product_embeddings
+      - ECOM_EMBEDDING_PROVIDER=local
+      - ECOM_EMBEDDING_DIMENSION=64
+    ports:
+      - "8000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      milvus:
+        condition: service_started
+    profiles: ["python"]
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=ecommerce123
+      - MYSQL_DATABASE=ecommerce_ai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_python_data:/var/lib/mysql
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    profiles: ["python"]
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_python_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    profiles: ["python"]
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.14
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls=http://0.0.0.0:2379 --data-dir /etcd
+    volumes:
+      - etcd_data:/etcd
+    profiles: ["python"]
+
+  minio:
+    image: minio/minio:RELEASE.2024-05-10T01-41-38Z
+    command: minio server /minio_data
+    environment:
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+    volumes:
+      - minio_data:/minio_data
+    profiles: ["python"]
+
+  milvus:
+    image: milvusdb/milvus:v2.4.6
+    command: ["milvus", "run", "standalone"]
+    environment:
+      - ETCD_ENDPOINTS=etcd:2379
+      - MINIO_ADDRESS=minio:9000
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    depends_on:
+      - etcd
+      - minio
+    volumes:
+      - milvus_data:/var/lib/milvus
+    profiles: ["python"]
+
+volumes:
+  mysql_python_data:
+  redis_python_data:
+  milvus_data:
+  minio_data:
+  etcd_data:

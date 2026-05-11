@@ -28,7 +28,9 @@ from config import get_settings
 from models.schemas import RecommendationRequest, RecommendationResponse
 from orchestrator.supervisor import SupervisorOrchestrator
 from orchestrator.graph import build_recommendation_graph
+from repositories import MilvusRepository, MySQLRepository, RedisFeatureRepository
 from services.ab_test import ABTestEngine
+from services.embedding_client import build_embedding_client
 from services.metrics import MetricsCollector
 
 logger = structlog.get_logger()
@@ -39,11 +41,15 @@ ab_engine = ABTestEngine()
 metrics_collector = MetricsCollector()
 supervisor = SupervisorOrchestrator(ab_engine=ab_engine)
 rec_graph = None
+mysql_repo = MySQLRepository()
+redis_repo = RedisFeatureRepository()
+milvus_repo = MilvusRepository(build_embedding_client())
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global rec_graph
+    _assert_llm_config()
     rec_graph = build_recommendation_graph()
     logger.info("app.startup", model=settings.llm_model)
     yield
@@ -67,7 +73,16 @@ app.add_middleware(
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "model": settings.llm_model}
+    redis_ok = await redis_repo.ping()
+    return {
+        "status": "healthy",
+        "model": settings.llm_model,
+        "deps": {
+            "mysql": mysql_repo.ping(),
+            "redis": redis_ok,
+            "milvus": milvus_repo.ping(),
+        },
+    }
 
 
 @app.post("/api/v1/recommend", response_model=RecommendationResponse)
@@ -146,6 +161,17 @@ def _collect_metrics(response: RecommendationResponse):
             success=result.success,
             latency_ms=result.latency_ms,
         )
+
+
+def _assert_llm_config() -> None:
+    required = {
+        "ECOM_LLM_API_KEY": settings.llm_api_key,
+        "ECOM_LLM_BASE_URL": settings.llm_base_url,
+        "ECOM_LLM_MODEL": settings.llm_model,
+    }
+    missing = [name for name, value in required.items() if not str(value).strip()]
+    if missing:
+        raise RuntimeError(f"Missing required LLM env vars: {', '.join(missing)}")
 
 
 if __name__ == "__main__":
