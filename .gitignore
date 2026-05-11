@@ -36,4 +36,9 @@ Thumbs.db
 # Docker
 docker-compose.override.yml
 
+1.txt
 1.csv
+*apiKey*.csv
+*apikey*.csv
+
+

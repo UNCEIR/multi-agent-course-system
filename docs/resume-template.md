@@ -1,6 +1,9 @@
 # 简历模板 — AI Agent方向
 
 > 针对AI Agent/推荐系统/大模型工程师岗位优化
+>
+> Legacy 文档：本文件用于保留历史电商项目简历写法，不代表当前主推荐 API。
+> 当前主线请参考 [README](../README.md)、[面试讲解文档](./interview-guide.md) 和 [课程改造设计](./plans/2026-05-11-course-agent-redesign.md)。
 
 ---
 

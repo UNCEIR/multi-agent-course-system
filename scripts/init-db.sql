@@ -69,6 +69,37 @@ CREATE TABLE IF NOT EXISTS experiment_events (
     INDEX idx_experiment_user_created (user_id, created_at)
 );
 
+CREATE TABLE IF NOT EXISTS course_records (
+    course_id VARCHAR(64) PRIMARY KEY,
+    course_name VARCHAR(255) NOT NULL,
+    teacher VARCHAR(128) DEFAULT '',
+    credits DECIMAL(4,2) DEFAULT 0,
+    course_type VARCHAR(64) DEFAULT '',
+    course_category VARCHAR(128) DEFAULT '',
+    domain VARCHAR(128) DEFAULT '',
+    campus VARCHAR(64) DEFAULT '',
+    time_slot VARCHAR(128) DEFAULT '',
+    capacity INT DEFAULT 0,
+    current_enrolled INT DEFAULT 0,
+    popularity_level VARCHAR(32) DEFAULT '',
+    tags TEXT,
+    raw_json JSON,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS course_chunks (
+    chunk_id VARCHAR(128) PRIMARY KEY,
+    course_id VARCHAR(64) NOT NULL,
+    chunk_index INT NOT NULL,
+    chunk_type VARCHAR(64) NOT NULL,
+    content TEXT NOT NULL,
+    metadata_json JSON,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_course_chunks_course (course_id),
+    INDEX idx_course_chunks_type (chunk_type),
+    CONSTRAINT fk_course_chunks_course FOREIGN KEY (course_id) REFERENCES course_records(course_id)
+);
+
 INSERT INTO products (product_id, name, category, price, description, brand, seller_id, tags_json, rating, review_count, sales_count_30d, cost_price, is_active) VALUES
 ('P001', 'iPhone 16 Pro', '手机', 7999.00, 'A18 芯片，专业影像旗舰。', 'Apple', 'S01', JSON_ARRAY('旗舰','新品','5G'), 4.80, 3200, 15000, 5500.00, 1),
 ('P002', '华为 Mate 70', '手机', 5999.00, '国产旗舰，鸿蒙生态。', '华为', 'S02', JSON_ARRAY('旗舰','国产','鸿蒙'), 4.70, 2800, 12000, 4000.00, 1),

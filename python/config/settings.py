@@ -3,7 +3,7 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    app_name: str = "Multi-Agent E-Commerce System"
+    app_name: str = "Public Elective Course Multi-Agent System"
     debug: bool = False
 
     llm_api_key: str = ""
@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     llm_model: str = "MiniMax-M1"
     llm_temperature: float = 0.7
     llm_max_tokens: int = 2048
+    llm_enable_thinking: bool = False
 
     redis_url: str = "redis://localhost:6379/0"
     feature_ttl_seconds: int = 86400
@@ -29,6 +30,7 @@ class Settings(BaseSettings):
     milvus_password: str = ""
     milvus_uri: str = ""
     milvus_collection: str = "product_embeddings"
+    course_milvus_collection: str = "course_chunks"
     milvus_dimension: int = 64
     milvus_metric_type: str = "COSINE"
     milvus_index_type: str = "AUTOINDEX"
@@ -61,6 +63,8 @@ class Settings(BaseSettings):
     supervisor_max_retries: int = 2
     supervisor_global_timeout: float = 30.0
 
+    # 兼容约束：保留 ECOM_ 历史前缀，避免破坏现有 .env / 容器配置 / 测试环境。
+    # 本轮仅做文档与命名收敛，不修改环境变量前缀与字段默认行为。
     model_config = {"env_file": ".env", "env_prefix": "ECOM_"}
 
 

@@ -1,5 +1,8 @@
 # 系统架构设计文档
 
+> Legacy 文档：本文件用于保留历史电商推荐链路对照，不代表当前主推荐 API。
+> 当前主线请参考 [README](../README.md)、[面试讲解文档](./interview-guide.md) 和 [课程改造设计](./plans/2026-05-11-course-agent-redesign.md)。
+
 ## 1. 系统总览
 
 本系统采用 **Supervisor + 4 Agent 并行聚合** 架构,实现电商场景下的个性化推荐全链路。

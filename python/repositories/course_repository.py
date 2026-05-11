@@ -1,0 +1,265 @@
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from sqlalchemy import text
+
+from models.schemas import Course
+
+from .mysql_repository import MySQLRepository
+
+
+class CourseRepository(MySQLRepository):
+    def ensure_schema(self) -> None:
+        if not self.ping():
+            raise RuntimeError("MySQL is not available")
+        assert self._engine is not None
+
+        statements = [
+            """
+            CREATE TABLE IF NOT EXISTS course_records (
+                course_id VARCHAR(64) PRIMARY KEY,
+                course_name VARCHAR(255) NOT NULL,
+                teacher VARCHAR(128) DEFAULT '',
+                credits DECIMAL(4,2) DEFAULT 0,
+                course_type VARCHAR(64) DEFAULT '',
+                course_category VARCHAR(128) DEFAULT '',
+                domain VARCHAR(128) DEFAULT '',
+                campus VARCHAR(64) DEFAULT '',
+                time_slot VARCHAR(128) DEFAULT '',
+                capacity INT DEFAULT 0,
+                current_enrolled INT DEFAULT 0,
+                popularity_level VARCHAR(32) DEFAULT '',
+                tags TEXT,
+                raw_json JSON,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS course_chunks (
+                chunk_id VARCHAR(128) PRIMARY KEY,
+                course_id VARCHAR(64) NOT NULL,
+                chunk_index INT NOT NULL,
+                chunk_type VARCHAR(64) NOT NULL,
+                content TEXT NOT NULL,
+                metadata_json JSON,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_course_chunks_course (course_id),
+                INDEX idx_course_chunks_type (chunk_type)
+            )
+            """,
+        ]
+        with self._engine.begin() as conn:
+            for statement in statements:
+                conn.execute(text(statement))
+
+    def upsert_course(self, row: dict[str, Any]) -> None:
+        if not self.ping():
+            raise RuntimeError("MySQL is not available")
+        assert self._engine is not None
+
+        sql = text(
+            """
+            INSERT INTO course_records (
+                course_id, course_name, teacher, credits, course_type, course_category,
+                domain, campus, time_slot, capacity, current_enrolled, popularity_level,
+                tags, raw_json
+            ) VALUES (
+                :course_id, :course_name, :teacher, :credits, :course_type, :course_category,
+                :domain, :campus, :time_slot, :capacity, :current_enrolled, :popularity_level,
+                :tags, :raw_json
+            )
+            ON DUPLICATE KEY UPDATE
+                course_name = VALUES(course_name),
+                teacher = VALUES(teacher),
+                credits = VALUES(credits),
+                course_type = VALUES(course_type),
+                course_category = VALUES(course_category),
+                domain = VALUES(domain),
+                campus = VALUES(campus),
+                time_slot = VALUES(time_slot),
+                capacity = VALUES(capacity),
+                current_enrolled = VALUES(current_enrolled),
+                popularity_level = VALUES(popularity_level),
+                tags = VALUES(tags),
+                raw_json = VALUES(raw_json)
+            """
+        )
+        with self._engine.begin() as conn:
+            conn.execute(sql, self._course_params(row))
+
+    def replace_course_chunks(self, course_id: str, chunks: list[dict[str, Any]]) -> None:
+        if not self.ping():
+            raise RuntimeError("MySQL is not available")
+        assert self._engine is not None
+
+        delete_sql = text("DELETE FROM course_chunks WHERE course_id = :course_id")
+        insert_sql = text(
+            """
+            INSERT INTO course_chunks (
+                chunk_id, course_id, chunk_index, chunk_type, content, metadata_json
+            ) VALUES (
+                :chunk_id, :course_id, :chunk_index, :chunk_type, :content, :metadata_json
+            )
+            """
+        )
+        with self._engine.begin() as conn:
+            conn.execute(delete_sql, {"course_id": course_id})
+            if chunks:
+                conn.execute(insert_sql, chunks)
+
+    def fetch_courses(
+        self,
+        limit: int,
+        domains: list[str] | None = None,
+        categories: list[str] | None = None,
+        campus: list[str] | None = None,
+        query_text: str = "",
+    ) -> list[Course]:
+        if not self.ping():
+            return []
+        assert self._engine is not None
+
+        conditions = ["1 = 1"]
+        params: dict[str, Any] = {"limit": limit}
+        if domains:
+            placeholders = ", ".join(f":domain_{idx}" for idx, _ in enumerate(domains))
+            conditions.append(f"domain IN ({placeholders})")
+            params.update({f"domain_{idx}": value for idx, value in enumerate(domains)})
+        if categories:
+            placeholders = ", ".join(f":cat_{idx}" for idx, _ in enumerate(categories))
+            conditions.append(f"course_category IN ({placeholders})")
+            params.update({f"cat_{idx}": value for idx, value in enumerate(categories)})
+        if campus:
+            placeholders = ", ".join(f":campus_{idx}" for idx, _ in enumerate(campus))
+            conditions.append(f"campus IN ({placeholders})")
+            params.update({f"campus_{idx}": value for idx, value in enumerate(campus)})
+        if query_text.strip():
+            conditions.append(
+                """
+                (
+                    course_name LIKE :query_text OR teacher LIKE :query_text
+                    OR course_category LIKE :query_text OR domain LIKE :query_text
+                    OR campus LIKE :query_text OR time_slot LIKE :query_text
+                    OR tags LIKE :query_text
+                )
+                """
+            )
+            params["query_text"] = f"%{query_text.strip()}%"
+
+        sql = f"""
+            SELECT course_id, course_name, teacher, credits, course_type, course_category,
+                   domain, campus, time_slot, capacity, current_enrolled,
+                   popularity_level, tags, raw_json
+            FROM course_records
+            WHERE {" AND ".join(conditions)}
+            ORDER BY
+                CASE popularity_level
+                    WHEN '爆满' THEN 4
+                    WHEN '热门' THEN 3
+                    WHEN '中等' THEN 2
+                    ELSE 1
+                END DESC,
+                current_enrolled DESC,
+                course_id ASC
+            LIMIT :limit
+        """
+        with self._engine.connect() as conn:
+            rows = conn.execute(text(sql), params).mappings().all()
+        return [self._row_to_course(dict(row)) for row in rows]
+
+    def fetch_courses_by_ids(self, course_ids: list[str]) -> list[Course]:
+        if not course_ids or not self.ping():
+            return []
+        assert self._engine is not None
+        seen_order = list(dict.fromkeys(course_ids))
+        placeholders = ", ".join(f":course_{idx}" for idx, _ in enumerate(seen_order))
+        params = {f"course_{idx}": value for idx, value in enumerate(seen_order)}
+        sql = text(
+            f"""
+            SELECT course_id, course_name, teacher, credits, course_type, course_category,
+                   domain, campus, time_slot, capacity, current_enrolled,
+                   popularity_level, tags, raw_json
+            FROM course_records
+            WHERE course_id IN ({placeholders})
+            """
+        )
+        with self._engine.connect() as conn:
+            rows = conn.execute(sql, params).mappings().all()
+        id_to_course = {row["course_id"]: self._row_to_course(dict(row)) for row in rows}
+        return [id_to_course[course_id] for course_id in seen_order if course_id in id_to_course]
+
+    @staticmethod
+    def _course_params(row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "course_id": row.get("course_id", ""),
+            "course_name": row.get("course_name", ""),
+            "teacher": row.get("teacher", ""),
+            "credits": float(row.get("credits") or 0),
+            "course_type": row.get("course_type", ""),
+            "course_category": row.get("course_category", ""),
+            "domain": row.get("domain", ""),
+            "campus": row.get("campus", ""),
+            "time_slot": row.get("time_slot", ""),
+            "capacity": int(float(row.get("capacity") or 0)),
+            "current_enrolled": int(float(row.get("current_enrolled") or 0)),
+            "popularity_level": row.get("popularity_level", ""),
+            "tags": row.get("tags", ""),
+            "raw_json": json.dumps(row, ensure_ascii=False),
+        }
+
+    @staticmethod
+    def _row_to_course(row: dict[str, Any]) -> Course:
+        raw = row.get("raw_json") or {}
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except json.JSONDecodeError:
+                raw = {}
+
+        merged = {**raw, **{key: value for key, value in row.items() if value is not None}}
+        tags_raw = merged.get("tags", "")
+        if isinstance(tags_raw, list):
+            tags = [str(tag).strip() for tag in tags_raw if str(tag).strip()]
+        else:
+            tags = [tag.strip() for tag in str(tags_raw).replace(",", ";").split(";") if tag.strip()]
+
+        capacity = int(float(merged.get("capacity") or 0))
+        current_enrolled = int(float(merged.get("current_enrolled") or 0))
+        ratio_raw = merged.get("current_enrollment_ratio")
+        if ratio_raw in (None, "") and capacity > 0:
+            ratio = current_enrolled / capacity
+        else:
+            ratio = float(ratio_raw or 0.0)
+
+        return Course(
+            course_id=str(merged.get("course_id", "")),
+            course_name=str(merged.get("course_name", "")),
+            teacher=str(merged.get("teacher", "")),
+            credits=float(merged.get("credits") or 0.0),
+            course_type=str(merged.get("course_type", "公共选修课")),
+            course_category=str(merged.get("course_category", "")),
+            domain=str(merged.get("domain", "")),
+            campus=str(merged.get("campus", "")),
+            time_slot=str(merged.get("time_slot", "")),
+            location=str(merged.get("location", "")),
+            capacity=capacity,
+            current_enrolled=current_enrolled,
+            current_enrollment_ratio=ratio,
+            popularity_level=str(merged.get("popularity_level", "")),
+            rush_advice=str(merged.get("rush_advice", "")),
+            grade_limit=str(merged.get("grade_limit", "")),
+            major_limit=str(merged.get("major_limit", "")),
+            prerequisite=str(merged.get("prerequisite", "")),
+            description=str(merged.get("description", "")),
+            assessment=str(merged.get("assessment", "")),
+            difficulty=str(merged.get("difficulty", "")),
+            workload=str(merged.get("workload", "")),
+            grade_friendly=str(merged.get("grade_friendly", "")),
+            attendance_required=str(merged.get("attendance_required", "")),
+            has_exam=str(merged.get("has_exam", "")),
+            group_work_required=str(merged.get("group_work_required", "")),
+            suitable_for=str(merged.get("suitable_for", "")),
+            tags=tags,
+        )

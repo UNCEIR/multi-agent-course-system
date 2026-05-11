@@ -1,882 +1,289 @@
-# 🛒 多Agent电商推荐与营销系统
+# 学校公选课 Multi-Agent 推荐系统
 
-> **面向小白的企业级 AI Agent 项目** — 从零理解 Multi-Agent 架构，配套三语言代码 + 八股文 + 简历模板 + STAR面试话术，找工作全流程覆盖。
+> 面向教务系统在校生的 AI Agent 项目：学生用自然语言描述选课偏好，系统自动理解需求、召回课程、重排课程、评估选课可行性，并给出可解释推荐理由。
 
-[![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python)](python/)
-[![Java](https://img.shields.io/badge/Java-17%2B-orange?logo=java)](java/)
-[![Go](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go)](go/)
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+## 项目定位
 
----
+这个项目现在定位为学校公选课推荐系统。用户是教务系统中的在校学生；被推荐对象是公共选修课。
 
-## 📖 目录
+## 文档导航
 
-1. [这个项目是什么？](#-这个项目是什么)
-2. [系统架构（看图秒懂）](#-系统架构看图秒懂)
-3. [四大核心 Agent 详解](#-四大核心-agent-详解)
-4. [三语言实现对比](#-三语言实现对比)
-5. [关键代码展示](#-关键代码展示)
-6. [快速上手运行](#-快速上手运行)
-7. [API 接口文档](#-api-接口文档)
-8. [项目文件结构](#-项目文件结构)
-9. [面试资料索引](#-面试资料索引)
-10. [面试八股文精选](#-面试八股文精选10题)
-11. [简历写法（直接复制）](#-简历写法直接复制)
-12. [参考资料与致谢](#-参考资料与致谢)
+- 当前主线（公选课）
+  - [README](README.md)
+  - [面试讲解文档](docs/interview-guide.md)
+  - [课程改造设计](docs/plans/2026-05-11-course-agent-redesign.md)
+  - [课程数据集工具](course_dataset_tools/README.md)
+- Legacy 对照（历史电商叙事）
+  - [系统架构（Legacy）](docs/architecture.md)
+  - [项目规划（Legacy）](docs/project-plan.md)
+  - [代码讲解（Legacy）](docs/code-walkthrough.md)
+  - [简历模板（Legacy）](docs/resume-template.md)
 
----
+学生可以输入类似下面的 prompt：
 
-## 🤔 这个项目是什么？
-
-### 用一句话解释
-
-> 用 AI Agent 技术，让电商平台的**推荐 + 文案 + 库存**三个系统协同工作，像一个聪明的"AI 运营团队"一起为每位用户生成个性化推荐结果。
-
-### 它解决了什么问题？
-
-传统电商推荐系统存在三大痛点：
-
-| 痛点 | 传统做法 | 本项目做法 |
-|------|---------|---------|
-| 推荐结果和库存脱节 | 推荐了缺货商品 | **库存 Agent** 实时校验，缺货自动剔除 |
-| 营销文案千篇一律 | 所有人看同一段广告语 | **文案 Agent** 根据用户画像生成个性化文案 |
-| 各系统各自为战 | 推荐、文案、库存三套系统互不感知 | **Supervisor** 统一编排，结果实时互相影响 |
-
-### 技术关键词（面试常考）
-
-`Multi-Agent` · `Supervisor模式` · `LangGraph` · `asyncio并行` · `Redis Feature Store` · `A/B Testing` · `Thompson Sampling` · `RAG` · `ReAct` · `MiniMax LLM`
-
----
-
-## 🏗 系统架构（看图秒懂）
-
-### 整体架构图
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         用户发起推荐请求                           │
-│                    {"user_id": "u001", "num_items": 5}           │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Supervisor 协调Agent                           │
-│                  (python/orchestrator/supervisor.py)              │
-│                                                                   │
-│  ════════════════ Phase 1: 并行执行 ═══════════════════           │
-│  ┌──────────────────────┐    ┌──────────────────────┐            │
-│  │   用户画像 Agent      │    │   商品召回 Agent      │            │
-│  │  user_profile_agent  │    │  product_rec_agent   │            │
-│  │  ──────────────────  │    │  ────────────────── │            │
-│  │  Redis → 实时行为特征 │    │  协同过滤+向量检索召回 │            │
-│  │  RFM模型 → 用户分群   │    │  返回候选商品列表     │            │
-│  └──────────┬───────────┘    └──────────┬──────────┘            │
-│             │                           │                         │
-│  ════════════════ Phase 2: 并行执行 ═══════════════════           │
-│  ┌──────────────────────┐    ┌──────────────────────┐            │
-│  │   LLM重排 Agent      │    │   库存决策 Agent      │            │
-│  │  (product_rec再次调用)│    │   inventory_agent    │            │
-│  │  ──────────────────  │    │  ────────────────── │            │
-│  │  用户画像 × 商品属性  │    │  MySQL → 实时库存查询 │            │
-│  │  LLM精排，返回TopN   │    │  过滤缺货，输出限购策略│            │
-│  └──────────┬───────────┘    └──────────┬──────────┘            │
-│             │                           │                         │
-│  ════════════════ Phase 3: 串行执行 ═══════════════════           │
-│             └──────────────┬────────────┘                         │
-│                            ▼                                      │
-│             ┌──────────────────────────────┐                      │
-│             │      结果聚合器               │                      │
-│             │  库存过滤 → 排序合并 → TopN   │                      │
-│             └──────────────┬───────────────┘                      │
-│                            ▼                                      │
-│             ┌──────────────────────────────┐                      │
-│             │   营销文案 Agent              │                      │
-│             │  marketing_copy_agent        │                      │
-│             │  ────────────────────────── │                      │
-│             │  5套Prompt模板 × 用户分群    │                      │
-│             │  LLM生成 + 广告法合规校验    │                      │
-│             └──────────────┬───────────────┘                      │
-│                            ▼                                      │
-│             ┌──────────────────────────────┐                      │
-│             │   A/B 测试引擎               │                      │
-│             │  用户ID哈希分桶              │                      │
-│             │  Thompson Sampling 动态调优  │                      │
-│             └──────────────┬───────────────┘                      │
-└──────────────────────────────┬──────────────────────────────────┘
-                               ▼
-              ┌─────────────────────────────────┐
-              │  个性化推荐响应（返回给用户）      │
-              │  商品列表 + 个性化文案 + 实验分组 │
-              └─────────────────────────────────┘
+```text
+我想选一门不考试、作业少、给分友好的公选课，最好在东校区，周三晚上不要有课，
+我对电影、心理学和艺术比较感兴趣，不想做小组作业。
 ```
 
-### 为什么用 Supervisor 模式？
+系统会输出：
 
-Supervisor 模式是 Multi-Agent 系统中最主流的编排方式之一：
+- 推荐课程列表
+- 每门课的匹配理由
+- 爆满、容量紧张、时间冲突、限制条件等选课风险
+- 各 Agent 的执行结果，便于调试和面试讲解
 
-```
-Supervisor 模式                     Handoffs 模式
-──────────────────────              ──────────────────────
-   Supervisor（中枢）                 Agent A → Agent B
-    ┌────┬────┬────┐                       ↓
-    ▼    ▼    ▼    ▼                 Agent B → Agent C
-   A    B    C    D                        ↓
-    └────┴────┴────┘                 Agent C → ...
-    结果聚合 → 响应
+## 为什么适合做 Agent 项目
 
-✅ 集中控制，流程清晰          ✅ 去中心化，灵活
-✅ 并行执行，延迟低            ✅ 适合对话/开放式任务
-✅ 异常统一处理                ❌ 状态管理复杂
-本项目采用 Supervisor 模式
-```
+公选课推荐不是简单关键词搜索。学生的需求通常混合了兴趣、时间、校区、考核方式、难度、作业量、绩点诉求和抢课风险。
 
----
+单个 Agent 容易把所有判断塞在一个 prompt 里，导致上下文臃肿、可解释性差、失败后不好降级。本项目拆成多个专业 Agent：
 
-## 🤖 四大核心 Agent 详解
+| Agent | 职责 | 输入 | 输出 |
+|---|---|---|---|
+| 学生画像 Agent | 从自然语言 prompt 抽取选课偏好和硬约束 | prompt、context | `StudentProfile` |
+| 课程召回 Agent | MySQL 结构化筛选 + Milvus 语义召回 | 学生需求、课程向量库 | 候选课程 |
+| 课程重排 Agent | 综合兴趣匹配、时间、考核、难度、容量进行排序 | 学生画像、候选课程 | TopN 排序 |
+| 选课可行性 Agent | 检查容量、爆满、时间冲突、年级/专业/先修限制 | 候选课程、学生上下文 | 可选课程与风险提醒 |
+| 推荐理由 Agent | 生成面向学生的解释 | 最终课程、风险提醒 | 推荐理由 |
 
-### Agent 1：用户画像 Agent
+## 系统架构
 
-**文件**：[`python/agents/user_profile_agent.py`](python/agents/user_profile_agent.py)
-
-**它做什么？**
-
-把用户的历史行为数据（点击、购买、收藏）转化成结构化的"用户画像"，供其他 Agent 使用。
-
-**核心逻辑（简化）**：
-
-```python
-# Step 1：从 Redis Feature Store 获取实时行为特征
-behavior = await feature_store.get_user_features(user_id)
-# 返回: {"clicks_1h": 12, "purchases_7d": 3, "categories": ["手机", "耳机"]}
-
-# Step 2：调用 LLM 分析，输出结构化画像
-prompt = f"用户行为数据: {behavior}\n请分析用户分群和RFM得分，输出JSON"
-profile_json = await llm.invoke(prompt)
-# 输出: {"segments": ["active", "price_sensitive"], "rfm_score": {"recency": 0.8}}
-
-# Step 3：返回 UserProfile 对象
-return UserProfile(user_id=user_id, segments=["active"], rfm_score=...)
+```text
+学生 prompt
+  |
+  v
+Supervisor 编排器
+  |
+  +-- Phase 1 并行
+  |     +-- 学生画像 Agent：抽取兴趣、时间、校区、考核、难度、作业量偏好
+  |     +-- 课程召回 Agent：MySQL 筛选 + Milvus 课程 chunk 语义检索
+  |
+  +-- Phase 2 并行
+  |     +-- 课程重排 Agent：LLM 精排课程
+  |     +-- 选课可行性 Agent：容量、爆满、冲突、限制检查
+  |
+  +-- Phase 3 串行
+        +-- 推荐理由 Agent：生成推荐理由和选课建议
+  |
+  v
+课程列表 + 推荐理由 + 选课风险 + Agent 轨迹
 ```
 
-**关键技术**：
-- **Redis Sorted Set**：`ZADD user:u001:clicks {时间戳} {商品ID}`，支持滑动窗口查询
-- **RFM 模型**：Recency（最近购买时间）× Frequency（购买频率）× Monetary（消费金额）
-- **用户分群**：新客 / VIP / 价格敏感 / 活跃 / 流失风险，共 5 类
+核心代码：
 
----
+- [python/orchestrator/supervisor.py](python/orchestrator/supervisor.py)
+- [python/agents/student_profile_agent.py](python/agents/student_profile_agent.py)
+- [python/agents/course_recall_agent.py](python/agents/course_recall_agent.py)
+- [python/agents/course_rerank_agent.py](python/agents/course_rerank_agent.py)
+- [python/agents/course_feasibility_agent.py](python/agents/course_feasibility_agent.py)
+- [python/agents/recommendation_reason_agent.py](python/agents/recommendation_reason_agent.py)
 
-### Agent 2：商品推荐 Agent
+## 数据集如何上传到向量库
 
-**文件**：[`python/agents/product_rec_agent.py`](python/agents/product_rec_agent.py)
+已有数据集：
 
-**它做什么？**
+[course_dataset_tools/output/public_elective_courses.csv](course_dataset_tools/output/public_elective_courses.csv)
 
-两阶段推荐：先"召回"大量候选商品，再用 LLM 精排出最合适的 TopN。
+不要把 CSV 每一整行直接向量化。推荐使用“结构化主表 + 语义分块向量库”的方式：
 
-```
-多路召回策略
-  ├── 协同过滤（买了A也买了B）
-  ├── 向量检索（Milvus，语义相似商品）
-  ├── 热度策略（最近7天热卖）
-  └── 新品策略（上架30天内）
-        │
-        ▼（去重合并，候选集）
-  LLM 精排
-  │ Prompt: "用户是价格敏感型，偏好手机配件，以下10件商品请排序..."
-  │ 输出: 按相关性从高到低排列的商品 ID 列表
-        │
-        ▼
-  TopN 商品列表（交给库存 Agent 过滤）
-```
+| 层 | 存什么 | 作用 |
+|---|---|---|
+| MySQL `course_records` | 每门课完整结构化信息 | 回表展示、规则过滤、容量判断 |
+| MySQL `course_chunks` | 每门课拆出来的文本块 | 保留 chunk 内容和元数据 |
+| Milvus `course_chunks` / `course_chunks_real` | 每个 chunk 的 embedding | 根据学生 prompt 做语义召回 |
 
----
+默认每门课拆成 4 个 chunk：
 
-### Agent 3：营销文案 Agent
+| chunk 类型 | 字段 |
+|---|---|
+| `basic` | 课程名、教师、学分、课程类型、课程分类、领域 |
+| `schedule_capacity` | 校区、上课时间、地点、容量、已选人数、热度、抢课建议 |
+| `learning_profile` | 简介、考核方式、难度、作业量、给分友好、考勤、考试、小组作业 |
+| `audience_tags` | 年级限制、专业限制、先修要求、适合人群、标签、历年选课比例 |
 
-**文件**：[`python/agents/marketing_copy_agent.py`](python/agents/marketing_copy_agent.py)
+这样用户说“不要考试、作业少、给分友好、周三晚上不行”时，系统能分别命中学习体验 chunk 和时间容量 chunk，再通过 `course_id` 回 MySQL 拿完整课程。
 
-**它做什么？**
+## 快速运行
 
-根据用户画像自动选择合适的文案风格模板，调用 LLM 生成个性化文案，并做广告法合规校验。
-
-```python
-# 5套模板 × 用户分群
-TEMPLATES = {
-    "new_user":        "首单专属福利，{product}立减{discount}元！",
-    "vip":             "尊享会员特权，{product}专属价{price}，品质之选。",
-    "price_sensitive": "今日限时抢购！{product}历史最低价，仅剩{stock}件！",
-    "active":          "根据您的浏览偏好，为您精选 {product}，好评率{rating}%",
-    "churn_risk":      "好久不见！{product}为您专属保留，点击领取优惠券",
-}
-
-# 广告法合规校验（过滤违禁词）
-BANNED_WORDS = ["最好", "第一", "最便宜", "绝对", "100%"]
-```
-
----
-
-### Agent 4：库存决策 Agent
-
-**文件**：[`python/agents/inventory_agent.py`](python/agents/inventory_agent.py)
-
-**它做什么？**
-
-查询商品实时库存，过滤缺货商品，输出限购策略和补货预警。
-
-```python
-# 输入: 推荐商品列表 [P001, P002, P003, ...]
-# 查询 MySQL/WMS 实时库存
-# 输出:
-{
-    "available_products": ["P001", "P003"],   # 有货商品
-    "inventory_alerts": [                      # 库存预警
-        {"product_id": "P001", "stock": 5, "warning": "库存紧张"}
-    ],
-    "purchase_limits": {                       # 限购策略
-        "P001": 2  # 每人最多买2件
-    }
-}
-```
-
----
-
-## 🌐 三语言实现对比
-
-| 维度 | Python | Java | Go |
-|------|--------|------|----|
-| 框架 | [LangGraph](https://github.com/langchain-ai/langgraph) + FastAPI | [Spring AI Alibaba](https://github.com/alibaba/spring-ai-alibaba) + Spring Boot 3 | LangChainGo + Gin |
-| 并行方式 | `asyncio.gather()` | `CompletableFuture.allOf()` | `goroutine` + `sync.WaitGroup` |
-| 推荐语言 | ✅ 入门首选，代码量最少 | ✅ 企业级Java岗 | ✅ 高并发/云原生岗 |
-| 代码位置 | [`python/`](python/) | [`java/`](java/) | [`go/`](go/) |
-| 启动命令 | `python main.py` | `mvn spring-boot:run` | `go run cmd/main.go` |
-
----
-
-## 💻 关键代码展示
-
-### Supervisor 并行编排（Python 核心代码）
-
-**文件**：[`python/orchestrator/supervisor.py`](python/orchestrator/supervisor.py)
-
-```python
-class SupervisorOrchestrator:
-    """Supervisor 编排器 — 并行分发 + 聚合模式"""
-
-    async def recommend(self, request: RecommendationRequest) -> RecommendationResponse:
-        start = time.perf_counter()
-
-        # ① A/B 实验分组（在最开始就决定用哪套策略）
-        experiment = self.ab_engine.assign(request.user_id)
-
-        # ② Phase 1：用户画像 + 商品召回 并行执行
-        profile_result, rec_result = await asyncio.gather(
-            self.user_profile_agent.run(user_id=request.user_id, context=request.context),
-            self.product_rec_agent.run(user_profile=None, num_items=request.num_items * 2),
-        )
-        # asyncio.gather() 让两个 IO 密集型任务同时跑，总耗时 ≈ max(两者耗时)
-
-        # ③ Phase 2：LLM重排 + 库存校验 并行执行
-        rerank_result, inventory_result = await asyncio.gather(
-            self.product_rec_agent.run(user_profile=user_profile, num_items=request.num_items),
-            self.inventory_agent.run(products=raw_products),
-        )
-
-        # ④ 库存过滤：只保留有货商品
-        available_ids = set(getattr(inventory_result, "available_products", []))
-        final_products = [p for p in ranked_products if p.product_id in available_ids]
-
-        # ⑤ Phase 3：文案生成（需要前两步结果，所以串行）
-        copy_result = await self.marketing_copy_agent.run(
-            user_profile=user_profile,
-            products=final_products,
-        )
-
-        # ⑥ 汇总响应
-        total_latency = (time.perf_counter() - start) * 1000
-        return RecommendationResponse(
-            products=final_products,
-            marketing_copies=copies,
-            experiment_group=experiment.get("group", "control"),
-            total_latency_ms=total_latency,  # 目标 P99 < 2000ms
-        )
-```
-
-> 💡 **小白解读**：`asyncio.gather()` 就像你同时开了两个网页，而不是等一个加载完再开另一个。两个 Agent 并行跑，总延迟约等于最慢那个 Agent 的耗时，而不是两者相加。
-
----
-
-### A/B 测试引擎（Thompson Sampling）
-
-**文件**：[`python/services/ab_test.py`](python/services/ab_test.py)
-
-```python
-class ABTestEngine:
-    """
-    流量分桶 + Thompson Sampling 多臂赌博机
-    
-    原理：像赌场里的老虎机，哪台赢的多就多拉哪台。
-    算法自动把更多流量分给表现好的实验组。
-    """
-
-    def assign(self, user_id: str) -> dict:
-        # 用户ID哈希取模 → 保证同一用户每次进同一个实验组（一致性）
-        bucket = int(hashlib.md5(user_id.encode()).hexdigest(), 16) % 100
-        
-        if bucket < 60:
-            return {"group": "control", "strategy": "collaborative_filter"}
-        elif bucket < 80:
-            return {"group": "treatment_llm", "strategy": "llm_rerank"}
-        else:
-            return {"group": "treatment_vector", "strategy": "vector_search"}
-
-    def record_click(self, user_id: str, clicked: bool):
-        # Thompson Sampling: 点击了就更新 Beta 分布参数
-        group = self.assignments.get(user_id, "control")
-        if clicked:
-            self.alpha[group] += 1   # 成功次数 +1
-        else:
-            self.beta[group] += 1    # 失败次数 +1
-        # 下次分配流量时，胜率高的组会自动获得更多流量
-```
-
----
-
-### Agent 基类：重试 + 降级（可靠性保障）
-
-**文件**：[`python/agents/base_agent.py`](python/agents/base_agent.py)
-
-```python
-class BaseAgent(ABC):
-    """所有 Agent 的基类 — 模板方法模式"""
-    
-    MAX_RETRIES = 3
-    RETRY_DELAY = 1.0  # 秒，指数退避
-
-    async def run(self, **kwargs) -> AgentResult:
-        """公开方法：封装了计时、重试、降级"""
-        start = time.perf_counter()
-        try:
-            return await self._retry_execute(**kwargs)
-        except Exception as e:
-            # 全部重试失败 → 降级（返回默认结果，不影响其他 Agent）
-            logger.warning(f"{self.name} fallback triggered: {e}")
-            return self._fallback(**kwargs)
-
-    async def _retry_execute(self, **kwargs) -> AgentResult:
-        """指数退避重试"""
-        for attempt in range(self.MAX_RETRIES):
-            try:
-                return await asyncio.wait_for(
-                    self._execute(**kwargs),
-                    timeout=self.timeout,  # 每个 Agent 独立超时控制
-                )
-            except asyncio.TimeoutError:
-                if attempt < self.MAX_RETRIES - 1:
-                    await asyncio.sleep(self.RETRY_DELAY * (2 ** attempt))  # 1s, 2s, 4s
-        raise RuntimeError(f"{self.name} failed after {self.MAX_RETRIES} retries")
-
-    @abstractmethod
-    async def _execute(self, **kwargs) -> AgentResult:
-        """子类只需实现这个方法，写业务逻辑即可"""
-```
-
-> 💡 **小白解读**：就像打电话打不通会重拨，第1次立刻重拨，第2次等2秒，第3次等4秒（指数退避）。如果全失败了，就返回一个"说得过去的默认结果"（降级），保证整个系统不崩溃。
-
----
-
-### Go 版：goroutine 并行（高并发）
-
-**文件**：[`go/orchestrator/supervisor.go`](go/orchestrator/supervisor.go)
-
-```go
-func (s *Supervisor) Recommend(ctx context.Context, req *model.RecommendRequest) (*model.RecommendResponse, error) {
-    var wg sync.WaitGroup
-    
-    // goroutine 并行：用户画像 + 商品召回
-    wg.Add(2)
-    go func() {
-        defer wg.Done()
-        profile, _ = s.UserProfileAgent.Run(ctx, req.UserID)
-    }()
-    go func() {
-        defer wg.Done()
-        products, _ = s.ProductRecAgent.Run(ctx, req.NumItems*2)
-    }()
-    wg.Wait()  // 等两个 goroutine 都完成
-    
-    // 串行：文案生成
-    copies, _ = s.MarketingCopyAgent.Run(ctx, profile, products)
-    return &model.RecommendResponse{Products: products, Copies: copies}, nil
-}
-```
-
----
-
-## 🚀 快速上手运行
-
-### 前置条件
-
-- Python 3.11+ / Java 17+ / Go 1.22+（选一个语言即可）
-- 申请 LLM API Key（推荐 [MiniMax](https://www.minimax.chat/) 或 [阿里通义](https://dashscope.aliyun.com/)，有免费额度）
-
----
-
-### Python 版（推荐小白从这里开始）
+### 1. 安装 Python 依赖
 
 ```bash
-# 1. 克隆项目
-git clone https://github.com/bcefghj/multi-agent-ecommerce-system.git
-cd multi-agent-ecommerce-system/python
-
-# 2. 创建虚拟环境（避免依赖冲突）
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-
-# 3. 安装依赖
-pip install -r requirements.txt
-
-# 4. 配置 API Key
-cp .env.example .env
-# 用记事本/VS Code 打开 .env，填入你的 LLM_API_KEY
-
-# 5. 启动服务
-uvicorn main:app --host 0.0.0.0 --port 8000
-# 看到 "Uvicorn running on http://0.0.0.0:8000" 就成功了
-
-# 6. 测试推荐接口
-curl -X POST http://localhost:8000/api/v1/recommend \
-  -H "Content-Type: application/json" \
-  -d '{
-    "user_id": "user_001",
-    "scene": "homepage",
-    "num_items": 5,
-    "context": {
-      "recent_views": ["手机", "耳机"],
-      "avg_order_amount": 500
-    }
-  }'
-```
-
-### Python 真实闭环（MySQL + Redis + Milvus + 真实 LLM）
-
-```bash
-# 0) 先安装 Python 测试依赖（在 python 子目录执行）
 cd python
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+python -m pip install -r requirements.txt
+```
 
-# 1) 运行关键测试（可先跑这一条做快速验收）
-.\.venv\Scripts\python.exe -m pytest tests/test_supervisor_pipeline.py -q
+### 2. 配置 LLM 和 Embedding
 
-# 2) 启动真实闭环容器（回到仓库根目录执行）
-cd ..
+在 `python/.env` 中配置：
+
+```env
+ECOM_LLM_API_KEY=你的LLM Key
+ECOM_LLM_BASE_URL=https://你的OpenAI兼容地址/v1
+ECOM_LLM_MODEL=你的模型
+
+ECOM_EMBEDDING_PROVIDER=local
+ECOM_EMBEDDING_DIMENSION=64
+ECOM_MILVUS_DIMENSION=64
+ECOM_COURSE_MILVUS_COLLECTION=course_chunks
+```
+
+如果使用真实 embedding，把 provider、base_url、api_key、model、dimension 改成对应服务即可。
+
+### 3. 启动依赖服务
+
+```bash
 docker compose -f docker-compose.python.yml --profile python up -d --build
-
-# 3) 健康检查（包含 mysql/redis/milvus 依赖状态）
-curl http://localhost:8000/health
-
-# 4) 真实链路联调：召回(MySQL+Milvus) -> 重排(LLM) -> 库存过滤(MySQL) -> 文案(LLM)
-curl -X POST http://localhost:8000/api/v1/recommend \
-  -H "Content-Type: application/json" \
-  -d '{
-    "user_id": "U10001",
-    "scene": "homepage",
-    "query": "降噪耳机",
-    "num_items": 5,
-    "context": {"query": "降噪耳机"}
-  }'
-
-# 5) 看容器状态与日志（用于排障）
-docker compose -f docker-compose.python.yml --profile python ps
-docker compose -f docker-compose.python.yml --profile python logs python-api --tail=120
 ```
 
----
-
-### Java 版
+### 4. 导入课程 CSV 到 MySQL 和 Milvus
 
 ```bash
-cd multi-agent-ecommerce-system/java
-
-# 1. 配置 API Key（编辑 src/main/resources/application.yml）
-#    找到 ecommerce.llm.api-key，填入你的 key
-
-# 2. 构建并启动（需要 Maven，可以用 IDEA 直接导入运行）
-mvn spring-boot:run
-
-# 3. 测试
-curl -X POST http://localhost:8080/api/v1/recommend \
-  -H "Content-Type: application/json" \
-  -d '{"userId": "user_001", "numItems": 5}'
+cd python
+python scripts/ingest_course_dataset.py --limit 20
+python scripts/ingest_course_dataset.py
 ```
 
----
+导入脚本会执行：
 
-### Go 版
+1. 读取 `public_elective_courses.csv`
+2. 写入 `course_records`
+3. 生成 `basic`、`schedule_capacity`、`learning_profile`、`audience_tags` 四类 chunk
+4. 写入 `course_chunks`
+5. 生成 embedding 并写入 Milvus
+
+### 5. 启动 API
 
 ```bash
-cd multi-agent-ecommerce-system/go
-
-# 1. 设置环境变量
-export ECOM_LLM_API_KEY=your_api_key_here
-export ECOM_LLM_BASE_URL=https://api.minimax.chat/v1
-
-# 2. 运行
-go run cmd/main.go
-
-# 3. 测试
-curl -X POST http://localhost:8080/api/v1/recommend \
-  -H "Content-Type: application/json" \
-  -d '{"user_id": "user_001", "num_items": 5}'
+cd python
+uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
----
-
-### Docker 一键部署（含 Redis + MySQL 等依赖）
+### 6. 调用推荐接口
 
 ```bash
-# 在项目根目录运行
-docker-compose up -d
-
-# 等待所有服务启动（约30秒）
-docker-compose ps
-
-# 服务地址
-# Python API:  http://localhost:8000
-# Java API:    http://localhost:8080
-# Redis:       localhost:6379
-# MySQL:       localhost:3306
+curl -X POST http://localhost:8000/api/v1/recommend ^
+  -H "Content-Type: application/json" ^
+  -d "{\"user_id\":\"S10001\",\"num_items\":5,\"prompt\":\"想选不考试、作业少、给分友好的艺术类公选课，东校区优先，周三晚上不要有课\",\"context\":{\"avoid_time_slots\":[\"周三第9-10节\"],\"campus\":[\"东校区\"]}}"
 ```
 
----
-
-## 📡 API 接口文档
-
-### 接口列表
-
-| 方法 | 路径 | 说明 | 语言 |
-|------|------|------|------|
-| `POST` | `/api/v1/recommend` | 核心推荐接口 | Python / Java / Go |
-| `POST` | `/api/v1/recommend/graph` | LangGraph 状态图推荐 | Python only |
-| `GET` | `/api/v1/experiments` | 查看 A/B 实验状态 | Python / Java |
-| `GET` | `/api/v1/metrics` | 系统监控指标 | Python only |
-| `GET` | `/health` | 健康检查 | 全部 |
-
-### 请求示例
-
-```json
-POST /api/v1/recommend
-Content-Type: application/json
-
-{
-  "user_id": "user_001",
-  "scene": "homepage",
-  "num_items": 5,
-  "context": {
-    "recent_views": ["手机", "耳机", "充电宝"],
-    "avg_order_amount": 500,
-    "last_purchase_days": 7
-  }
-}
-```
-
-### 响应示例
+响应示例：
 
 ```json
 {
-  "request_id": "a3f8c2d1-...",
-  "user_id": "user_001",
-  "products": [
+  "request_id": "7d6d...",
+  "user_id": "S10001",
+  "courses": [
     {
-      "product_id": "P001",
-      "name": "iPhone 16 Pro",
-      "category": "手机",
-      "price": 7999.0,
-      "score": 0.95
-    },
-    {
-      "product_id": "P003",
-      "name": "AirPods Pro 2",
-      "category": "耳机",
-      "price": 1899.0,
-      "score": 0.88
+      "course_id": "GXK2026003",
+      "course_name": "风景地貌学",
+      "teacher": "杨雪强",
+      "domain": "自然环境",
+      "campus": "东校区",
+      "time_slot": "周四第7-8节",
+      "has_exam": "否",
+      "workload": "中",
+      "grade_friendly": "中"
     }
   ],
-  "marketing_copies": [
+  "recommendation_reasons": [
     {
-      "product_id": "P001",
-      "copy": "根据您最近对手机的兴趣，为您精选 iPhone 16 Pro，好评率 98%，限时优惠中。"
+      "course_id": "GXK2026003",
+      "reason": "课程位于东校区且不考试，内容偏自然环境拓展，适合希望用公选课拓宽知识面的学生；但当前热度较高，建议提前抢课。"
     }
   ],
-  "experiment_group": "treatment_llm",
-  "total_latency_ms": 1523.4
+  "selection_warnings": [
+    {
+      "course_id": "GXK2026003",
+      "level": "high",
+      "type": "capacity_full",
+      "message": "当前已选人数达到或超过容量，建议作为冲刺志愿并准备替代课程。"
+    }
+  ],
+  "experiment_group": "control",
+  "total_latency_ms": 1530.2
 }
 ```
 
----
+## API
 
-## 📁 项目文件结构
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `POST` | `/api/v1/recommend` | Supervisor 主链路课程推荐 |
+| `POST` | `/api/v1/recommend/graph` | LangGraph 状态图版本 |
+| `GET` | `/api/v1/experiments` | 查看 A/B 实验状态 |
+| `GET` | `/api/v1/metrics` | 查看 Agent 调用指标 |
+| `GET` | `/health` | 检查 MySQL、Redis、Milvus |
 
-```
+## 常见问题与排障
+
+- MySQL 或 Milvus 未就绪
+  - 先执行 `docker compose -f docker-compose.python.yml --profile python up -d --build`
+  - 再检查 `GET /health`，确保依赖服务可达
+- embedding 维度不一致
+  - 保持 `ECOM_EMBEDDING_DIMENSION` 与 `ECOM_MILVUS_DIMENSION` 一致
+  - 如果已写入旧维度数据，建议清空对应 collection 后重新导入
+- 课程 collection 配置错误
+  - 检查 `ECOM_COURSE_MILVUS_COLLECTION` 是否与导入脚本写入目标一致
+  - 需要切换 collection 时，先确认 `scripts/ingest_course_dataset.py` 的运行参数与配置
+- Windows 和 Linux curl 差异
+  - README 示例使用 Windows `^` 换行风格
+  - Linux/macOS 请改为 `\\` 换行，或单行执行请求命令
+
+## 项目结构
+
+```text
 multi-agent-ecommerce-system/
-│
-├── README.md                          # 📄 本文件（项目总览）
-├── plan.md                            # 📋 完整项目计划（从调研到上线）
-├── docker-compose.yml                 # 🐳 一键启动所有服务
-├── docker-compose.python.yml          # 🐍 Python 真实闭环专用编排
-│
-├── docs/                              # 📚 面试全套文档
-│   ├── interview-guide.md             # 🎯 面试指南（八股文30题 + STAR法话术）
-│   ├── resume-template.md             # 📝 简历模板（应届 + 社招两版）
-│   ├── architecture.md                # 🏗 架构设计详解（含数据流图）
-│   └── code-walkthrough.md            # 🔍 代码逐行讲解（面向小白）
-│
-├── python/                            # 🐍 Python 实现（推荐入门）
-│   ├── main.py                        # FastAPI 服务入口
-│   ├── requirements.txt               # 依赖列表
-│   ├── .env.example                   # 环境变量模板
-│   ├── agents/                        # 4 个 Agent 实现
-│   │   ├── base_agent.py              # 基类：重试/超时/降级
-│   │   ├── user_profile_agent.py      # 用户画像 Agent
-│   │   ├── product_recall_agent.py    # 商品召回 Agent（MySQL + Milvus）
-│   │   ├── product_rerank_agent.py    # 商品重排 Agent（真实 LLM）
-│   │   ├── marketing_copy_agent.py    # 营销文案 Agent
-│   │   └── inventory_agent.py         # 库存决策 Agent
+├── README.md
+├── course_dataset_tools/
+│   └── output/public_elective_courses.csv
+├── docs/
+│   ├── interview-guide.md
+│   ├── architecture.md
+│   ├── project-plan.md
+│   ├── code-walkthrough.md
+│   ├── resume-template.md
+│   └── plans/2026-05-11-course-agent-redesign.md
+├── python/
+│   ├── main.py
+│   ├── models/schemas.py
 │   ├── orchestrator/
-│   │   ├── supervisor.py              # ⭐ Supervisor 并行编排（核心）
-│   │   └── graph.py                   # LangGraph 状态图
-│   ├── repositories/                  # 数据访问层（MySQL/Redis/Milvus）
-│   ├── services/
-│   │   ├── ab_test.py                 # A/B 测试引擎（Thompson Sampling）
-│   │   ├── embedding_client.py        # deterministic embedding 接口
-│   │   ├── feature_store.py           # Redis 实时特征服务
-│   │   └── metrics.py                 # Prometheus 监控指标
-│   ├── models/schemas.py              # Pydantic 数据模型
-│   ├── config/settings.py             # 配置管理
-│   └── tests/                         # 单元测试
-│
-├── java/                              # ☕ Java 实现（企业级 Spring 生态）
-│   ├── pom.xml                        # Maven 依赖（Spring AI Alibaba）
-│   └── src/main/java/com/ecommerce/
-│       ├── MultiAgentApplication.java # Spring Boot 启动入口
-│       ├── agent/                     # 4 个 Agent（Spring Bean）
-│       ├── orchestrator/              # CompletableFuture 并行编排
-│       ├── service/                   # A/B 测试服务
-│       ├── config/                    # LLM 配置 + REST Controller
-│       └── model/                     # 数据模型（Request/Response）
-│
-└── go/                                # 🐹 Go 实现（高并发云原生）
-    ├── go.mod                         # 模块依赖
-    ├── cmd/main.go                    # 程序入口
-    ├── agent/                         # 4 个 Agent（interface + impl）
-    ├── orchestrator/supervisor.go     # goroutine + WaitGroup 并行编排
-    ├── handler/api.go                 # Gin HTTP 路由
-    ├── service/ab_test.go             # A/B 测试服务
-    └── model/types.go                 # 数据结构定义
+│   │   ├── supervisor.py
+│   │   └── graph.py
+│   ├── agents/
+│   │   ├── student_profile_agent.py
+│   │   ├── course_recall_agent.py
+│   │   ├── course_rerank_agent.py
+│   │   ├── course_feasibility_agent.py
+│   │   └── recommendation_reason_agent.py
+│   ├── repositories/
+│   │   ├── course_repository.py
+│   │   └── course_vector_repository.py
+│   └── scripts/ingest_course_dataset.py
+└── docker-compose.python.yml
 ```
 
----
+## 面试亮点
 
-## 📚 面试资料索引
+- **Multi-Agent 拆分合理**：学生画像、课程召回、课程排序、可行性判断、推荐解释各司其职。
+- **RAG 和结构化过滤结合**：Milvus 负责语义召回，MySQL 负责精确字段和回表展示。
+- **Supervisor 并行编排**：画像和召回并行，重排和可行性检查并行，降低端到端延迟。
+- **强可解释性**：输出推荐理由和风险提醒，适合教务场景而不是黑盒推荐。
+- **真实数据集闭环**：已有公选课 CSV，可导入 MySQL 和 Milvus 跑通完整链路。
 
-| 文档 | 内容亮点 | 什么时候看 |
-|------|---------|-----------|
-| [📋 面试完全指南](docs/interview-guide.md) | 八股文30题（含标准答案）+ STAR法3分钟/1分钟两版话术 + 面试官追问预案 | **面试前一天通读** |
-| [📝 简历模板](docs/resume-template.md) | 应届/社招两套模板，项目经验直接复制，按岗位调整技术栈关键词 | **投简历时参考** |
-| [🏗 架构设计文档](docs/architecture.md) | 系统架构图 + Agent职责矩阵 + 稳定性设计 + 性能数据 | **被问架构时参考** |
-| [🔍 代码讲解指南](docs/code-walkthrough.md) | 每个文件逐行解释 + 面试话术 + 常见追问应对 | **被问代码时参考** |
+## 简历写法
 
----
+```text
+学校公选课 Multi-Agent 推荐系统 | 个人项目 | 2026.05
+• 设计面向教务系统的公选课推荐 Agent 项目，支持学生通过自然语言 prompt 描述选课偏好
+• 设计 Supervisor 多 Agent 编排链路，包含学生画像、课程召回、课程重排、选课可行性和推荐理由 5 个 Agent
+• 基于 MySQL + Milvus 构建课程 RAG 数据层，将公选课 CSV 拆分为 basic、schedule_capacity、learning_profile、audience_tags 四类 chunk
+• 使用 LLM 对学生兴趣、时间约束、考核偏好、难度和作业量诉求进行结构化抽取，并结合课程字段进行可解释重排
+• 输出课程推荐理由、容量/爆满/时间冲突/限制条件风险提醒，提升推荐结果在教务选课场景下的可信度
 
-## ❓ 面试八股文精选（10题）
-
-### Q1：为什么用 Multi-Agent 而不是单个大 Agent？
-
-> **推荐答法（30秒）**：
-> 单 Agent 管理几十个工具时，上下文膨胀、推理准确率会明显下降。Multi-Agent 的核心优势有三点：
-> 1. **上下文隔离**：每个 Agent 只关注自己领域的工具和数据，Token 消耗少、推理准确
-> 2. **并行加速**：4 个 Agent 可以同时跑，端到端延迟约等于最慢 Agent 的耗时，而不是四者相加
-> 3. **独立演进**：各 Agent 可以独立升级、独立做 A/B 测试，互不影响
-
----
-
-### Q2：Supervisor 模式和 Handoffs 模式有什么区别？
-
-> | | Supervisor 模式 | Handoffs 模式 |
-> |--|--|--|
-> | 控制方式 | 中枢集中控制 | Agent 间直接传递控制权 |
-> | 适合场景 | 流程固定，需要并行 | 对话式，流程动态 |
-> | 状态管理 | Supervisor 统一维护 | 每次交接携带上下文 |
-> | 本项目 | ✅ 采用 | ❌ 未采用 |
-
----
-
-### Q3：`asyncio.gather()` 和串行调用的区别？
-
-> ```python
-> # 串行：总耗时 = 3s + 5s = 8s
-> profile = await user_profile_agent.run()   # 耗时 3s
-> products = await product_rec_agent.run()   # 耗时 5s
->
-> # 并行：总耗时 = max(3s, 5s) = 5s
-> profile, products = await asyncio.gather(
->     user_profile_agent.run(),              # 3s
->     product_rec_agent.run(),               # 5s（同时开始）
-> )
-> ```
-> `asyncio.gather()` 适合 IO 密集型任务（调用 API、查数据库），两个任务同时"等待"，CPU 不浪费。
-
----
-
-### Q4：Redis Sorted Set 怎么做实时特征？
-
-> ```
-> # 写入：用户行为事件
-> ZADD user:u001:clicks {timestamp} {product_id}
->
-> # 读取：最近1小时的点击
-> ZRANGEBYSCORE user:u001:clicks {now-3600} {now}
->
-> # 滑动窗口统计（1h / 24h / 7d）
-> clicks_1h  = ZCOUNT user:u001:clicks {now-3600} {now}
-> clicks_24h = ZCOUNT user:u001:clicks {now-86400} {now}
-> clicks_7d  = ZCOUNT user:u001:clicks {now-604800} {now}
-> ```
-> 用 score=时间戳 的 Sorted Set，天然支持按时间范围查询，时间复杂度 O(log N)。
-
----
-
-### Q5：A/B 测试的流量分桶怎么保证一致性？
-
-> ```python
-> # 用 MD5 哈希取模 → 同一个 user_id 每次落到同一个桶
-> bucket = int(hashlib.md5(user_id.encode()).hexdigest(), 16) % 100
->
-> # 0-59  → control（60%流量）
-> # 60-79 → treatment_llm（20%流量）
-> # 80-99 → treatment_vector（20%流量）
-> ```
-> 只要 user_id 不变，分桶结果永远一致。这样同一个用户在实验期间始终体验同一套策略，保证实验结论的可靠性。
-
----
-
-### Q6：Thompson Sampling 怎么动态调流量？
-
-> 核心思想：哪个实验组赢得多，就自动给它更多流量（像"站在赢家那边"）。
->
-> ```python
-> # 每个实验组维护 Beta 分布参数
-> alpha = {"control": 100, "treatment": 80}   # 点击次数
-> beta  = {"control": 50,  "treatment": 20}   # 未点击次数
->
-> # 分配流量时，从各组的 Beta 分布采样，取最大值的组
-> samples = {group: np.random.beta(alpha[g], beta[g]) for g in groups}
-> winner = max(samples, key=samples.get)
-> # CTR 越高的组，采样值越大，被选中概率越高
-> ```
-
----
-
-### Q7：Agent 调用失败怎么处理？
-
-> 三层保障：
-> 1. **超时控制**：`asyncio.wait_for(coro, timeout=5)` — 每个 Agent 独立超时，不阻塞整体
-> 2. **指数退避重试**：失败后等 1s → 2s → 4s 重试，共 3 次
-> 3. **降级（Fallback）**：全部重试失败后，返回"说得过去的默认结果"（如热门商品列表），保证整个系统不崩溃
-
----
-
-### Q8：LangGraph 和直接写 `asyncio.gather()` 有什么区别？
-
-> | | LangGraph | 直接写 asyncio |
-> |--|--|--|
-> | 状态管理 | 内置 State，节点间自动传递 | 手动管理变量 |
-> | 持久化 | 内置 Checkpoint，支持断点续跑 | 需要自己实现 |
-> | 可视化 | 可以画出状态图 | 无 |
-> | Human-in-the-loop | 内置支持，可以在节点暂停等人工确认 | 需要自己实现 |
-> | 适合场景 | 复杂、有分支的工作流 | 简单并行任务 |
-
----
-
-### Q9：RFM 模型怎么计算？
-
-> ```
-> R (Recency)  = 距离上次购买的天数    → 越小越好（最近买过）
-> F (Frequency)= 一定周期内购买次数    → 越大越好（买的勤）
-> M (Monetary) = 累计消费金额          → 越大越好（花的多）
->
-> # 归一化到 0-1，加权求和
-> rfm_score = 0.3 * R_norm + 0.3 * F_norm + 0.4 * M_norm
->
-> # 用于分群：
-> VIP:          rfm_score > 0.8
-> 活跃用户:     0.6 < rfm_score ≤ 0.8
-> 价格敏感:     高 F，低 M（买的勤但花得少）
-> 流失风险:     rfm_score < 0.3
-> ```
-
----
-
-### Q10：系统延迟怎么优化到 P99 < 2s？
-
-> 四个优化手段：
-> 1. **并行化**：Phase1 和 Phase2 各两个 Agent 并行，节省约 50% 时间
-> 2. **超时熔断**：单 Agent 超时不等待，返回降级结果，避免长尾拖累
-> 3. **Redis 缓存**：用户画像热点数据缓存，命中率 > 80% 的情况下延迟从 200ms → 5ms
-> 4. **LLM 精简**：Prompt 控制在 500 Token 以内，减少 LLM 推理时间
-
-👉 **更多30题详见** [docs/interview-guide.md](docs/interview-guide.md)
-
----
-
-## 📋 简历写法（直接复制）
-
-```
-多Agent电商推荐与营销系统 | 个人项目 | 2026.01 - 2026.04
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• 设计并实现基于 Supervisor 模式的多 Agent 协同架构，含用户画像、商品推荐、
-  营销文案、库存决策 4 个专业 Agent，采用并行分发+聚合的编排模式
-
-• 基于 Redis Sorted Set 实现实时用户特征工程（RFM 模型+行为序列），
-  特征更新延迟 < 100ms，支持 1h/24h/7d 多时间窗口滑动计算
-
-• 集成 LLM 实现个性化营销文案生成，基于用户画像动态切换 5 套 Prompt 模板，
-  文案合规率 100%（广告法敏感词自动过滤）
-
-• 设计流量分桶 + Thompson Sampling A/B 测试引擎，支持 Agent/模型/Prompt
-  三层实验，推荐 CTR 提升 15%，文案点击率提升 23%
-
-• 提供 Python(LangGraph) / Java(Spring AI Alibaba) / Go(goroutine) 三语言实现
-
-技术栈：LangGraph · Spring AI Alibaba · Go · Redis · Milvus · FastAPI · Docker
+技术栈：FastAPI · LangGraph · Multi-Agent · Milvus · MySQL · Redis · Docker · OpenAI-Compatible LLM
 ```
 
----
+## 当前说明
 
-## 🔗 参考资料与致谢
-
-本项目架构设计参考了以下企业级开源项目：
-
-| 项目 | 说明 | 链接 |
-|------|------|------|
-| NVIDIA Retail Agentic Commerce | NVIDIA 企业级电商 Agent 蓝图 | [GitHub](https://github.com/NVIDIA-AI-Blueprints/Retail-Agentic-Commerce) |
-| Spring AI Alibaba Multi-Agent Demo | 阿里巴巴 Java 多 Agent 示例 | [GitHub](https://github.com/spring-ai-alibaba/spring-ai-alibaba-multi-agent-demo) |
-| LangGraph 官方文档 | LangGraph 状态图框架 | [文档](https://langchain-ai.github.io/langgraph/) |
-| 京东商家智能助手技术博客 | 京东 Multi-Agent 生产实践 | [掘金](https://juejin.cn/post/7470344960563871784) |
-| DualAgent-Rec | 双 Agent 推荐系统 | [GitHub](https://github.com/GuilinDev/Dual-Agent-Recommendation) |
-| MiniMax API | 本项目默认 LLM 服务 | [官网](https://www.minimax.chat/) |
-
----
-
-## 📄 License
-
-[MIT License](LICENSE) — 随意使用、修改、商用，保留 License 声明即可。
-
----
-
-<div align="center">
-
-**如果这个项目对你有帮助，欢迎点个 ⭐ Star！**
-
-有问题欢迎提 [Issue](https://github.com/bcefghj/multi-agent-ecommerce-system/issues)
-
-</div>
+仓库名仍保留历史名称 `multi-agent-ecommerce-system`，但 Python 主链路、README 和面试文档已经改为学校公选课推荐主题。历史 Agent 文件仅作对照，不再作为主推荐 API 的业务链路。

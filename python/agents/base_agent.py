@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
+from inspect import isawaitable
 from typing import Any
 
 import structlog
@@ -51,7 +52,10 @@ class BaseAgent(ABC):
             reraise=True,
         )
         async def _inner():
-            return await self._execute(**kwargs)
+            result = await self._execute(**kwargs)
+            if isawaitable(result):
+                result = await result
+            return result
 
         return await _inner()
 

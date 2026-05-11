@@ -17,8 +17,6 @@ services:
       - ECOM_MILVUS_HOST=milvus
       - ECOM_MILVUS_PORT=19530
       - ECOM_MILVUS_COLLECTION=product_embeddings
-      - ECOM_EMBEDDING_PROVIDER=local
-      - ECOM_EMBEDDING_DIMENSION=64
     ports:
       - "8000:8000"
     depends_on:
