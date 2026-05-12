@@ -4,7 +4,7 @@
 
 ## 一分钟项目介绍
 
-我做的是一个学校公选课 Multi-Agent 推荐系统。学生在教务系统里用自然语言描述需求，比如“不考试、作业少、给分友好、东校区、周三晚上不要有课、对艺术和心理学感兴趣”。系统会先用学生画像 Agent 抽取偏好，再用课程召回 Agent 结合 MySQL 和 Milvus 从公选课数据集中召回候选课，然后由课程重排 Agent 做个性化排序，选课可行性 Agent 检查容量、爆满、时间冲突、年级/专业/先修限制，最后推荐理由 Agent 生成可解释建议。
+我做的是一个学校公选课 Multi-Agent 推荐系统。学生在教务系统里用自然语言描述需求，比如“不考试、作业少、给分友好、东校区、周三晚上不要有课、对艺术和心理学感兴趣”。系统会先用学生画像 Agent 抽取偏好，再用课程召回 Agent 结合 Redis、MySQL 和 Milvus 从公选课数据集中召回候选课，然后由课程重排 Agent 做个性化排序，选课可行性 Agent 检查容量、爆满、时间冲突、年级/专业/先修限制，最后推荐理由 Agent 生成可解释建议。
 
 核心价值是把“搜课程”升级为“理解学生诉求后做决策”，并且结果可解释、可追踪、能落到真实课程 CSV 数据集。
 
@@ -22,13 +22,13 @@
 
 1. 设计了 Supervisor 编排架构，将复杂选课决策拆成学生画像、课程召回、课程重排、选课可行性、推荐理由 5 个 Agent。
 2. 构建课程 RAG 数据层，将 `public_elective_courses.csv` 写入 MySQL 主表，并拆成 `basic`、`schedule_capacity`、`learning_profile`、`audience_tags` 四类 chunk 写入 Milvus。
-3. 在召回阶段结合结构化筛选和语义检索：MySQL 处理校区、时间、分类等精确字段，Milvus 处理“轻松、给分友好、不要考试、艺术兴趣”等语义需求。
+3. 在召回阶段结合 Redis 候选缓存、结构化筛选和语义检索：Redis 复用相似画像的候选 course_id，MySQL 处理校区、时间、分类等精确字段，Milvus 处理“轻松、给分友好、不要考试、艺术兴趣”等语义需求。
 4. 在重排阶段用 LLM 综合学生画像和课程属性排序，并要求只从候选课程 ID 中选择，降低幻觉。
 5. 在可行性阶段做容量、爆满、时间冲突、专业/年级/先修限制检查，输出风险提醒，而不是只给一个黑盒推荐列表。
 
 **R 结果**
 
-项目形成了从课程 CSV 到向量库、再到 Agent 推荐 API 的完整闭环。接口能返回课程列表、推荐理由、选课风险和每个 Agent 的执行轨迹，既能演示工程能力，也方便面试时讲解 RAG、Multi-Agent、Supervisor、结构化过滤和可解释推荐。
+项目形成了从课程 CSV 到向量库、Redis 召回缓存、再到 Agent 推荐 API 的完整闭环。接口能返回课程列表、推荐理由、选课风险和每个 Agent 的执行轨迹，既能演示工程能力，也方便面试时讲解 RAG、Multi-Agent、Supervisor、热点缓存、结构化过滤和可解释推荐。
 
 ## 架构图
 
@@ -57,12 +57,13 @@ Supervisor
 |---|---|
 | `python/orchestrator/supervisor.py` | Supervisor 主编排逻辑 |
 | `python/agents/student_profile_agent.py` | 从 prompt 抽取学生选课画像 |
-| `python/agents/course_recall_agent.py` | MySQL + Milvus 课程召回 |
+| `python/agents/course_recall_agent.py` | Redis 缓存 + MySQL + Milvus 课程召回 |
 | `python/agents/course_rerank_agent.py` | LLM 课程精排 |
 | `python/agents/course_feasibility_agent.py` | 容量、爆满、时间和限制条件检查 |
 | `python/agents/recommendation_reason_agent.py` | 推荐理由生成 |
 | `python/scripts/ingest_course_dataset.py` | 课程 CSV 入库和向量化 |
 | `python/repositories/course_repository.py` | 课程 MySQL 主表与回表查询 |
+| `python/repositories/course_recall_cache_repository.py` | 课程召回候选 course_id 缓存 |
 | `python/repositories/course_vector_repository.py` | 课程 chunk 向量库访问 |
 
 ## 高频面试题
@@ -88,6 +89,10 @@ Supervisor
 ### Q4：MySQL 和 Milvus 各自负责什么？
 
 Milvus 负责语义召回，解决自然语言需求和课程描述之间的模糊匹配。MySQL 负责完整课程记录、结构化过滤和回表展示，比如校区、时间、容量、教师、学分、限制条件等。
+
+### Q4.1：Redis 在召回链路里做什么？
+
+Redis 缓存的是“结构化画像条件 -> 候选 course_id 列表”，不是完整课程对象。第一次相似需求会走 MySQL + Milvus 完整召回，并把候选 ID 写入 Redis；后续同类需求命中缓存后，直接拿 ID 回 MySQL 查询最新课程状态。这样能减少热点需求对 Milvus 和 MySQL 宽召回的重复压力，同时不牺牲容量、已选人数等实时字段准确性。
 
 ### Q5：Supervisor 是怎么并行的？
 
@@ -117,6 +122,10 @@ Phase 1 中，学生画像和课程召回可以并行，因为召回可以先基
 ### Q10：如果没有向量库还能运行吗？
 
 可以降级。课程召回 Agent 会尝试 Milvus 语义召回，失败时记录 warning，然后使用 MySQL 结构化召回或内置 mock 课程兜底。这样演示时不会因为向量服务不可用导致整个系统崩溃。
+
+### Q10.1：多个学生同时问相似需求，怎么避免缓存击穿？
+
+按学生画像生成 cache key 后，只对同一个 key 使用 Redis 短锁。第一个未命中的请求通过 `SET NX EX` 拿到锁并构建缓存，其他同 key 请求短暂等待后再读 Redis；如果等待后仍未命中，就回退完整召回，保证请求不会被缓存锁拖死。
 
 ### Q11：A/B 测试在这个项目里怎么用？
 
@@ -170,6 +179,10 @@ Phase 1 中，学生画像和课程召回可以并行，因为召回可以先基
 
 所有 Agent 继承 `BaseAgent`，具备统一的耗时记录、重试和 fallback。某个 Agent 失败时，Supervisor 可以用默认结果继续返回，而不是让整条链路崩溃。
 
+### 5. 热点召回缓存
+
+课程召回 Agent 会先查 Redis 中是否已有相似画像对应的候选 `course_id` 列表。命中后仍回 MySQL 拿完整课程，保证容量、限制条件和课程状态最新；未命中时走 MySQL + Milvus 完整召回，并把候选 ID 写入 Redis。这个设计解决的是多个学生集中问热门需求时的重复召回成本，而不是用缓存替代数据库事实源。
+
 ## 简历项目描述
 
 ```text
@@ -177,6 +190,7 @@ Phase 1 中，学生画像和课程召回可以并行，因为召回可以先基
 • 设计并实现面向教务系统的公选课推荐 Agent 系统，支持学生通过自然语言 prompt 描述兴趣、时间、校区、考核方式和学习负担偏好
 • 采用 Supervisor 模式编排学生画像、课程召回、课程重排、选课可行性和推荐理由 5 个 Agent，实现并行召回、精排和可解释决策
 • 基于 MySQL + Milvus 构建课程 RAG 数据层，将公选课 CSV 拆分为 basic、schedule_capacity、learning_profile、audience_tags 四类语义 chunk
+• 使用 Redis 缓存结构化画像对应的候选 course_id 列表，命中后回 MySQL 获取最新课程状态，并用短锁降低同类并发请求的缓存击穿风险
 • 使用 LLM 将学生需求结构化为选课画像，并在候选课程集合内完成个性化重排，结合 JSON 校验和候选 ID 约束降低幻觉
 • 实现容量爆满、时间冲突、年级/专业/先修限制等选课风险判断，输出推荐理由和抢课建议
 
@@ -192,6 +206,10 @@ Phase 1 中，学生画像和课程召回可以并行，因为召回可以先基
 ### “为什么课程召回还要 MySQL？”
 
 向量库适合语义相关性，不适合做严格条件判断。比如“东校区”“周三第9-10节”“容量 100”“年级限制”这类字段，MySQL 更准确。两者结合才可靠。
+
+### “Redis 缓存了 course_id，为什么还要回 MySQL？”
+
+因为 Redis 缓存的是候选集索引，不是课程事实。热门课程的容量、已选人数和限制条件会变化，如果缓存完整课程对象容易过期。命中 Redis 后再回 MySQL，可以同时减少重复召回成本和保证课程状态准确。
 
 ### “怎么证明推荐结果可信？”
 
@@ -210,6 +228,7 @@ Phase 1 中，学生画像和课程召回可以并行，因为召回可以先基
 - [ ] 能讲清楚为什么课程 CSV 要拆 chunk
 - [ ] 能画出 Supervisor + 5 Agent 架构
 - [ ] 能解释 MySQL 与 Milvus 的分工
+- [ ] 能说明 Redis 召回缓存为什么只缓存 course_id 而不缓存完整课程
 - [ ] 能说明如何约束 LLM 不推荐不存在的课程
 - [ ] 能说出时间冲突、容量爆满、先修限制怎么处理
 - [ ] 能跑通 `scripts/ingest_course_dataset.py`

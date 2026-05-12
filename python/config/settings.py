@@ -15,6 +15,11 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
     feature_ttl_seconds: int = 86400
+    course_recall_cache_enabled: bool = True
+    course_recall_cache_ttl_seconds: int = 900
+    course_recall_cache_lock_ttl_seconds: int = 5
+    course_recall_cache_wait_retries: int = 3
+    course_recall_cache_wait_seconds: float = 0.1
 
     mysql_host: str = "localhost"
     mysql_port: int = 3306

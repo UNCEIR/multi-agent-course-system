@@ -13,31 +13,63 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from typing import TYPE_CHECKING
 
 import structlog
 
-from agents import (
-    CourseFeasibilityAgent,
-    CourseRecallAgent,
-    CourseRerankAgent,
-    RecommendationReasonAgent,
-    StudentProfileAgent,
-)
 from models.schemas import Course, RecommendationRequest, RecommendationResponse, StudentProfile
 from services.ab_test import ABTestEngine
 
 logger = structlog.get_logger()
 
+if TYPE_CHECKING:
+    from agents import (
+        CourseFeasibilityAgent,
+        CourseRecallAgent,
+        CourseRerankAgent,
+        RecommendationReasonAgent,
+        StudentProfileAgent,
+    )
+
 
 class SupervisorOrchestrator:
     """Coordinates public elective course agents in a parallel-then-aggregate pattern."""
 
-    def __init__(self, ab_engine: ABTestEngine | None = None):
-        self.student_profile_agent = StudentProfileAgent()
-        self.course_recall_agent = CourseRecallAgent()
-        self.course_rerank_agent = CourseRerankAgent()
-        self.course_feasibility_agent = CourseFeasibilityAgent()
-        self.recommendation_reason_agent = RecommendationReasonAgent()
+    def __init__(
+        self,
+        ab_engine: ABTestEngine | None = None,
+        student_profile_agent: StudentProfileAgent | None = None,
+        course_recall_agent: CourseRecallAgent | None = None,
+        course_rerank_agent: CourseRerankAgent | None = None,
+        course_feasibility_agent: CourseFeasibilityAgent | None = None,
+        recommendation_reason_agent: RecommendationReasonAgent | None = None,
+    ):
+        if student_profile_agent is None:
+            from agents import StudentProfileAgent
+
+            student_profile_agent = StudentProfileAgent()
+        if course_recall_agent is None:
+            from agents import CourseRecallAgent
+
+            course_recall_agent = CourseRecallAgent()
+        if course_rerank_agent is None:
+            from agents import CourseRerankAgent
+
+            course_rerank_agent = CourseRerankAgent()
+        if course_feasibility_agent is None:
+            from agents import CourseFeasibilityAgent
+
+            course_feasibility_agent = CourseFeasibilityAgent()
+        if recommendation_reason_agent is None:
+            from agents import RecommendationReasonAgent
+
+            recommendation_reason_agent = RecommendationReasonAgent()
+
+        self.student_profile_agent = student_profile_agent
+        self.course_recall_agent = course_recall_agent
+        self.course_rerank_agent = course_rerank_agent
+        self.course_feasibility_agent = course_feasibility_agent
+        self.recommendation_reason_agent = recommendation_reason_agent
         self.ab_engine = ab_engine or ABTestEngine()
 
     async def recommend(self, request: RecommendationRequest) -> RecommendationResponse:

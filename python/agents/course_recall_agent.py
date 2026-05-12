@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from typing import Any
 
 from models.schemas import Course, CourseRecallResult, StudentProfile
-from repositories import CourseRepository, CourseVectorRepository
+from repositories import CourseRecallCacheRepository, CourseRepository, CourseVectorRepository, RecallCacheKeyBuilder
 from services import build_embedding_client
 
 from .base_agent import BaseAgent
@@ -15,12 +16,15 @@ class CourseRecallAgent(BaseAgent):
         from config import get_settings
 
         settings = get_settings()
+        self.settings = settings
         super().__init__(
             name="course_recall",
             timeout=settings.agent_timeout_product_recall,
         )
         self.course_repo = CourseRepository()
         self.vector_repo = CourseVectorRepository(build_embedding_client())
+        self.cache_key_builder = RecallCacheKeyBuilder()
+        self.recall_cache = CourseRecallCacheRepository()
 
     async def _execute(self, **kwargs: Any) -> CourseRecallResult:
         profile: StudentProfile | None = kwargs.get("student_profile")
@@ -28,6 +32,33 @@ class CourseRecallAgent(BaseAgent):
         context: dict[str, Any] = kwargs.get("context", {})
         num_items: int = kwargs.get("num_items", 10)
         query = (prompt or context.get("query") or "").strip()
+        cache_key = self.cache_key_builder.build(profile=profile, prompt=query, context=context)
+
+        cached_courses = await self._cached_courses(cache_key)
+        if cached_courses:
+            candidates = self._score_candidates(cached_courses, profile, query)
+            candidates.sort(key=lambda course: course.score, reverse=True)
+            return CourseRecallResult(
+                success=True,
+                courses=candidates[: num_items * 3],
+                recall_strategies=["redis_recall_cache_hit"],
+                data={"total_candidates": len(candidates), "strategies": ["redis_recall_cache_hit"]},
+                confidence=0.88,
+            )
+
+        lock_acquired = await self.recall_cache.try_acquire_lock(cache_key)
+        if not lock_acquired:
+            cached_courses = await self._wait_for_cached_courses(cache_key)
+            if cached_courses:
+                candidates = self._score_candidates(cached_courses, profile, query)
+                candidates.sort(key=lambda course: course.score, reverse=True)
+                return CourseRecallResult(
+                    success=True,
+                    courses=candidates[: num_items * 3],
+                    recall_strategies=["redis_recall_cache_wait_hit"],
+                    data={"total_candidates": len(candidates), "strategies": ["redis_recall_cache_wait_hit"]},
+                    confidence=0.87,
+                )
 
         db_candidates = self.course_repo.fetch_courses(
             limit=max(num_items * 8, 40),
@@ -52,6 +83,8 @@ class CourseRecallAgent(BaseAgent):
         candidates = self._merge_dedup([semantic_courses, db_candidates])
         candidates = self._score_candidates(candidates, profile, query)
         candidates.sort(key=lambda course: course.score, reverse=True)
+        await self.recall_cache.set_course_ids(cache_key, [course.course_id for course in candidates])
+        strategies.append("redis_recall_cache_write" if lock_acquired else "redis_recall_cache_bypass")
 
         return CourseRecallResult(
             success=True,
@@ -60,6 +93,23 @@ class CourseRecallAgent(BaseAgent):
             data={"total_candidates": len(candidates), "strategies": strategies},
             confidence=0.86,
         )
+
+    async def _cached_courses(self, cache_key: str) -> list[Course]:
+        cached_ids = await self.recall_cache.get_course_ids(cache_key)
+        if not cached_ids:
+            return []
+        courses = self.course_repo.fetch_courses_by_ids(cached_ids)
+        if not courses:
+            return []
+        return courses
+
+    async def _wait_for_cached_courses(self, cache_key: str) -> list[Course]:
+        for _ in range(max(self.settings.course_recall_cache_wait_retries, 0)):
+            await asyncio.sleep(self.settings.course_recall_cache_wait_seconds)
+            courses = await self._cached_courses(cache_key)
+            if courses:
+                return courses
+        return []
 
     def _semantic_course_ids(self, query: str, limit: int) -> list[str]:
         try:
