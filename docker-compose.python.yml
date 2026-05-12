@@ -1,13 +1,15 @@
-version: "3.8"
-
 services:
   python-api:
     build:
       context: ./python
       dockerfile: Dockerfile
+      args:
+        PYTHON_IMAGE: ${PYTHON_BASE_IMAGE:-python:3.12-slim}
     env_file:
       - ./python/.env
     environment:
+      # 仅覆盖「容器网络相关」变量；LLM / Embedding / Milvus collection 等业务参数一律由 python/.env 决定，
+      # 避免出现「容器静悄悄走回默认 collection / 默认 provider」的现象。
       - ECOM_MYSQL_HOST=mysql
       - ECOM_MYSQL_PORT=3306
       - ECOM_MYSQL_USER=root
@@ -16,7 +18,6 @@ services:
       - ECOM_REDIS_URL=redis://redis:6379/0
       - ECOM_MILVUS_HOST=milvus
       - ECOM_MILVUS_PORT=19530
-      - ECOM_MILVUS_COLLECTION=product_embeddings
     ports:
       - "8000:8000"
     depends_on:
@@ -39,7 +40,7 @@ services:
       - mysql_python_data:/var/lib/mysql
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pecommerce123"]
       interval: 10s
       timeout: 5s
       retries: 10

@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from contextlib import asynccontextmanager
 from typing import Any
+from urllib.parse import urlparse
 
 import structlog
 import uvicorn
@@ -51,7 +52,12 @@ async def lifespan(app: FastAPI):
     global rec_graph
     _assert_llm_config()
     rec_graph = build_recommendation_graph()
-    logger.info("app.startup", model=settings.llm_model)
+    llm_parsed = urlparse(settings.llm_base_url)
+    logger.info(
+        "app.startup",
+        model=settings.llm_model,
+        llm_api_host=llm_parsed.netloc or llm_parsed.path,
+    )
     yield
     logger.info("app.shutdown")
 
@@ -71,12 +77,25 @@ app.add_middleware(
 )
 
 
+def _llm_runtime_summary() -> dict[str, Any]:
+    """便于核对灵积：若 base_url_host 不是 dashscope.aliyuncs.com，控制台不会有对应用量。"""
+    parsed = urlparse(settings.llm_base_url)
+    host = parsed.netloc or parsed.path
+    return {
+        "model": settings.llm_model,
+        "base_url_host": host,
+        "looks_like_dashscope": "dashscope.aliyuncs.com" in host,
+    }
+
+
 @app.get("/health")
 async def health():
     redis_ok = await redis_repo.ping()
     return {
         "status": "healthy",
         "model": settings.llm_model,
+        "llm": _llm_runtime_summary(),
+        "embedding_provider": settings.embedding_provider,
         "deps": {
             "mysql": mysql_repo.ping(),
             "redis": redis_ok,

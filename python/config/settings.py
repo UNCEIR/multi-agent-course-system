@@ -1,5 +1,22 @@
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# .env 默认可在「仓库根」或「python/」下；仅依赖 cwd 的 ".env" 会导致在 python/ 里起服务时读不到根目录配置，
+# 从而回落到默认 MiniMax 地址，灵积控制台无调用记录。
+_PYTHON_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = _PYTHON_ROOT.parent
+
+
+def _env_file_candidates() -> tuple[str, ...] | str:
+    paths: list[Path] = []
+    for candidate in (_REPO_ROOT / ".env", _PYTHON_ROOT / ".env"):
+        if candidate.is_file():
+            paths.append(candidate)
+    if paths:
+        return tuple(str(p) for p in paths)
+    return ".env"
 
 
 class Settings(BaseSettings):
@@ -7,11 +24,11 @@ class Settings(BaseSettings):
     debug: bool = False
 
     llm_api_key: str = ""
-    llm_base_url: str = "https://api.minimax.chat/v1"
-    llm_model: str = "MiniMax-M1"
+    llm_base_url: str = "https://llm-oe8ejw5pgtze0knw.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+    llm_model: str = "deepseek-v4-pro"
     llm_temperature: float = 0.7
     llm_max_tokens: int = 2048
-    llm_enable_thinking: bool = False
+    llm_enable_thinking: bool = True
 
     redis_url: str = "redis://localhost:6379/0"
     feature_ttl_seconds: int = 86400
@@ -35,19 +52,19 @@ class Settings(BaseSettings):
     milvus_password: str = ""
     milvus_uri: str = ""
     milvus_collection: str = "product_embeddings"
-    course_milvus_collection: str = "course_chunks"
-    milvus_dimension: int = 64
+    course_milvus_collection: str = "course_chunks_real"
+    milvus_dimension: int = 1152
     milvus_metric_type: str = "COSINE"
     milvus_index_type: str = "AUTOINDEX"
 
-    database_url: str = "sqlite:///./ecommerce.db"
-    embedding_provider: str = "local"
-    embedding_dimension: int = 64
-    embedding_base_url: str = ""
+    embedding_provider: str = "dashscope_multimodal"
+    embedding_dimension: int = 1152
+    embedding_base_url: str = "https://llm-oe8ejw5pgtze0knw.cn-beijing.maas.aliyuncs.com/api/v1"
     embedding_api_key: str = ""
-    embedding_model: str = "deterministic-local-v1"
-    embedding_batch_size: int = 32
-    embedding_timeout_seconds: float = 10.0
+    embedding_model: str = "tongyi-embedding-vision-plus-2026-03-06"
+    embedding_batch_size: int = 8
+    embedding_timeout_seconds: float = 30.0
+    httpx_verify_ssl: bool = True
 
     ab_test_enabled: bool = True
     ab_test_default_bucket_count: int = 100
@@ -69,8 +86,12 @@ class Settings(BaseSettings):
     supervisor_global_timeout: float = 30.0
 
     # 兼容约束：保留 ECOM_ 历史前缀，避免破坏现有 .env / 容器配置 / 测试环境。
-    # 本轮仅做文档与命名收敛，不修改环境变量前缀与字段默认行为。
-    model_config = {"env_file": ".env", "env_prefix": "ECOM_"}
+    # env_file 先仓库根再 python/，后者同名变量覆盖前者。
+    model_config = SettingsConfigDict(
+        env_file=_env_file_candidates(),
+        env_prefix="ECOM_",
+        extra="ignore",
+    )
 
 
 @lru_cache()

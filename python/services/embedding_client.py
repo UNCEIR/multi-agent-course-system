@@ -49,6 +49,7 @@ class DashScopeMultimodalEmbeddingClient(EmbeddingClient):
         base_url: str,
         batch_size: int,
         timeout_seconds: float,
+        verify_ssl: bool = True,
     ):
         if not api_key.strip():
             raise ValueError("ECOM_EMBEDDING_API_KEY is required for dashscope_multimodal")
@@ -60,6 +61,7 @@ class DashScopeMultimodalEmbeddingClient(EmbeddingClient):
         self.endpoint = self._build_endpoint(base_url)
         self.batch_size = max(1, batch_size)
         self.timeout_seconds = timeout_seconds
+        self.verify_ssl = verify_ssl
 
     def embed_text(self, text: str) -> list[float]:
         return self.embed_texts([text])[0]
@@ -85,7 +87,7 @@ class DashScopeMultimodalEmbeddingClient(EmbeddingClient):
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        with httpx.Client(timeout=self.timeout_seconds) as client:
+        with httpx.Client(timeout=self.timeout_seconds, verify=self.verify_ssl) as client:
             response = client.post(self.endpoint, headers=headers, json=payload)
             response.raise_for_status()
             data = response.json()
@@ -127,5 +129,6 @@ def build_embedding_client() -> EmbeddingClient:
             base_url=settings.embedding_base_url,
             batch_size=settings.embedding_batch_size,
             timeout_seconds=settings.embedding_timeout_seconds,
+            verify_ssl=settings.httpx_verify_ssl,
         )
     raise ValueError(f"Unsupported ECOM_EMBEDDING_PROVIDER: {settings.embedding_provider}")
