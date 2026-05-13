@@ -41,8 +41,8 @@ class Settings(BaseSettings):
     mysql_host: str = "localhost"
     mysql_port: int = 3306
     mysql_user: str = "root"
-    mysql_password: str = "ecommerce123"
-    mysql_database: str = "ecommerce_ai"
+    mysql_password: str = "course123"
+    mysql_database: str = "course_ai"
     mysql_pool_size: int = 10
     mysql_max_overflow: int = 20
 

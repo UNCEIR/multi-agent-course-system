@@ -13,8 +13,8 @@ services:
       - ECOM_MYSQL_HOST=mysql
       - ECOM_MYSQL_PORT=3306
       - ECOM_MYSQL_USER=root
-      - ECOM_MYSQL_PASSWORD=ecommerce123
-      - ECOM_MYSQL_DATABASE=ecommerce_ai
+      - ECOM_MYSQL_PASSWORD=course123
+      - ECOM_MYSQL_DATABASE=course_ai
       - ECOM_REDIS_URL=redis://redis:6379/0
       - ECOM_MILVUS_HOST=milvus
       - ECOM_MILVUS_PORT=19530
@@ -32,15 +32,15 @@ services:
   mysql:
     image: mysql:8.0
     environment:
-      - MYSQL_ROOT_PASSWORD=ecommerce123
-      - MYSQL_DATABASE=ecommerce_ai
+      - MYSQL_ROOT_PASSWORD=course123
+      - MYSQL_DATABASE=course_ai
     ports:
       - "3306:3306"
     volumes:
       - mysql_python_data:/var/lib/mysql
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pecommerce123"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pcourse123"]
       interval: 10s
       timeout: 5s
       retries: 10
