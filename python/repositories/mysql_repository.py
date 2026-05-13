@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import time
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy import create_engine, text
@@ -10,21 +7,6 @@ from sqlalchemy.engine import Engine
 
 from config import get_settings
 from models.schemas import Product
-
-
-# region agent log
-def _agent_debug_log(hypothesis_id: str, location: str, message: str, data: dict[str, Any]) -> None:
-    payload = {
-        "sessionId": "e14d6c",
-        "runId": "mysql-ingest-pre-fix",
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-    }
-    Path("debug-e14d6c.log").open("a", encoding="utf-8").write(json.dumps(payload, ensure_ascii=False) + "\n")
-# endregion
 
 
 class MySQLRepository:
@@ -40,19 +22,6 @@ class MySQLRepository:
         if self._engine:
             return
         settings = self.settings
-        # region agent log
-        _agent_debug_log(
-            "H1-H2-H4",
-            "python/repositories/mysql_repository.py:connect",
-            "creating mysql engine",
-            {
-                "mysql_host": settings.mysql_host,
-                "mysql_port": settings.mysql_port,
-                "mysql_database": settings.mysql_database,
-                "mysql_user": settings.mysql_user,
-            },
-        )
-        # endregion
         url = (
             f"mysql+pymysql://{settings.mysql_user}:{settings.mysql_password}"
             f"@{settings.mysql_host}:{settings.mysql_port}/{settings.mysql_database}"
@@ -70,30 +39,8 @@ class MySQLRepository:
             assert self._engine is not None
             with self._engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
-            # region agent log
-            _agent_debug_log(
-                "H1-H2-H4",
-                "python/repositories/mysql_repository.py:ping",
-                "mysql ping succeeded",
-                {"mysql_host": self.settings.mysql_host, "mysql_port": self.settings.mysql_port},
-            )
-            # endregion
             return True
-        except Exception as exc:
-            # region agent log
-            _agent_debug_log(
-                "H1-H2-H3-H4-H5",
-                "python/repositories/mysql_repository.py:ping",
-                "mysql ping failed",
-                {
-                    "error_type": type(exc).__name__,
-                    "error": str(exc),
-                    "mysql_host": self.settings.mysql_host,
-                    "mysql_port": self.settings.mysql_port,
-                    "mysql_database": self.settings.mysql_database,
-                },
-            )
-            # endregion
+        except Exception:
             self._engine = None
             return False
 

@@ -118,6 +118,58 @@ curl -sS -X POST "http://localhost:8000/api/v1/recommend" \
 }
 ```
 
+### 6. 启动前端演示视图
+
+前端位于 `frontend/`，用于演示 `/api/v1/recommend` 主推荐链路、`/api/v1/recommend/graph` 图链路，以及健康检查、指标、实验状态等观测接口。
+
+第一次运行先安装依赖：
+
+```bash
+cd frontend
+npm install
+```
+
+本地开发启动：
+
+```bash
+npm run dev
+```
+
+默认访问地址是：
+
+```text
+http://localhost:5173
+```
+
+Vite 开发服务器会把 `/api` 代理到后端 `python-api`。默认目标是 `http://localhost:8000`；如果后端不在本机 8000 端口，可在 `frontend/.env.local` 中覆盖：
+
+```env
+VITE_API_PROXY_TARGET=http://localhost:8000
+```
+
+开发结束后回到仓库根目录：
+
+```bash
+cd ..
+```
+
+### 7. 构建前端静态产物
+
+生产构建会先执行 TypeScript 检查，再通过 Vite 输出静态文件到 `frontend/dist/`：
+
+```bash
+cd frontend
+npm run build
+```
+
+本地预览构建结果：
+
+```bash
+npm run preview
+```
+
+`frontend/dist/` 是构建产物目录，通常不需要提交到 Git；重新构建时会按当前源码生成最新版本。
+
 ## 项目解决什么问题
 
 学生选公选课时，需求通常不是一个关键词能表达的。一次请求可能同时包含：
@@ -313,6 +365,16 @@ multi-agent-ecommerce-system/
 │   └── scripts/
 │       ├── ingest_course_dataset.py
 │       └── curl_recommend_payload.json
+├── frontend/
+│   ├── package.json
+│   ├── vite.config.ts
+│   └── src/
+│       ├── App.tsx
+│       ├── pages/
+│       │   ├── RecommendPage.tsx
+│       │   └── MonitorPage.tsx
+│       ├── services/api.ts
+│       └── stores/index.ts
 ├── scripts/
 │   └── init-db.sql
 └── docs/
@@ -323,7 +385,7 @@ multi-agent-ecommerce-system/
     └── resume-template.md
 ```
 
-根目录 `docker-compose.yml`、Java、Go、前端等内容属于历史或对照栈；当前公选课主推荐链路以 `python/` 和 `docker-compose.python.yml` 为准。
+根目录 `docker-compose.yml`、Java、Go 等内容属于历史或对照栈；当前公选课主推荐链路以 `python/`、`docker-compose.python.yml` 和 `frontend/` 演示视图为准。
 
 ## 常见问题
 

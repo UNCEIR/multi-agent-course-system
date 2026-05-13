@@ -58,6 +58,7 @@ class MetricsCollector:
         for name, m in self._agent_metrics.items():
             result[name] = {
                 "call_count": m.call_count,
+                "total_calls": m.call_count,
                 "success_rate": round(m.success_rate, 4),
                 "avg_latency_ms": round(m.avg_latency_ms, 1),
                 "recent_errors": m.errors[-5:],

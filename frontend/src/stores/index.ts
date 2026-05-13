@@ -1,64 +1,67 @@
 import { create } from 'zustand'
-import type { Product, CartItem, ChatMessage } from '../types'
+import type { RecommendationResponse, AgentResult } from '../types'
 
-interface CartStore {
-  items: CartItem[]
-  addItem: (product: Product, quantity?: number) => void
-  removeItem: (productId: string) => void
-  updateQuantity: (productId: string, quantity: number) => void
-  clearCart: () => void
-  totalAmount: () => number
-  totalItems: () => number
+interface RecommendJob {
+  id: string
+  label: string
+  prompt: string
+  loading: boolean
+  response: RecommendationResponse | null
+  error: string | null
+  startTime: number
 }
 
-export const useCartStore = create<CartStore>((set, get) => ({
-  items: [],
-  addItem: (product, quantity = 1) =>
-    set((state) => {
-      const existing = state.items.find((i) => i.product.product_id === product.product_id)
+interface RecommendStore {
+  jobs: RecommendJob[]
+  addJob: (id: string, label: string, prompt: string) => void
+  setLoading: (id: string, loading: boolean) => void
+  setResponse: (id: string, response: RecommendationResponse) => void
+  setError: (id: string, error: string) => void
+  removeJob: (id: string) => void
+  clearJobs: () => void
+}
+
+export const useRecommendStore = create<RecommendStore>((set) => ({
+  jobs: [],
+  addJob: (id, label, prompt) =>
+    set((s) => {
+      const existing = s.jobs.find((j) => j.id === id)
       if (existing) {
         return {
-          items: state.items.map((i) =>
-            i.product.product_id === product.product_id
-              ? { ...i, quantity: i.quantity + quantity }
-              : i
+          jobs: s.jobs.map((j) =>
+            j.id === id
+              ? { ...j, label, prompt, loading: true, response: null, error: null, startTime: Date.now() }
+              : j
           ),
         }
       }
-      return { items: [...state.items, { product, quantity }] }
+      return {
+        jobs: [...s.jobs, { id, label, prompt, loading: true, response: null, error: null, startTime: Date.now() }],
+      }
     }),
-  removeItem: (productId) =>
-    set((state) => ({ items: state.items.filter((i) => i.product.product_id !== productId) })),
-  updateQuantity: (productId, quantity) =>
-    set((state) => ({
-      items: quantity <= 0
-        ? state.items.filter((i) => i.product.product_id !== productId)
-        : state.items.map((i) =>
-            i.product.product_id === productId ? { ...i, quantity } : i
-          ),
+  setLoading: (id, loading) =>
+    set((s) => ({
+      jobs: s.jobs.map((j) => (j.id === id ? { ...j, loading } : j)),
     })),
-  clearCart: () => set({ items: [] }),
-  totalAmount: () => get().items.reduce((sum, i) => sum + i.product.price * i.quantity, 0),
-  totalItems: () => get().items.reduce((sum, i) => sum + i.quantity, 0),
+  setResponse: (id, response) =>
+    set((s) => ({
+      jobs: s.jobs.map((j) => (j.id === id ? { ...j, loading: false, response, error: null } : j)),
+    })),
+  setError: (id, error) =>
+    set((s) => ({
+      jobs: s.jobs.map((j) => (j.id === id ? { ...j, loading: false, error } : j)),
+    })),
+  removeJob: (id) =>
+    set((s) => ({ jobs: s.jobs.filter((j) => j.id !== id) })),
+  clearJobs: () => set({ jobs: [] }),
 }))
 
-interface ChatbotStore {
-  isOpen: boolean
-  messages: ChatMessage[]
-  toggle: () => void
-  addMessage: (msg: ChatMessage) => void
+interface ActiveJobStore {
+  activeId: string | null
+  setActive: (id: string | null) => void
 }
 
-export const useChatbotStore = create<ChatbotStore>((set) => ({
-  isOpen: false,
-  messages: [
-    {
-      id: '0',
-      role: 'assistant',
-      content: 'Hi! I\'m your AI shopping assistant. I can help you find products, check stock, place orders, and give personalized recommendations. What can I help with today?',
-      timestamp: Date.now(),
-    },
-  ],
-  toggle: () => set((s) => ({ isOpen: !s.isOpen })),
-  addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
+export const useActiveJobStore = create<ActiveJobStore>((set) => ({
+  activeId: null,
+  setActive: (id) => set({ activeId: id }),
 }))

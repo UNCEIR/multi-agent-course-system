@@ -1,79 +1,107 @@
-export interface Product {
-  product_id: string
-  name: string
-  category: string
-  price: number
+export interface Course {
+  course_id: string
+  course_name: string
+  teacher: string
+  credits: number
+  course_type: string
+  course_category: string
+  domain: string
+  campus: string
+  time_slot: string
+  location: string
+  capacity: number
+  current_enrolled: number
+  current_enrollment_ratio: number
+  popularity_level: string
+  rush_advice: string
+  grade_limit: string
+  major_limit: string
+  prerequisite: string
   description: string
-  brand: string
-  seller_id: string
-  stock: number
+  assessment: string
+  difficulty: string
+  workload: string
+  grade_friendly: string
+  attendance_required: string
+  has_exam: string
+  group_work_required: string
+  suitable_for: string
   tags: string[]
   score: number
-  image_url: string
+  match_reasons: string[]
 }
 
-export interface CartItem {
-  product: Product
-  quantity: number
-}
-
-export interface UserProfile {
-  user_id: string
-  age?: number
-  gender?: string
-  city?: string
-  segments: string[]
-  preferred_categories: string[]
-  price_range: [number, number]
-  recent_views: string[]
-  recent_purchases: string[]
-  rfm_score: Record<string, number>
-  real_time_tags: Record<string, unknown>
-}
-
-export interface MarketingCopy {
-  product_id: string
-  copy: string
+export interface AgentResult {
+  agent_name: string
+  success: boolean
+  latency_ms: number
+  error: string | null
+  data: Record<string, unknown>
+  confidence: number
 }
 
 export interface RecommendationRequest {
   user_id: string
-  scene: string
-  num_items: number
-  context: Record<string, unknown>
+  scene?: string
+  num_items?: number
+  context?: Record<string, unknown>
+  query?: string
+  prompt?: string
+  device_type?: string
 }
 
 export interface RecommendationResponse {
   request_id: string
   user_id: string
-  products: Product[]
-  marketing_copies: MarketingCopy[]
+  courses: Course[]
+  recommendation_reasons: Array<Record<string, string>>
+  selection_warnings: Array<Record<string, unknown>>
   experiment_group: string
+  agent_results: Record<string, AgentResult>
+  agent_latencies: Record<string, number>
   total_latency_ms: number
   timestamp: string
 }
 
-export interface OrderItem {
-  product_id: string
+export interface HealthResponse {
+  status: string
+  model: string
+  llm: {
+    model: string
+    base_url_host: string
+    looks_like_dashscope: boolean
+  }
+  embedding_provider: string
+  deps: {
+    mysql: boolean
+    redis: boolean
+    milvus: boolean
+  }
+}
+
+export interface ExperimentGroup {
   name: string
-  price: number
-  quantity: number
+  weight: number
+  config: Record<string, unknown>
+  successes: number
+  failures: number
 }
 
-export interface Order {
-  order_id: string
-  user_id: string
-  items: OrderItem[]
-  total_amount: number
-  status: 'pending' | 'paid' | 'shipped' | 'delivered' | 'cancelled'
-  shipping_address: string
-  created_at: string
+export interface ExperimentInfo {
+  name: string
+  enabled: boolean
+  groups: ExperimentGroup[]
+  stats: Record<string, unknown>
 }
 
-export interface ChatMessage {
+export interface MetricsResponse {
+  agents: Record<string, { total_calls: number; success_rate: number; avg_latency_ms: number }>
+  business: Record<string, unknown>
+}
+
+export interface PresetQuery {
   id: string
-  role: 'user' | 'assistant' | 'system'
-  content: string
-  products?: Product[]
-  timestamp: number
+  label: string
+  icon: string
+  prompt: string
 }

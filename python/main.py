@@ -6,7 +6,8 @@ Endpoints:
   POST /api/v1/recommend/graph    - 通过LangGraph pipeline推荐公选课
   GET  /api/v1/experiments        - 查看A/B实验状态
   GET  /api/v1/metrics            - 查看系统监控指标
-  GET  /health                    - 健康检查
+  GET  /api/v1/health             - 健康检查（与前端 /api 前缀一致）
+  GET  /health                    - 健康检查（运维探活常用路径）
 """
 
 from __future__ import annotations
@@ -88,8 +89,7 @@ def _llm_runtime_summary() -> dict[str, Any]:
     }
 
 
-@app.get("/health")
-async def health():
+async def _health_payload() -> dict[str, Any]:
     redis_ok = await redis_repo.ping()
     return {
         "status": "healthy",
@@ -102,6 +102,16 @@ async def health():
             "milvus": course_vector_repo.ping(),
         },
     }
+
+
+@app.get("/health")
+async def health():
+    return await _health_payload()
+
+
+@app.get("/api/v1/health")
+async def health_api_v1():
+    return await _health_payload()
 
 
 @app.post("/api/v1/recommend", response_model=RecommendationResponse)
