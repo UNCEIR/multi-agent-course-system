@@ -271,7 +271,7 @@ export default function MonitorPage() {
                     size="small"
                     columns={[
                       { title: '实验组', dataIndex: 'name', key: 'name' },
-                      { title: '权重', dataIndex: 'weight', key: 'weight', render: (v: number) => `${(v * 100).toFixed(0)}%` },
+                      { title: '权重', dataIndex: 'weight', key: 'weight', render: (v: number) => `${v}%` },
                       {
                         title: '成功率',
                         key: 'rate',

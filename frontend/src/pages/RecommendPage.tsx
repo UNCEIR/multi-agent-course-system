@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback } from 'react'
 import {
   Card,
   Input,
@@ -48,7 +48,7 @@ import {
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import { api } from '../services/api'
-import { useRecommendStore, useActiveJobStore } from '../stores'
+import { useRecommendStore, useActiveJobStore, useInputStore } from '../stores'
 import type { Course, RecommendationResponse, PresetQuery } from '../types'
 
 const { TextArea } = Input
@@ -109,8 +109,11 @@ const DIFFICULTY_COLORS: Record<string, string> = {
 }
 
 export default function RecommendPage() {
-  const [prompt, setPrompt] = useState('')
-  const [numItems, setNumItems] = useState(5)
+  const prompt = useInputStore((s) => s.prompt)
+  const numItems = useInputStore((s) => s.numItems)
+  const setPrompt = useInputStore((s) => s.setPrompt)
+  const setNumItems = useInputStore((s) => s.setNumItems)
+
   const [activeTab, setActiveTab] = useState('single')
 
   const { jobs, addJob, setResponse, setError } = useRecommendStore()
@@ -146,7 +149,7 @@ export default function RecommendPage() {
       setError(uid, e instanceof Error ? e.message : '请求失败')
       message.error(e instanceof Error ? e.message : '推荐请求失败')
     }
-  }, [numItems, addJob, setActive, setResponse, setError])
+  }, [numItems, addJob, setActive, setResponse, setError, setPrompt])
 
   const handleCompareAll = useCallback(async () => {
     setActiveTab('compare')

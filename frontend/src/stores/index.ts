@@ -65,3 +65,17 @@ export const useActiveJobStore = create<ActiveJobStore>((set) => ({
   activeId: null,
   setActive: (id) => set({ activeId: id }),
 }))
+
+interface InputStore {
+  prompt: string
+  numItems: number
+  setPrompt: (v: string) => void
+  setNumItems: (v: number) => void
+}
+
+export const useInputStore = create<InputStore>((set) => ({
+  prompt: '',
+  numItems: 5,
+  setPrompt: (prompt) => set({ prompt }),
+  setNumItems: (numItems) => set({ numItems }),
+}))
