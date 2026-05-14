@@ -1,20 +1,11 @@
 """
-Supervisor编排器 — 并行分发 + 聚合模式
+公选课推荐 Supervisor 编排器
 
-                    ┌──────────────┐
-                    │  Supervisor   │
-                    └──────┬───────┘
-           ┌───────┬───────┼───────┬────────┐
-           ▼       ▼       ▼       ▼        │
-      UserProfile  ProdRec  MktCopy  Inventory │
-           │       │       │       │        │
-           └───────┴───────┴───────┘        │
-                    │                        │
-                    ▼                        │
-               Aggregator ◄─────────────────┘
-                    │
-                    ▼
-              A/B Test Engine
+用户输入自然语言选课需求后，Supervisor 负责并行调度专业 Agent：
+
+Phase 1: 学生画像 Agent 与课程召回 Agent 并行
+Phase 2: 课程重排 Agent 与选课可行性 Agent 并行
+Phase 3: 推荐理由 Agent 串行生成可解释建议
 """
 
 from __future__ import annotations
@@ -22,112 +13,177 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING
 
 import structlog
 
-from agents import (
-    InventoryAgent,
-    MarketingCopyAgent,
-    ProductRecAgent,
-    UserProfileAgent,
-)
-from models.schemas import (
-    Product,
-    RecommendationRequest,
-    RecommendationResponse,
-    UserProfile,
-)
+from models.schemas import Course, RecommendationRequest, RecommendationResponse, StudentProfile
 from services.ab_test import ABTestEngine
 
 logger = structlog.get_logger()
 
+if TYPE_CHECKING:
+    from agents import (
+        CourseFeasibilityAgent,
+        CourseRecallAgent,
+        CourseRerankAgent,
+        RecommendationReasonAgent,
+        StudentProfileAgent,
+    )
+
 
 class SupervisorOrchestrator:
-    """Coordinates four agents in parallel-then-aggregate pattern."""
+    """Coordinates public elective course agents in a parallel-then-aggregate pattern."""
 
-    def __init__(self, ab_engine: ABTestEngine | None = None):
-        self.user_profile_agent = UserProfileAgent()
-        self.product_rec_agent = ProductRecAgent()
-        self.marketing_copy_agent = MarketingCopyAgent()
-        self.inventory_agent = InventoryAgent()
+    def __init__(
+        self,
+        ab_engine: ABTestEngine | None = None,
+        student_profile_agent: StudentProfileAgent | None = None,
+        course_recall_agent: CourseRecallAgent | None = None,
+        course_rerank_agent: CourseRerankAgent | None = None,
+        course_feasibility_agent: CourseFeasibilityAgent | None = None,
+        recommendation_reason_agent: RecommendationReasonAgent | None = None,
+    ):
+        if student_profile_agent is None:
+            from agents import StudentProfileAgent
+
+            student_profile_agent = StudentProfileAgent()
+        if course_recall_agent is None:
+            from agents import CourseRecallAgent
+
+            course_recall_agent = CourseRecallAgent()
+        if course_rerank_agent is None:
+            from agents import CourseRerankAgent
+
+            course_rerank_agent = CourseRerankAgent()
+        if course_feasibility_agent is None:
+            from agents import CourseFeasibilityAgent
+
+            course_feasibility_agent = CourseFeasibilityAgent()
+        if recommendation_reason_agent is None:
+            from agents import RecommendationReasonAgent
+
+            recommendation_reason_agent = RecommendationReasonAgent()
+
+        self.student_profile_agent = student_profile_agent
+        self.course_recall_agent = course_recall_agent
+        self.course_rerank_agent = course_rerank_agent
+        self.course_feasibility_agent = course_feasibility_agent
+        self.recommendation_reason_agent = recommendation_reason_agent
         self.ab_engine = ab_engine or ABTestEngine()
 
     async def recommend(self, request: RecommendationRequest) -> RecommendationResponse:
         request_id = str(uuid.uuid4())
         start = time.perf_counter()
+        prompt = self._request_prompt(request)
 
         logger.info(
-            "supervisor.start",
+            "course_supervisor.start",
             request_id=request_id,
             user_id=request.user_id,
             scene=request.scene,
+            prompt=prompt[:80],
         )
 
         experiment = self.ab_engine.assign(request.user_id)
 
-        # Phase 1: parallel — user profile + product recall
-        profile_result, rec_result = await asyncio.gather(
-            self.user_profile_agent.run(
+        # Phase 1: 学生画像与课程召回并行。召回先用原始 prompt 和 context 做宽召回。
+        profile_result, recall_result = await asyncio.gather(
+            self.student_profile_agent.run(
                 user_id=request.user_id,
+                prompt=prompt,
                 context=request.context,
             ),
-            self.product_rec_agent.run(
-                user_profile=None,
+            self.course_recall_agent.run(
+                student_profile=None,
+                prompt=prompt,
+                context=request.context,
                 num_items=request.num_items * 2,
             ),
         )
 
-        user_profile: UserProfile | None = getattr(profile_result, "profile", None)
-        raw_products: list[Product] = getattr(rec_result, "products", [])
+        student_profile: StudentProfile | None = getattr(profile_result, "profile", None)
+        raw_courses: list[Course] = getattr(recall_result, "courses", [])
 
-        # Phase 2: parallel — re-rank with profile + inventory check + copy generation
-        rerank_task = self.product_rec_agent.run(
-            user_profile=user_profile,
-            num_items=request.num_items,
+        # 如果画像提取出了强约束，再补一次轻量结构化召回，避免只靠宽召回漏掉课程。
+        if student_profile:
+            refined_result = await self.course_recall_agent.run(
+                student_profile=student_profile,
+                prompt=prompt,
+                context=request.context,
+                num_items=request.num_items * 2,
+            )
+            raw_courses = self._merge_courses(
+                raw_courses,
+                getattr(refined_result, "courses", []),
+            )
+            recall_result.data["refined_candidate_count"] = len(raw_courses)
+
+        # Phase 2: 课程重排与选课可行性检查并行。
+        rerank_result, feasibility_result = await asyncio.gather(
+            self.course_rerank_agent.run(
+                student_profile=student_profile,
+                candidates=raw_courses,
+                num_items=request.num_items,
+            ),
+            self.course_feasibility_agent.run(
+                student_profile=student_profile,
+                courses=raw_courses,
+                context=request.context,
+            ),
         )
-        inventory_task = self.inventory_agent.run(products=raw_products)
 
-        rerank_result, inventory_result = await asyncio.gather(
-            rerank_task, inventory_task
+        ranked_courses: list[Course] = getattr(rerank_result, "courses", raw_courses)
+        available_ids = set(getattr(feasibility_result, "available_courses", []))
+        final_courses = [course for course in ranked_courses if course.course_id in available_ids]
+        final_courses = final_courses[: request.num_items]
+        warnings = getattr(feasibility_result, "selection_warnings", [])
+
+        # Phase 3: 面向学生生成推荐理由和选课提醒。
+        reason_result = await self.recommendation_reason_agent.run(
+            student_profile=student_profile,
+            courses=final_courses,
+            warnings=warnings,
         )
-
-        ranked_products: list[Product] = getattr(rerank_result, "products", raw_products)
-
-        available_ids = set(getattr(inventory_result, "available_products", []))
-        final_products = [p for p in ranked_products if p.product_id in available_ids]
-        if not final_products:
-            final_products = ranked_products[:request.num_items]
-        final_products = final_products[:request.num_items]
-
-        # Phase 3: marketing copy generation with final product list
-        copy_result = await self.marketing_copy_agent.run(
-            user_profile=user_profile,
-            products=final_products,
-        )
-        copies = getattr(copy_result, "copies", [])
+        reasons = getattr(reason_result, "reasons", [])
 
         total_latency = (time.perf_counter() - start) * 1000
-
         logger.info(
-            "supervisor.complete",
+            "course_supervisor.complete",
             request_id=request_id,
             total_latency_ms=round(total_latency, 1),
-            product_count=len(final_products),
-            copy_count=len(copies),
+            course_count=len(final_courses),
+            warning_count=len(warnings),
         )
 
         return RecommendationResponse(
             request_id=request_id,
             user_id=request.user_id,
-            products=final_products,
-            marketing_copies=copies,
+            courses=final_courses,
+            recommendation_reasons=reasons,
+            selection_warnings=warnings,
             experiment_group=experiment.get("group", "control"),
             agent_results={
-                "user_profile": profile_result,
-                "product_rec": rerank_result,
-                "marketing_copy": copy_result,
-                "inventory": inventory_result,
+                "student_profile": profile_result,
+                "course_recall": recall_result,
+                "course_rerank": rerank_result,
+                "course_feasibility": feasibility_result,
+                "recommendation_reason": reason_result,
             },
             total_latency_ms=total_latency,
         )
+
+    @staticmethod
+    def _request_prompt(request: RecommendationRequest) -> str:
+        return (request.prompt or request.query or request.context.get("query") or "").strip()
+
+    @staticmethod
+    def _merge_courses(*course_lists: list[Course]) -> list[Course]:
+        seen: set[str] = set()
+        merged: list[Course] = []
+        for courses in course_lists:
+            for course in courses:
+                if course.course_id not in seen:
+                    seen.add(course.course_id)
+                    merged.append(course)
+        return merged

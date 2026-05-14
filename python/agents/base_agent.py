@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
+from inspect import isawaitable
 from typing import Any
 
 import structlog
@@ -19,6 +20,7 @@ class BaseAgent(ABC):
         self.max_retries = max_retries
         self._call_count = 0
         self._error_count = 0
+        self.logger = structlog.get_logger()
 
     @abstractmethod
     async def _execute(self, **kwargs: Any) -> AgentResult:
@@ -50,7 +52,10 @@ class BaseAgent(ABC):
             reraise=True,
         )
         async def _inner():
-            return await self._execute(**kwargs)
+            result = await self._execute(**kwargs)
+            if isawaitable(result):
+                result = await result
+            return result
 
         return await _inner()
 

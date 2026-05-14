@@ -28,6 +28,9 @@ isProject: false
 
 # 多Agent电商推荐与营销系统 — 从零到面试全攻略
 
+> Legacy 文档：本文件用于保留历史电商推荐项目规划，不代表当前主推荐 API。
+> 当前主线请参考 [README](../README.md)、[面试讲解文档](./interview-guide.md) 和 [课程改造设计](./plans/2026-05-11-course-agent-redesign.md)。
+
 ## 一、调研结论：企业级多Agent项目参考
 
 ### 1.1 GitHub 顶级参考项目

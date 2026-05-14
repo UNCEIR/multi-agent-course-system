@@ -89,6 +89,24 @@ class UserProfile(BaseModel):
     real_time_tags: dict[str, Any] = Field(default_factory=dict)
 
 
+class StudentProfile(BaseModel):
+    student_id: str
+    raw_prompt: str = ""
+    interests: list[str] = Field(default_factory=list)
+    preferred_domains: list[str] = Field(default_factory=list)
+    preferred_categories: list[str] = Field(default_factory=list)
+    preferred_campus: list[str] = Field(default_factory=list)
+    preferred_time_slots: list[str] = Field(default_factory=list)
+    avoid_time_slots: list[str] = Field(default_factory=list)
+    difficulty_preference: str = ""
+    workload_preference: str = ""
+    grade_friendly_preference: str = ""
+    exam_preference: str = ""
+    group_work_preference: str = ""
+    constraints: list[str] = Field(default_factory=list)
+    real_time_tags: dict[str, Any] = Field(default_factory=dict)
+
+
 class Product(BaseModel):
     product_id: str
     name: str
@@ -108,18 +126,55 @@ class Product(BaseModel):
     cost_price: float = 0.0
 
 
+class Course(BaseModel):
+    course_id: str
+    course_name: str
+    teacher: str = ""
+    credits: float = 0.0
+    course_type: str = "公共选修课"
+    course_category: str = ""
+    domain: str = ""
+    campus: str = ""
+    time_slot: str = ""
+    location: str = ""
+    capacity: int = 0
+    current_enrolled: int = 0
+    current_enrollment_ratio: float = 0.0
+    popularity_level: str = ""
+    rush_advice: str = ""
+    grade_limit: str = ""
+    major_limit: str = ""
+    prerequisite: str = ""
+    description: str = ""
+    assessment: str = ""
+    difficulty: str = ""
+    workload: str = ""
+    grade_friendly: str = ""
+    attendance_required: str = ""
+    has_exam: str = ""
+    group_work_required: str = ""
+    suitable_for: str = ""
+    tags: list[str] = Field(default_factory=list)
+    score: float = 0.0
+    match_reasons: list[str] = Field(default_factory=list)
+
+
 class RecommendationRequest(BaseModel):
     user_id: str
-    scene: str = "homepage"
+    scene: str = "course_selection"
     num_items: int = 10
     context: dict[str, Any] = Field(default_factory=dict)
     query: str = ""
+    prompt: str = ""
     device_type: str = "web"
 
 
 class RecommendationResponse(BaseModel):
     request_id: str
     user_id: str
+    courses: list[Course] = Field(default_factory=list)
+    recommendation_reasons: list[dict[str, str]] = Field(default_factory=list)
+    selection_warnings: list[dict[str, Any]] = Field(default_factory=list)
     products: list[Product] = Field(default_factory=list)
     marketing_copies: list[dict[str, str]] = Field(default_factory=list)
     review_summaries: dict[str, str] = Field(default_factory=dict)
@@ -148,6 +203,11 @@ class UserProfileResult(AgentResult):
     profile: UserProfile | None = None
 
 
+class StudentProfileResult(AgentResult):
+    agent_name: str = "student_profile"
+    profile: StudentProfile | None = None
+
+
 class IntentRecognitionResult(AgentResult):
     agent_name: str = "intent_router"
     intent: IntentType = IntentType.BROWSE
@@ -161,6 +221,12 @@ class IntentRecognitionResult(AgentResult):
 class ProductRecallResult(AgentResult):
     agent_name: str = "product_recall"
     products: list[Product] = Field(default_factory=list)
+    recall_strategies: list[str] = Field(default_factory=list)
+
+
+class CourseRecallResult(AgentResult):
+    agent_name: str = "course_recall"
+    courses: list[Course] = Field(default_factory=list)
     recall_strategies: list[str] = Field(default_factory=list)
 
 
@@ -182,11 +248,23 @@ class ProductRerankResult(AgentResult):
     rerank_strategy: str = ""
 
 
+class CourseRerankResult(AgentResult):
+    agent_name: str = "course_rerank"
+    courses: list[Course] = Field(default_factory=list)
+    rerank_strategy: str = ""
+
+
 class MarketingCopyResult(AgentResult):
     agent_name: str = "marketing_copy"
     copies: list[dict[str, str]] = Field(default_factory=list)
     prompt_template_used: str = ""
     copy_style: CopyStyle = CopyStyle.FORMAL
+
+
+class RecommendationReasonResult(AgentResult):
+    agent_name: str = "recommendation_reason"
+    reasons: list[dict[str, str]] = Field(default_factory=list)
+    prompt_template_used: str = "course_explanation"
 
 
 class ReviewSummaryResult(AgentResult):
@@ -207,6 +285,15 @@ class InventoryResult(AgentResult):
     low_stock_alerts: list[dict[str, Any]] = Field(default_factory=list)
     purchase_limits: dict[str, int] = Field(default_factory=dict)
     inventory_levels: dict[str, InventoryLevel] = Field(default_factory=dict)
+    filtered_products: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class CourseFeasibilityResult(AgentResult):
+    agent_name: str = "course_feasibility"
+    available_courses: list[str] = Field(default_factory=list)
+    selection_warnings: list[dict[str, Any]] = Field(default_factory=list)
+    filtered_courses: list[dict[str, Any]] = Field(default_factory=list)
+    priority_advice: dict[str, str] = Field(default_factory=dict)
 
 
 class PriceOptimizationResult(AgentResult):

@@ -1,0 +1,9 @@
+{
+  "user_id": "curl_test_user",
+  "scene": "course_selection",
+  "num_items": 3,
+  "prompt": "想找不考试、作业少的人文艺术公选课，东校区优先",
+  "context": {
+    "avoid_time_slots": ["周三第9-10节"]
+  }
+}
