@@ -70,6 +70,9 @@ def main() -> None:
         time.sleep(2.0)
         print(f"  upserted {total}/{len(chunks)} chunks")
 
+        logger.info(f"  upserted {total}/{len(chunks)} chunks")
+        
+
     vector_repo._collection.flush()
     print(f"Done. Milvus now has {vector_repo._collection.num_entities} vectors.")
 

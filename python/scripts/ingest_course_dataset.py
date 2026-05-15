@@ -202,6 +202,9 @@ def _render_chunk(row: dict[str, Any], fields: list[str]) -> str:
         "avg_history_enrollment_ratio": "历年平均选课比例",
     }
     lines = [f"{labels.get(field, field)}：{row.get(field, '')}" for field in fields if row.get(field, "")]
+
+    logger.info(f"  rendered chunk: {lines}")
+    
     return "\n".join(lines)
 
 
