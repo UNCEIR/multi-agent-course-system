@@ -316,9 +316,6 @@ LLM 重排的约束：
 硬冲突逻辑 `_hard_conflicts()`：
 
 - `avoid_time_slots` 命中课程 `time_slot`
-- 学生年级不满足 `grade_limit`
-- 学生专业不满足 `major_limit`
-- 缺少 `prerequisite` 要求
 
 风险提醒 `_warnings()`：
 

@@ -64,20 +64,6 @@ class CourseFeasibilityAgent(BaseAgent):
             if avoid and avoid in course.time_slot:
                 reasons.append(f"上课时间命中避开时段：{avoid}")
 
-        student_grade = str(context.get("grade", ""))
-        if student_grade and course.grade_limit and course.grade_limit != "无限制":
-            if student_grade not in course.grade_limit:
-                reasons.append(f"年级限制不匹配：{course.grade_limit}")
-
-        student_major = str(context.get("major", ""))
-        if student_major and course.major_limit and course.major_limit != "无限制":
-            if student_major not in course.major_limit:
-                reasons.append(f"专业限制不匹配：{course.major_limit}")
-
-        if course.prerequisite and course.prerequisite not in ("无", "无限制"):
-            completed = " ".join(context.get("completed_courses", []))
-            if course.prerequisite not in completed:
-                reasons.append(f"可能缺少先修要求：{course.prerequisite}")
         return reasons
 
     def _warnings(self, course: Course, profile: StudentProfile | None) -> list[dict[str, Any]]:
@@ -103,7 +89,7 @@ class CourseFeasibilityAgent(BaseAgent):
                 }
             )
 
-        if profile and profile.exam_preference == "不考试" and course.has_exam == "是":
+        if profile and profile.exam_preference == "不考试" and course.has_exam == 1:
             warnings.append(
                 {
                     "course_id": course.course_id,
@@ -113,7 +99,7 @@ class CourseFeasibilityAgent(BaseAgent):
                     "message": "该课程可能有考试，与“不考试”偏好不完全一致。",
                 }
             )
-        if profile and profile.group_work_preference == "不小组" and course.group_work_required == "是":
+        if profile and profile.group_work_preference == "不小组" and course.group_work_required == 1:
             warnings.append(
                 {
                     "course_id": course.course_id,
@@ -127,7 +113,7 @@ class CourseFeasibilityAgent(BaseAgent):
 
     @staticmethod
     def _priority_advice(course: Course) -> str:
-        if course.popularity_level == "爆满" or (
+        if course.popularity_level >= 4 or (
             course.capacity > 0 and course.current_enrolled >= course.capacity
         ):
             return "冲刺优先级高：开选后优先抢，建议同时准备 1-2 门替代课。"

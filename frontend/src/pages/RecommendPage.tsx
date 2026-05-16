@@ -712,12 +712,12 @@ function CourseCard({ course }: { course: Course }) {
               给分 {course.grade_friendly}
             </Tag>
           )}
-          {course.has_exam && (
+          {(course.has_exam === 0 || course.has_exam === 1) && (
             <Tag style={{ fontSize: 10, border: 'none',
-              background: course.has_exam === '是' ? '#fef2f2' : '#f0faf4',
-              color: course.has_exam === '是' ? '#991b1b' : '#166534',
+              background: course.has_exam === 1 ? '#fef2f2' : '#f0faf4',
+              color: course.has_exam === 1 ? '#991b1b' : '#166534',
             }}>
-              {course.has_exam === '是' ? '有考试' : '无考试'}
+              {course.has_exam === 1 ? '有考试' : '无考试'}
             </Tag>
           )}
         </Space>

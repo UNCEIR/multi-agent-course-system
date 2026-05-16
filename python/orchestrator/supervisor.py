@@ -82,7 +82,8 @@ class SupervisorOrchestrator:
             request_id=request_id,
             user_id=request.user_id,
             scene=request.scene,
-            prompt=prompt[:80],
+            prompt_chars=len(prompt),
+            context_keys=sorted(request.context.keys()),
         )
 
         experiment = self.ab_engine.assign(request.user_id)
@@ -104,6 +105,13 @@ class SupervisorOrchestrator:
 
         student_profile: StudentProfile | None = getattr(profile_result, "profile", None)
         raw_courses: list[Course] = getattr(recall_result, "courses", [])
+        logger.info(
+            "course_supervisor.phase1_complete",
+            request_id=request_id,
+            profile_extracted=student_profile is not None,
+            wide_recall_count=len(raw_courses),
+            recall_success=getattr(recall_result, "success", False),
+        )
 
         # 如果画像提取出了强约束，再补一次轻量结构化召回，避免只靠宽召回漏掉课程。
         if student_profile:
@@ -118,6 +126,12 @@ class SupervisorOrchestrator:
                 getattr(refined_result, "courses", []),
             )
             recall_result.data["refined_candidate_count"] = len(raw_courses)
+            logger.info(
+                "course_supervisor.refined_recall_complete",
+                request_id=request_id,
+                refined_count=len(getattr(refined_result, "courses", [])),
+                merged_candidate_count=len(raw_courses),
+            )
 
         # Phase 2: 课程重排与选课可行性检查并行。
         rerank_result, feasibility_result = await asyncio.gather(
@@ -138,6 +152,14 @@ class SupervisorOrchestrator:
         final_courses = [course for course in ranked_courses if course.course_id in available_ids]
         final_courses = final_courses[: request.num_items]
         warnings = getattr(feasibility_result, "selection_warnings", [])
+        logger.info(
+            "course_supervisor.phase2_complete",
+            request_id=request_id,
+            ranked_count=len(ranked_courses),
+            feasibility_count=len(available_ids),
+            warning_count=len(warnings),
+            final_count=len(final_courses),
+        )
 
         # Phase 3: 面向学生生成推荐理由和选课提醒。
         reason_result = await self.recommendation_reason_agent.run(
@@ -146,6 +168,11 @@ class SupervisorOrchestrator:
             warnings=warnings,
         )
         reasons = getattr(reason_result, "reasons", [])
+        logger.info(
+            "course_supervisor.phase3_complete",
+            request_id=request_id,
+            reason_count=len(reasons),
+        )
 
         total_latency = (time.perf_counter() - start) * 1000
         logger.info(

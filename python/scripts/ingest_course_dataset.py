@@ -96,7 +96,6 @@ def _build_chunks(row: dict[str, Any]) -> list[dict[str, Any]]:
             "basic",
             [
                 "course_name",
-                "original_course_name",
                 "teacher",
                 "credits",
                 "course_type",
@@ -125,7 +124,6 @@ def _build_chunks(row: dict[str, Any]) -> list[dict[str, Any]]:
                 "difficulty",
                 "workload",
                 "grade_friendly",
-                "attendance_required",
                 "has_exam",
                 "group_work_required",
             ],
@@ -133,9 +131,6 @@ def _build_chunks(row: dict[str, Any]) -> list[dict[str, Any]]:
         (
             "audience_tags",
             [
-                "grade_limit",
-                "major_limit",
-                "prerequisite",
                 "suitable_for",
                 "tags",
                 "avg_history_enrollment_ratio",
@@ -172,7 +167,6 @@ def _build_chunks(row: dict[str, Any]) -> list[dict[str, Any]]:
 def _render_chunk(row: dict[str, Any], fields: list[str]) -> str:
     labels = {
         "course_name": "课程名称",
-        "original_course_name": "原始课程名",
         "teacher": "教师",
         "credits": "学分",
         "course_type": "课程类型",
@@ -191,21 +185,24 @@ def _render_chunk(row: dict[str, Any], fields: list[str]) -> str:
         "difficulty": "难度",
         "workload": "作业量",
         "grade_friendly": "给分友好度",
-        "attendance_required": "考勤要求",
         "has_exam": "是否考试",
         "group_work_required": "是否小组作业",
-        "grade_limit": "年级限制",
-        "major_limit": "专业限制",
-        "prerequisite": "先修要求",
         "suitable_for": "适合人群",
         "tags": "标签",
         "avg_history_enrollment_ratio": "历年平均选课比例",
     }
-    lines = [f"{labels.get(field, field)}：{row.get(field, '')}" for field in fields if row.get(field, "")]
-
-    logger.info(f"  rendered chunk: {lines}")
-    
+    lines = [
+        f"{labels.get(field, field)}：{_display_value(field, value)}"
+        for field in fields
+        if (value := row.get(field, "")) is not None and str(value) != ""
+    ]
     return "\n".join(lines)
+
+
+def _display_value(field: str, value: Any) -> Any:
+    if field in {"has_exam", "group_work_required"}:
+        return "有" if str(value).strip() in {"1", "是", "有", "true", "True"} else "无"
+    return value
 
 
 if __name__ == "__main__":

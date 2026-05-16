@@ -52,7 +52,7 @@ async def test_supervisor_filters_time_conflict_and_returns_course_reasons():
         time_slot="周二第5-6节",
         capacity=120,
         current_enrolled=80,
-        has_exam="否",
+        has_exam=0,
         workload="低",
         grade_friendly="高",
     )
@@ -64,7 +64,7 @@ async def test_supervisor_filters_time_conflict_and_returns_course_reasons():
         time_slot="周三第9-10节",
         capacity=100,
         current_enrolled=60,
-        has_exam="否",
+        has_exam=0,
         workload="低",
         grade_friendly="高",
     )
@@ -119,7 +119,7 @@ async def test_supervisor_pipeline_uses_cached_recall_candidates():
         course_name="电影艺术赏析",
         domain="人文艺术",
         campus="东校区",
-        has_exam="否",
+        has_exam=0,
         workload="低",
         grade_friendly="高",
     )
