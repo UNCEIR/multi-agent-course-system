@@ -21,10 +21,11 @@ RERANK_PROMPT = """你是学校教务系统的公选课推荐排序专家。请�
 
 排序原则:
 1. 优先满足学生明确提出的兴趣、校区、时间、考核方式和学习负担要求。
-2. 对爆满课程不要直接剔除，但要降低稳定性分数，除非它与兴趣高度匹配。
-3. 对不考试、作业少、给分友好等偏好要结合课程字段判断，不要凭空臆测。
-4. 尽量保证课程领域多样性，避免结果全是同一领域。
-5. 只允许输出候选课程中存在的课程ID。
+2. popularity_level 为整数编码：4=爆满，3=热门，2=正常偏热，1=正常，0=冷门。
+3. 对 popularity_level=4 的爆满课程不要直接剔除，但要降低稳定性分数，除非它与兴趣高度匹配。
+4. 对不考试、作业少、给分友好等偏好要结合课程字段判断，不要凭空臆测。
+5. 尽量保证课程领域多样性，避免结果全是同一领域。
+6. 只允许输出候选课程中存在的课程ID。
 
 输出课程ID JSON数组，按推荐优先级排序:
 ["course_id_1", "course_id_2"]
@@ -91,7 +92,7 @@ class CourseRerankAgent(BaseAgent):
                 "category": course.course_category,
                 "campus": course.campus,
                 "time_slot": course.time_slot,
-                "popularity": course.popularity_level,
+                "popularity_level": course.popularity_level,
                 "difficulty": course.difficulty,
                 "workload": course.workload,
                 "grade_friendly": course.grade_friendly,
@@ -127,11 +128,11 @@ class CourseRerankAgent(BaseAgent):
         scored = []
         for course in candidates:
             score = course.score
-            if course.has_exam == "否":
+            if course.has_exam == 0:
                 score += 0.5
             if course.workload in ("低", "少"):
                 score += 0.5
-            if course.popularity_level == "爆满":
+            if course.popularity_level >= 4:
                 score -= 0.4
             scored.append((score, course.course_id))
         scored.sort(key=lambda item: item[0], reverse=True)

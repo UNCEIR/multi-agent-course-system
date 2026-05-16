@@ -8,6 +8,7 @@ from pathlib import Path
 OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 OUTPUT_FILE = OUTPUT_DIR / "public_elective_courses.csv"
 TARGET_ROW_COUNT = 500
+FLAGGED_COURSE_COUNT = 24
 
 
 RAW_COURSES = [
@@ -302,7 +303,6 @@ def build_generated_courses(target_count: int) -> list[dict[str, object]]:
                 "enrolled": enrolled,
                 "category": category,
                 "note": note,
-                "data_source": source,
             }
         )
         seen.add(key)
@@ -351,16 +351,16 @@ def enrollment_ratio(enrolled: int, limit: int) -> float:
     return round(enrolled / limit, 4)
 
 
-def popularity_level(ratio: float) -> tuple[str, str]:
+def popularity_level(ratio: float) -> tuple[int, str]:
     if ratio >= 1.0:
-        return "爆满", "非常热门，选课阶段需要优先抢课"
+        return 4, "非常热门，选课阶段需要优先抢课"
     if ratio >= 0.95:
-        return "热门", "建议第一轮优先选择"
+        return 3, "建议第一轮优先选择"
     if ratio >= 0.80:
-        return "正常偏热", "有一定竞争，建议提前加入备选"
+        return 2, "有一定竞争，建议提前加入备选"
     if ratio >= 0.50:
-        return "正常", "选上概率相对稳定"
-    return "冷门", "选上概率较高，可作为保底课程"
+        return 1, "选上概率相对稳定"
+    return 0, "选上概率较高，可作为保底课程"
 
 
 def infer_course_profile(name: str, category: str) -> dict[str, str]:
@@ -443,22 +443,17 @@ def infer_time_slot(course: dict[str, object], index: int) -> str:
 def build_history(limit: int, enrolled: int, name: str) -> dict[str, int | float]:
     base_ratio = enrollment_ratio(enrolled, limit)
     offsets = [-0.04, 0.02, -0.01]
-    data: dict[str, int | float] = {}
     ratios: list[float] = []
     for year, offset in zip([2025, 2024, 2023], offsets, strict=True):
         adjusted_limit = max(20, limit + (stable_index(f"{name}-{year}", 5) - 2) * 5)
         adjusted_ratio = min(1.05, max(0.25, base_ratio + offset))
         adjusted_enrolled = round(adjusted_limit * adjusted_ratio)
-        data[f"history_{year}_limit"] = adjusted_limit
-        data[f"history_{year}_enrolled"] = adjusted_enrolled
         ratios.append(enrollment_ratio(adjusted_enrolled, adjusted_limit))
-    data["avg_history_enrollment_ratio"] = round(sum(ratios) / len(ratios), 4)
-    return data
+    return {"avg_history_enrollment_ratio": round(sum(ratios) / len(ratios), 4)}
 
 
 def build_rows() -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
-    duplicate_counter: dict[str, int] = {}
     courses = build_generated_courses(TARGET_ROW_COUNT)
 
     for index, course in enumerate(courses, start=1):
@@ -468,12 +463,8 @@ def build_rows() -> list[dict[str, object]]:
         enrolled = int(course["enrolled"])
         category = str(course["category"])
         note = str(course.get("note", ""))
-        data_source = str(course.get("data_source", "截图可见记录"))
 
-        duplicate_counter[name] = duplicate_counter.get(name, 0) + 1
-        section_no = duplicate_counter[name]
         course_id = f"GXK2026{index:03d}"
-        section_name = f"{name}-{section_no}班" if section_no > 1 else name
 
         ratio = enrollment_ratio(enrolled, limit)
         hot_level, rush_advice = popularity_level(ratio)
@@ -482,8 +473,7 @@ def build_rows() -> list[dict[str, object]]:
 
         row = {
             "course_id": course_id,
-            "course_name": section_name,
-            "original_course_name": name,
+            "course_name": name,
             "teacher": teacher,
             "credits": 1.5,
             "course_type": "公共选修课",
@@ -497,32 +487,50 @@ def build_rows() -> list[dict[str, object]]:
             "current_enrollment_ratio": ratio,
             "popularity_level": hot_level,
             "rush_advice": rush_advice,
-            "grade_limit": "无限制",
-            "major_limit": "无限制",
-            "prerequisite": "无",
             "description": profile["description"],
             "assessment": profile["assessment"],
             "difficulty": profile["difficulty"],
             "workload": profile["workload"],
             "grade_friendly": profile["grade_friendly"],
-            "attendance_required": "偶尔",
-            "has_exam": "否",
-            "group_work_required": "否",
+            "has_exam": 0,
+            "group_work_required": 0,
             "suitable_for": profile["suitable_for"],
             "tags": profile["tags"],
-            "data_source": data_source,
-            "source_visible_fields": (
-                "课程名;教师;限选人数;已选人数;课程类型;课程分类;学分"
-                if data_source == "截图可见记录"
-                else "课程名/方向参考公开通识课资料;其余字段规则生成"
-            ),
-            "inference_note": "截图不可见或公开资料未包含的字段，由脚本基于课程名、分类和稳定哈希规则推断生成",
             "screenshot_note": note,
         }
         row.update(history)
         rows.append(row)
 
+    _apply_binary_flags(rows, flagged_count=FLAGGED_COURSE_COUNT)
     return rows
+
+
+def _apply_binary_flags(rows: list[dict[str, object]], flagged_count: int) -> None:
+    for row in rows:
+        row["has_exam"] = 0
+        row["group_work_required"] = 0
+
+    def _pick_rows(category: str, count: int) -> list[dict[str, object]]:
+        candidates = [
+            row
+            for row in rows
+            if str(row.get("course_category", "")) == category
+        ]
+        ranked = sorted(
+            candidates,
+            key=lambda row: stable_index(f"{row.get('course_id', '')}:flag", 10_000_019),
+        )
+        return ranked[:count]
+
+    engineering_count = flagged_count // 2
+    humanities_count = flagged_count - engineering_count
+    selected = _pick_rows("自然科学与工程技术类", engineering_count) + _pick_rows("人文与社会科学类", humanities_count)
+
+    for index, row in enumerate(selected):
+        has_exam = 1 if index % 3 != 2 else 0
+        group_work_required = 1 if index % 3 != 0 else 0
+        row["has_exam"] = has_exam
+        row["group_work_required"] = group_work_required
 
 
 def write_csv(rows: list[dict[str, object]]) -> None:

@@ -154,11 +154,11 @@ class CourseRecallAgent(BaseAgent):
                     score += 2.0
                 if profile.workload_preference == "少" and course.workload in ("低", "少"):
                     score += 1.5
-                if profile.exam_preference == "不考试" and course.has_exam == "否":
+                if profile.exam_preference == "不考试" and course.has_exam == 0:
                     score += 1.5
                 if profile.grade_friendly_preference == "高" and course.grade_friendly in ("高", "中"):
                     score += 1.2
-            if course.popularity_level in ("热门", "爆满"):
+            if course.popularity_level >= 3:
                 score += 0.8
             scored.append(course.model_copy(update={"score": round(score, 4)}))
         return scored
@@ -200,15 +200,15 @@ class CourseRecallAgent(BaseAgent):
                 time_slot="周二第5-6节",
                 capacity=100,
                 current_enrolled=101,
-                popularity_level="爆满",
+                popularity_level=4,
                 rush_advice="非常热门，选课阶段需要优先抢课",
                 description="通过啤酒游戏理解供应链管理和系统决策。",
                 assessment="平时作业30%;案例作业30%;期末报告40%",
                 difficulty="中",
                 workload="中",
                 grade_friendly="中",
-                has_exam="否",
-                group_work_required="否",
+                has_exam=0,
+                group_work_required=0,
                 tags=["工程技术", "产业", "案例", "报告"],
             ),
             Course(
@@ -222,15 +222,15 @@ class CourseRecallAgent(BaseAgent):
                 time_slot="周四第7-8节",
                 capacity=200,
                 current_enrolled=200,
-                popularity_level="爆满",
+                popularity_level=4,
                 rush_advice="非常热门，选课阶段需要优先抢课",
                 description="关注自然科学、生态环境与现实生活之间的联系。",
                 assessment="平时作业30%;案例分析40%;期末报告30%",
                 difficulty="中",
                 workload="中",
                 grade_friendly="中",
-                has_exam="否",
-                group_work_required="否",
+                has_exam=0,
+                group_work_required=0,
                 tags=["自然科学", "环境", "案例分析", "报告"],
             ),
         ]

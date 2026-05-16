@@ -30,7 +30,9 @@ class CourseRepository(MySQLRepository):
                 time_slot VARCHAR(128) DEFAULT '',
                 capacity INT DEFAULT 0,
                 current_enrolled INT DEFAULT 0,
-                popularity_level VARCHAR(32) DEFAULT '',
+                popularity_level TINYINT DEFAULT 0,
+                has_exam TINYINT DEFAULT 0,
+                group_work_required TINYINT DEFAULT 0,
                 tags TEXT,
                 raw_json JSON,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -53,6 +55,26 @@ class CourseRepository(MySQLRepository):
         with self._engine.begin() as conn:
             for statement in statements:
                 conn.execute(text(statement))
+            self._add_column_if_missing(conn, "course_records", "has_exam", "TINYINT DEFAULT 0")
+            self._add_column_if_missing(conn, "course_records", "group_work_required", "TINYINT DEFAULT 0")
+
+    @staticmethod
+    def _add_column_if_missing(conn: Any, table_name: str, column_name: str, column_definition: str) -> None:
+        exists_sql = text(
+            """
+            SELECT COUNT(*) AS column_count
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = :table_name
+              AND COLUMN_NAME = :column_name
+            """
+        )
+        column_count = conn.execute(
+            exists_sql,
+            {"table_name": table_name, "column_name": column_name},
+        ).scalar_one()
+        if int(column_count) == 0:
+            conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}"))
 
     def upsert_course(self, row: dict[str, Any]) -> None:
         if not self.ping():
@@ -64,11 +86,11 @@ class CourseRepository(MySQLRepository):
             INSERT INTO course_records (
                 course_id, course_name, teacher, credits, course_type, course_category,
                 domain, campus, time_slot, capacity, current_enrolled, popularity_level,
-                tags, raw_json
+                has_exam, group_work_required, tags, raw_json
             ) VALUES (
                 :course_id, :course_name, :teacher, :credits, :course_type, :course_category,
                 :domain, :campus, :time_slot, :capacity, :current_enrolled, :popularity_level,
-                :tags, :raw_json
+                :has_exam, :group_work_required, :tags, :raw_json
             )
             ON DUPLICATE KEY UPDATE
                 course_name = VALUES(course_name),
@@ -82,6 +104,8 @@ class CourseRepository(MySQLRepository):
                 capacity = VALUES(capacity),
                 current_enrolled = VALUES(current_enrolled),
                 popularity_level = VALUES(popularity_level),
+                has_exam = VALUES(has_exam),
+                group_work_required = VALUES(group_work_required),
                 tags = VALUES(tags),
                 raw_json = VALUES(raw_json)
             """
@@ -151,16 +175,11 @@ class CourseRepository(MySQLRepository):
         sql = f"""
             SELECT course_id, course_name, teacher, credits, course_type, course_category,
                    domain, campus, time_slot, capacity, current_enrolled,
-                   popularity_level, tags, raw_json
+                   popularity_level, has_exam, group_work_required, tags, raw_json
             FROM course_records
             WHERE {" AND ".join(conditions)}
             ORDER BY
-                CASE popularity_level
-                    WHEN '爆满' THEN 4
-                    WHEN '热门' THEN 3
-                    WHEN '中等' THEN 2
-                    ELSE 1
-                END DESC,
+                popularity_level DESC,
                 current_enrolled DESC,
                 course_id ASC
             LIMIT :limit
@@ -180,7 +199,7 @@ class CourseRepository(MySQLRepository):
             f"""
             SELECT course_id, course_name, teacher, credits, course_type, course_category,
                    domain, campus, time_slot, capacity, current_enrolled,
-                   popularity_level, tags, raw_json
+                   popularity_level, has_exam, group_work_required, tags, raw_json
             FROM course_records
             WHERE course_id IN ({placeholders})
             """
@@ -204,7 +223,9 @@ class CourseRepository(MySQLRepository):
             "time_slot": row.get("time_slot", ""),
             "capacity": int(float(row.get("capacity") or 0)),
             "current_enrolled": int(float(row.get("current_enrolled") or 0)),
-            "popularity_level": row.get("popularity_level", ""),
+            "popularity_level": int(float(row.get("popularity_level") or 0)),
+            "has_exam": CourseRepository._parse_binary_flag(row.get("has_exam")),
+            "group_work_required": CourseRepository._parse_binary_flag(row.get("group_work_required")),
             "tags": row.get("tags", ""),
             "raw_json": json.dumps(row, ensure_ascii=False),
         }
@@ -247,19 +268,24 @@ class CourseRepository(MySQLRepository):
             capacity=capacity,
             current_enrolled=current_enrolled,
             current_enrollment_ratio=ratio,
-            popularity_level=str(merged.get("popularity_level", "")),
+            popularity_level=int(float(merged.get("popularity_level") or 0)),
             rush_advice=str(merged.get("rush_advice", "")),
-            grade_limit=str(merged.get("grade_limit", "")),
-            major_limit=str(merged.get("major_limit", "")),
-            prerequisite=str(merged.get("prerequisite", "")),
             description=str(merged.get("description", "")),
             assessment=str(merged.get("assessment", "")),
             difficulty=str(merged.get("difficulty", "")),
             workload=str(merged.get("workload", "")),
             grade_friendly=str(merged.get("grade_friendly", "")),
-            attendance_required=str(merged.get("attendance_required", "")),
-            has_exam=str(merged.get("has_exam", "")),
-            group_work_required=str(merged.get("group_work_required", "")),
+            has_exam=CourseRepository._parse_binary_flag(merged.get("has_exam")),
+            group_work_required=CourseRepository._parse_binary_flag(merged.get("group_work_required")),
             suitable_for=str(merged.get("suitable_for", "")),
             tags=tags,
         )
+
+    @staticmethod
+    def _parse_binary_flag(value: Any) -> int:
+        if isinstance(value, bool):
+            return 1 if value else 0
+        text = str(value).strip()
+        if text in {"1", "是", "有", "true", "True"}:
+            return 1
+        return 0

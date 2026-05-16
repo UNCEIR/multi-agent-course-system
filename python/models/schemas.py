@@ -140,19 +140,15 @@ class Course(BaseModel):
     capacity: int = 0
     current_enrolled: int = 0
     current_enrollment_ratio: float = 0.0
-    popularity_level: str = ""
+    popularity_level: int = 0
     rush_advice: str = ""
-    grade_limit: str = ""
-    major_limit: str = ""
-    prerequisite: str = ""
     description: str = ""
     assessment: str = ""
     difficulty: str = ""
     workload: str = ""
     grade_friendly: str = ""
-    attendance_required: str = ""
-    has_exam: str = ""
-    group_work_required: str = ""
+    has_exam: int = 0
+    group_work_required: int = 0
     suitable_for: str = ""
     tags: list[str] = Field(default_factory=list)
     score: float = 0.0
