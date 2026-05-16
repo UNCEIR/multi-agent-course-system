@@ -12,19 +12,15 @@ export interface Course {
   capacity: number
   current_enrolled: number
   current_enrollment_ratio: number
-  popularity_level: string
+  popularity_level: number
   rush_advice: string
-  grade_limit: string
-  major_limit: string
-  prerequisite: string
   description: string
   assessment: string
   difficulty: string
   workload: string
   grade_friendly: string
-  attendance_required: string
-  has_exam: string
-  group_work_required: string
+  has_exam: number
+  group_work_required: number
   suitable_for: string
   tags: string[]
   score: number
