@@ -6,7 +6,7 @@ from langchain_openai import ChatOpenAI
 from config import get_settings
 
 
-def build_chat_openai(*, temperature: float, max_tokens: int) -> ChatOpenAI:
+def build_chat_openai(*, temperature: float, max_tokens: int, streaming: bool = False) -> ChatOpenAI:
     settings = get_settings()
     extra_body = {}
     if settings.llm_enable_thinking:
@@ -22,6 +22,7 @@ def build_chat_openai(*, temperature: float, max_tokens: int) -> ChatOpenAI:
         model=settings.llm_model,
         temperature=temperature,
         max_tokens=max_tokens,
+        streaming=streaming,
         extra_body=extra_body or None,
         http_client=http_client,
         http_async_client=http_async_client,

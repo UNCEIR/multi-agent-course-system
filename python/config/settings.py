@@ -84,6 +84,7 @@ class Settings(BaseSettings):
 
     supervisor_max_retries: int = 2
     supervisor_global_timeout: float = 30.0
+    stream_timeout_seconds: float = 60.0
 
     # 兼容约束：保留 ECOM_ 历史前缀，避免破坏现有 .env / 容器配置 / 测试环境。
     # env_file 先仓库根再 python/，后者同名变量覆盖前者。

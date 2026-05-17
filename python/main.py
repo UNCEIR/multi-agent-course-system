@@ -3,6 +3,7 @@
 
 Endpoints:
   POST /api/v1/recommend          - 获取公选课个性化推荐
+  POST /api/v1/recommend/stream   - SSE 流式公选课推荐
   POST /api/v1/recommend/graph    - 通过LangGraph pipeline推荐公选课
   GET  /api/v1/experiments        - 查看A/B实验状态
   GET  /api/v1/metrics            - 查看系统监控指标
@@ -12,6 +13,7 @@ Endpoints:
 
 from __future__ import annotations
 
+import json
 import sys
 import os
 
@@ -25,6 +27,7 @@ import structlog
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from config import get_settings
 from models.schemas import RecommendationRequest, RecommendationResponse
@@ -122,6 +125,20 @@ async def recommend(request: RecommendationRequest):
     return response
 
 
+@app.post("/api/v1/recommend/stream")
+async def recommend_stream(request: RecommendationRequest):
+    """SSE 流式公选课推荐 (前端打字效果 + 阶段进度推送)"""
+    return StreamingResponse(
+        _sse_wrapper(supervisor.stream_recommend(request)),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.post("/api/v1/recommend/graph")
 async def recommend_via_graph(request: RecommendationRequest):
     """使用LangGraph状态图进行公选课推荐 (展示LangGraph能力)"""
@@ -192,6 +209,12 @@ def _collect_metrics(response: RecommendationResponse):
             success=result.success,
             latency_ms=result.latency_ms,
         )
+
+
+async def _sse_wrapper(generator):
+    async for event in generator:
+        payload = json.dumps(event["data"], ensure_ascii=False)
+        yield f"event: {event['event']}\ndata: {payload}\n\n"
 
 
 def _assert_llm_config() -> None:

@@ -13,12 +13,13 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 import structlog
 
 from models.schemas import Course, RecommendationRequest, RecommendationResponse, StudentProfile
 from services.ab_test import ABTestEngine
+from config import get_settings
 
 logger = structlog.get_logger()
 
@@ -199,6 +200,183 @@ class SupervisorOrchestrator:
             },
             total_latency_ms=total_latency,
         )
+
+    async def stream_recommend(
+        self, request: RecommendationRequest
+    ) -> "AsyncGenerator[dict[str, Any], None]":
+        settings = get_settings()
+        request_id = str(uuid.uuid4())
+        start = time.perf_counter()
+        prompt = self._request_prompt(request)
+        current_phase = "start"
+        collected_text: dict[str, str] = {}
+        agent_results: dict[str, Any] = {}
+
+        yield {
+            "event": "phase",
+            "data": {
+                "phase": "start",
+                "request_id": request_id,
+                "num_items": request.num_items,
+            },
+        }
+
+        try:
+            experiment = self.ab_engine.assign(request.user_id)
+
+            # Phase 1: 画像 + 宽召回并行
+            current_phase = "phase1"
+            profile_result, recall_result = await asyncio.gather(
+                self.student_profile_agent.run(
+                    user_id=request.user_id,
+                    prompt=prompt,
+                    context=request.context,
+                ),
+                self.course_recall_agent.run(
+                    student_profile=None,
+                    prompt=prompt,
+                    context=request.context,
+                    num_items=request.num_items * 2,
+                ),
+            )
+
+            student_profile: StudentProfile | None = getattr(profile_result, "profile", None)
+            raw_courses: list[Course] = getattr(recall_result, "courses", [])
+            agent_results["student_profile"] = profile_result
+            agent_results["course_recall"] = recall_result
+
+            yield {
+                "event": "phase",
+                "data": {
+                    "phase": "phase1_complete",
+                    "profile_extracted": student_profile is not None,
+                    "wide_recall_count": len(raw_courses),
+                },
+            }
+
+            if student_profile:
+                refined_result = await self.course_recall_agent.run(
+                    student_profile=student_profile,
+                    prompt=prompt,
+                    context=request.context,
+                    num_items=request.num_items * 2,
+                )
+                raw_courses = self._merge_courses(
+                    raw_courses,
+                    getattr(refined_result, "courses", []),
+                )
+                agent_results["course_recall"] = recall_result
+                logger.info(
+                    "course_supervisor.refined_recall_complete",
+                    request_id=request_id,
+                    refined_count=len(getattr(refined_result, "courses", [])),
+                    merged_candidate_count=len(raw_courses),
+                )
+
+            # Phase 2: 重排 + 可行性并行
+            current_phase = "phase2"
+            rerank_result, feasibility_result = await asyncio.gather(
+                self.course_rerank_agent.run(
+                    student_profile=student_profile,
+                    candidates=raw_courses,
+                    num_items=request.num_items,
+                ),
+                self.course_feasibility_agent.run(
+                    student_profile=student_profile,
+                    courses=raw_courses,
+                    context=request.context,
+                ),
+            )
+
+            ranked_courses: list[Course] = getattr(rerank_result, "courses", raw_courses)
+            available_ids = set(getattr(feasibility_result, "available_courses", []))
+            final_courses = [course for course in ranked_courses if course.course_id in available_ids]
+            final_courses = final_courses[: request.num_items]
+            warnings = getattr(feasibility_result, "selection_warnings", [])
+            agent_results["course_rerank"] = rerank_result
+            agent_results["course_feasibility"] = feasibility_result
+
+            yield {
+                "event": "phase",
+                "data": {
+                    "phase": "phase2_complete",
+                    "ranked_count": len(ranked_courses),
+                    "available_count": len(available_ids),
+                    "warning_count": len(warnings),
+                    "final_count": len(final_courses),
+                },
+            }
+
+            # Phase 3: 流式推荐理由
+            current_phase = "phase3"
+            yield {"event": "phase", "data": {"phase": "phase3_start"}}
+
+            async for chunk in self.recommendation_reason_agent.astream_reasons(
+                student_profile=student_profile,
+                courses=final_courses,
+                warnings=warnings,
+            ):
+                elapsed = time.perf_counter() - start
+                if elapsed > settings.stream_timeout_seconds:
+                    yield {
+                        "event": "error",
+                        "data": {
+                            "code": "STREAM_TIMEOUT",
+                            "message": f"流式超时 ({settings.stream_timeout_seconds:.0f}s)",
+                            "phase": current_phase,
+                            "agent": "recommendation_reason",
+                            "request_id": request_id,
+                        },
+                    }
+                    return
+
+                if chunk["type"] == "text":
+                    course_id = chunk.get("course_id") or "__prelude__"
+                    collected_text[course_id] = (
+                        collected_text.get(course_id, "") + chunk["token"]
+                    )
+                yield {"event": chunk["type"], "data": chunk}
+
+            yield {"event": "phase", "data": {"phase": "phase3_complete"}}
+
+            total_latency = (time.perf_counter() - start) * 1000
+            yield {
+                "event": "done",
+                "data": {
+                    "request_id": request_id,
+                    "user_id": request.user_id,
+                    "courses": [course.model_dump() for course in final_courses],
+                    "recommendation_reasons": [
+                        {"course_id": cid, "reason": text}
+                        for cid, text in collected_text.items()
+                        if cid != "__prelude__"
+                    ],
+                    "selection_warnings": warnings,
+                    "experiment_group": experiment.get("group", "control"),
+                    "agent_results": {
+                        name: result.model_dump()
+                        for name, result in agent_results.items()
+                    },
+                    "total_latency_ms": round(total_latency, 1),
+                },
+            }
+
+        except Exception as exc:
+            logger.error(
+                "course_supervisor.stream_error",
+                request_id=request_id,
+                phase=current_phase,
+                error=str(exc),
+            )
+            yield {
+                "event": "error",
+                "data": {
+                    "code": type(exc).__name__.upper(),
+                    "message": str(exc),
+                    "phase": current_phase,
+                    "request_id": request_id,
+                },
+            }
 
     @staticmethod
     def _request_prompt(request: RecommendationRequest) -> str:

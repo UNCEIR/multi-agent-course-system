@@ -7,6 +7,7 @@ __all__ = [
     "EmbeddingClient",
     "FeatureStore",
     "MetricsCollector",
+    "StreamTokenMarkupParser",
     "build_chat_openai",
     "build_embedding_client",
 ]
@@ -44,4 +45,8 @@ def __getattr__(name: str):
         from .metrics import MetricsCollector
 
         return MetricsCollector
+    if name == "StreamTokenMarkupParser":
+        from .stream_token_markup_parser import StreamTokenMarkupParser
+
+        return StreamTokenMarkupParser
     raise AttributeError(f"module 'services' has no attribute {name!r}")
