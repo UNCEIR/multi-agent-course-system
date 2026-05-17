@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from typing import Any
+from typing import Any, Literal
 
 from models.schemas import Course, CourseRecallResult, StudentProfile
 from repositories import CourseRecallCacheRepository, CourseRepository, CourseVectorRepository, RecallCacheKeyBuilder
@@ -70,10 +70,15 @@ class CourseRecallAgent(BaseAgent):
         strategies = ["mysql_structured"]
 
         semantic_courses: list[Course] = []
+        semantic_status: str | None = None
         if query:
-            semantic_ids = self._semantic_course_ids(query, limit=num_items * 5)
+            semantic_ids, semantic_status = self._semantic_course_ids(query, limit=num_items * 5)
             semantic_courses = self.course_repo.fetch_courses_by_ids(semantic_ids)
-            if semantic_courses:
+            if semantic_status == "failed":
+                strategies.append("milvus_vector_search_failed")
+            elif semantic_status == "empty":
+                strategies.append("milvus_course_chunks_empty")
+            elif semantic_status == "hit":
                 strategies.append("milvus_course_chunks")
 
         if not db_candidates and not semantic_courses:
@@ -90,7 +95,11 @@ class CourseRecallAgent(BaseAgent):
             success=True,
             courses=candidates[: num_items * 3],
             recall_strategies=strategies,
-            data={"total_candidates": len(candidates), "strategies": strategies},
+            data={
+                "total_candidates": len(candidates),
+                "strategies": strategies,
+                "semantic_status": semantic_status or "skipped",
+            },
             confidence=0.86,
         )
 
@@ -111,18 +120,22 @@ class CourseRecallAgent(BaseAgent):
                 return courses
         return []
 
-    def _semantic_course_ids(self, query: str, limit: int) -> list[str]:
+    def _semantic_course_ids(self, query: str, limit: int) -> tuple[list[str], Literal["hit", "empty", "failed"]]:
         try:
             chunk_ids = self.vector_repo.search(query=query, limit=limit)
         except Exception as exc:
             self.logger.warning("course_recall.vector_search_failed", error=str(exc))
-            return []
+            return [], "failed"
+        if not chunk_ids:
+            return [], "empty"
         course_ids = []
         for chunk_id in chunk_ids:
             course_id = str(chunk_id).split(":", 1)[0]
             if course_id and course_id not in course_ids:
                 course_ids.append(course_id)
-        return course_ids
+        if not course_ids:
+            return [], "empty"
+        return course_ids, "hit"
 
     def _score_candidates(
         self, courses: list[Course], profile: StudentProfile | None, query: str
