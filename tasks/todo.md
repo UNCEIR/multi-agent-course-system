@@ -102,3 +102,16 @@
 - 清理结果：源 collection `num_entities=223`，有效向量 200 条，重建后 `course_chunks_real num_entities=200`、query 行数 200，剩余 `chunk_id` 与 MySQL 200 个 `chunk_id` 完全一致，清除了 23 条陈旧实体统计对应的残留。
 - 健康检查：`GET /health` 返回 `status=healthy`，依赖项 `mysql=true`、`redis=true`、`milvus=true`。
 - 风险：本轮使用的是 PyMilvus ORM API，命令输出有 deprecation warning，但不影响执行结果；重建期间 collection 名称有短暂切换窗口，最终已验证同名 collection 可用且备份已删除。
+
+---
+
+# 前端 Vite / Node 兼容性（2026-05-17）
+
+- [x] 确认报错：Node 20.17.0 不满足 Vite 8 的 engines；Rolldown 原生绑定 `@rolldown/binding-win32-x64-msvc` 缺失。
+- [x] 将 `frontend/package.json` 中 `vite` 固定为 **`^6.4.2`**（兼容 Node ^20 全系列），补充 `engines.node`。
+- [x] 删除 `frontend/node_modules` 与 `package-lock.json` 后重新 `npm install`，消除 Vite 8 残留。
+- [x] 验证 `npm run build` 成功。
+
+## 本轮 Review（2026-05-17）
+
+- 详见 `docs/notes/2026-05-17-frontend-vite-node-rolldown.md`。备选方案为升级 Node 至 ≥20.19 或 ≥22.12 后继续用 Vite 8。
