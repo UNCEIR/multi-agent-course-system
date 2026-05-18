@@ -115,3 +115,21 @@
 ## 本轮 Review（2026-05-17）
 
 - 详见 `docs/notes/2026-05-17-frontend-vite-node-rolldown.md`。备选方案为升级 Node 至 ≥20.19 或 ≥22.12 后继续用 Vite 8。
+
+---
+
+# Docker 启动与流式推荐验证（2026-05-18）
+
+- [x] `docker compose -f docker-compose.python.yml --profile python up -d --build` 启动依赖与 python-api；MySQL 宿主端口 `3307:3306`。
+- [x] 核对 `python/.env` 含 `ECOM_HTTPX_VERIFY_SSL=false`（未记录密钥）。
+- [x] `GET /health`：`deps` 全为 true。
+- [x] `POST /api/v1/recommend`：200，全链路成功；日志含 `hard_constraint_filter.done`、`course_supervisor.phase15_complete`。
+- [x] `POST /api/v1/stream_recommend`：修复路由与 Phase3 参数/超时后 200；SSE 含 `phase15_complete`、token 流、`phase3_complete`、`done`。
+- [x] 单元测试：`pytest python/tests/test_stream_recommend.py` 5 passed。
+
+## 本轮 Review
+
+- 流式路径：注册表实际为 `/api/v1/recommend/stream`；已为 `/api/v1/stream_recommend` 增加别名（`main.py`）。
+- Phase3 报错：`astream_reasons` 形参为 `profile`，编排器误传 `student_profile=`，已改为 `profile=`（`supervisor.py`）。
+- 流式超时：`stream_timeout_seconds` 原从整次请求计时，Phase3 开始前已超过 60s 会误触发 `STREAM_TIMEOUT`；改为从 Phase3 流开始后计时（`supervisor.py`）。
+- 验证记录详见 `docs/notes/2026-05-18-docker-stream-recommend-phase15.md`。

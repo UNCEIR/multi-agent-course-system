@@ -125,9 +125,8 @@ async def recommend(request: RecommendationRequest):
     return response
 
 
-@app.post("/api/v1/recommend/stream")
-async def recommend_stream(request: RecommendationRequest):
-    """SSE 流式公选课推荐 (前端打字效果 + 阶段进度推送)"""
+def _recommend_stream_response(request: RecommendationRequest) -> StreamingResponse:
+    """SSE 流式公选课推荐。"""
     return StreamingResponse(
         _sse_wrapper(supervisor.stream_recommend(request)),
         media_type="text/event-stream",
@@ -137,6 +136,12 @@ async def recommend_stream(request: RecommendationRequest):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@app.post("/api/v1/recommend/stream")
+async def recommend_stream(request: RecommendationRequest):
+    """SSE 流式公选课推荐 (前端打字效果 + 阶段进度推送)"""
+    return _recommend_stream_response(request)
 
 
 @app.post("/api/v1/recommend/graph")

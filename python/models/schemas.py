@@ -89,6 +89,26 @@ class UserProfile(BaseModel):
     real_time_tags: dict[str, Any] = Field(default_factory=dict)
 
 
+class HardConstraints(BaseModel):
+    """硬性约束：违反即过滤，不参与排序打分。
+
+    天然硬约束（只要提及具体值即触发，无需强意图词）：
+      campus / avoid_time_slots / categories / teacher / no_exam
+
+    强意图才升级（须包含 只/必须/一定/绝对/不能 等词）：
+      no_group_work / max_difficulty / max_workload
+    """
+
+    campus: list[str] = Field(default_factory=list)
+    avoid_time_slots: list[str] = Field(default_factory=list)
+    categories: list[str] = Field(default_factory=list)
+    teacher: str = ""
+    no_exam: bool = False
+    no_group_work: bool = False
+    max_difficulty: str | None = None
+    max_workload: str | None = None
+
+
 class StudentProfile(BaseModel):
     student_id: str
     raw_prompt: str = ""
@@ -105,6 +125,7 @@ class StudentProfile(BaseModel):
     group_work_preference: str = ""
     constraints: list[str] = Field(default_factory=list)
     real_time_tags: dict[str, Any] = Field(default_factory=dict)
+    hard_constraints: HardConstraints = Field(default_factory=HardConstraints)
 
 
 class Product(BaseModel):

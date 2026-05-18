@@ -3,9 +3,10 @@
 
 用户输入自然语言选课需求后，Supervisor 负责并行调度专业 Agent：
 
-Phase 1: 学生画像 Agent 与课程召回 Agent 并行
-Phase 2: 课程重排 Agent 与选课可行性 Agent 并行
-Phase 3: 推荐理由 Agent 串行生成可解释建议
+Phase 1:   学生画像 Agent 与课程召回 Agent 并行
+Phase 1.5: HardConstraintFilter 确定性硬约束过滤（违反即移除，不参与重排）
+Phase 2:   课程重排 Agent 与选课可行性 Agent 并行
+Phase 3:   推荐理由 Agent 串行生成可解释建议
 """
 
 from __future__ import annotations
@@ -13,11 +14,12 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from typing import Any, TYPE_CHECKING
+from typing import Any, AsyncGenerator, TYPE_CHECKING
 
 import structlog
 
 from models.schemas import Course, RecommendationRequest, RecommendationResponse, StudentProfile
+from orchestrator.hard_constraint_filter import HardConstraintFilter, has_active_constraints
 from services.ab_test import ABTestEngine
 from config import get_settings
 
@@ -72,6 +74,7 @@ class SupervisorOrchestrator:
         self.course_feasibility_agent = course_feasibility_agent
         self.recommendation_reason_agent = recommendation_reason_agent
         self.ab_engine = ab_engine or ABTestEngine()
+        self.hard_constraint_filter = HardConstraintFilter()
 
     async def recommend(self, request: RecommendationRequest) -> RecommendationResponse:
         request_id = str(uuid.uuid4())
@@ -134,6 +137,20 @@ class SupervisorOrchestrator:
                 merged_candidate_count=len(raw_courses),
             )
 
+        # Phase 1.5: 硬约束确定性过滤 — 违反硬约束的课程不进入重排。
+        warnings: list[dict[str, Any]] = []
+        if student_profile and has_active_constraints(student_profile.hard_constraints):
+            raw_courses, hc_filtered, hc_warnings = self.hard_constraint_filter.filter(
+                raw_courses, student_profile.hard_constraints
+            )
+            warnings.extend(hc_warnings)
+            logger.info(
+                "course_supervisor.phase15_complete",
+                request_id=request_id,
+                hard_filtered_count=len(hc_filtered),
+                remaining_after_filter=len(raw_courses),
+            )
+
         # Phase 2: 课程重排与选课可行性检查并行。
         rerank_result, feasibility_result = await asyncio.gather(
             self.course_rerank_agent.run(
@@ -152,7 +169,7 @@ class SupervisorOrchestrator:
         available_ids = set(getattr(feasibility_result, "available_courses", []))
         final_courses = [course for course in ranked_courses if course.course_id in available_ids]
         final_courses = final_courses[: request.num_items]
-        warnings = getattr(feasibility_result, "selection_warnings", [])
+        warnings.extend(getattr(feasibility_result, "selection_warnings", []))
         logger.info(
             "course_supervisor.phase2_complete",
             request_id=request_id,
@@ -273,6 +290,28 @@ class SupervisorOrchestrator:
                     merged_candidate_count=len(raw_courses),
                 )
 
+            # Phase 1.5: 硬约束确定性过滤 — 违反硬约束的课程不进入重排。
+            warnings: list[dict[str, Any]] = []
+            if student_profile and has_active_constraints(student_profile.hard_constraints):
+                raw_courses, hc_filtered, hc_warnings = self.hard_constraint_filter.filter(
+                    raw_courses, student_profile.hard_constraints
+                )
+                warnings.extend(hc_warnings)
+                logger.info(
+                    "course_supervisor.phase15_complete",
+                    request_id=request_id,
+                    hard_filtered_count=len(hc_filtered),
+                    remaining_after_filter=len(raw_courses),
+                )
+                yield {
+                    "event": "phase",
+                    "data": {
+                        "phase": "phase15_complete",
+                        "hard_filtered_count": len(hc_filtered),
+                        "remaining_after_filter": len(raw_courses),
+                    },
+                }
+
             # Phase 2: 重排 + 可行性并行
             current_phase = "phase2"
             rerank_result, feasibility_result = await asyncio.gather(
@@ -292,7 +331,7 @@ class SupervisorOrchestrator:
             available_ids = set(getattr(feasibility_result, "available_courses", []))
             final_courses = [course for course in ranked_courses if course.course_id in available_ids]
             final_courses = final_courses[: request.num_items]
-            warnings = getattr(feasibility_result, "selection_warnings", [])
+            warnings.extend(getattr(feasibility_result, "selection_warnings", []))
             agent_results["course_rerank"] = rerank_result
             agent_results["course_feasibility"] = feasibility_result
 
@@ -307,16 +346,17 @@ class SupervisorOrchestrator:
                 },
             }
 
-            # Phase 3: 流式推荐理由
+            # Phase 3: 流式推荐理由（超时仅约束本阶段 token 流，避免前几阶段已耗尽的秒数误判超时）
             current_phase = "phase3"
             yield {"event": "phase", "data": {"phase": "phase3_start"}}
+            phase3_stream_start = time.perf_counter()
 
             async for chunk in self.recommendation_reason_agent.astream_reasons(
-                student_profile=student_profile,
+                profile=student_profile,
                 courses=final_courses,
                 warnings=warnings,
             ):
-                elapsed = time.perf_counter() - start
+                elapsed = time.perf_counter() - phase3_stream_start
                 if elapsed > settings.stream_timeout_seconds:
                     yield {
                         "event": "error",

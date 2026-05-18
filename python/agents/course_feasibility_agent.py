@@ -56,6 +56,11 @@ class CourseFeasibilityAgent(BaseAgent):
     def _hard_conflicts(
         self, course: Course, profile: StudentProfile | None, context: dict[str, Any]
     ) -> list[str]:
+        """兜底时间冲突检查。
+
+        Phase 1.5 的 HardConstraintFilter 已处理校区、分类、老师、考试等所有硬约束。
+        此处仅保留 avoid_time_slots 的二次保险，防止 profile 未能解析时遗漏时间冲突。
+        """
         reasons: list[str] = []
         avoid_time_slots = set(context.get("avoid_time_slots", []))
         if profile:
@@ -63,11 +68,16 @@ class CourseFeasibilityAgent(BaseAgent):
         for avoid in avoid_time_slots:
             if avoid and avoid in course.time_slot:
                 reasons.append(f"上课时间命中避开时段：{avoid}")
-
         return reasons
 
     def _warnings(self, course: Course, profile: StudentProfile | None) -> list[dict[str, Any]]:
+        """软约束提示：仅作提醒，不影响 available_courses 过滤。
+
+        容量状态（高优先级警告）和偏好不匹配（低优先级参考）均在此输出。
+        到达此方法的课程均已通过 Phase 1.5 硬约束过滤，所以软偏好不匹配只作参考提示。
+        """
         warnings: list[dict[str, Any]] = []
+
         if course.capacity > 0 and course.current_enrolled >= course.capacity:
             warnings.append(
                 {
@@ -94,9 +104,9 @@ class CourseFeasibilityAgent(BaseAgent):
                 {
                     "course_id": course.course_id,
                     "course_name": course.course_name,
-                    "level": "medium",
-                    "type": "exam_mismatch",
-                    "message": "该课程可能有考试，与“不考试”偏好不完全一致。",
+                    "level": "low",
+                    "type": "exam_soft_mismatch",
+                    "message": "该课程有考试，仅供参考（未设为硬性要求，可酌情选择）。",
                 }
             )
         if profile and profile.group_work_preference == "不小组" and course.group_work_required == 1:
@@ -104,9 +114,9 @@ class CourseFeasibilityAgent(BaseAgent):
                 {
                     "course_id": course.course_id,
                     "course_name": course.course_name,
-                    "level": "medium",
-                    "type": "group_work_mismatch",
-                    "message": "该课程可能包含小组作业，与偏好不完全一致。",
+                    "level": "low",
+                    "type": "group_work_soft_mismatch",
+                    "message": "该课程包含小组作业，仅供参考（未设为硬性要求，可酌情选择）。",
                 }
             )
         return warnings
