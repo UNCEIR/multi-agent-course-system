@@ -49,7 +49,8 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import { api } from '../services/api'
 import { useRecommendStore, useActiveJobStore, useInputStore } from '../stores'
-import type { Course, RecommendationResponse, PresetQuery } from '../types'
+import type { Course, RecommendationResponse, PresetQuery, StreamDonePayload } from '../types'
+import StreamView from '../components/StreamView'
 
 const { TextArea } = Input
 const { Text, Title } = Typography
@@ -114,10 +115,25 @@ export default function RecommendPage() {
   const setPrompt = useInputStore((s) => s.setPrompt)
   const setNumItems = useInputStore((s) => s.setNumItems)
 
-  const [activeTab, setActiveTab] = useState('single')
+  const [activeTab, setActiveTab] = useState('stream')
+  const [streamKey, setStreamKey] = useState(0)
+  const [streamPrompt, setStreamPrompt] = useState('')
+  const [streamNumItems, setStreamNumItems] = useState(5)
 
   const { jobs, addJob, setResponse, setError } = useRecommendStore()
   const { activeId, setActive } = useActiveJobStore()
+
+  const handleStreamSubmit = useCallback(() => {
+    const query = prompt.trim()
+    if (!query) {
+      message.warning('请输入选课需求描述')
+      return
+    }
+    setStreamPrompt(query)
+    setStreamNumItems(numItems)
+    setStreamKey((k) => k + 1)
+    setActiveTab('stream')
+  }, [prompt, numItems])
 
   const handleSubmit = useCallback(async () => {
     const query = prompt.trim()
@@ -125,6 +141,7 @@ export default function RecommendPage() {
       message.warning('请输入选课需求描述')
       return
     }
+    setActiveTab('single')
     const uid = `user_${Date.now()}`
     addJob(uid, '自定义查询', query)
     setActive(uid)
@@ -138,18 +155,12 @@ export default function RecommendPage() {
   }, [prompt, numItems, addJob, setActive, setResponse, setError])
 
   const handlePresetClick = useCallback(async (pq: PresetQuery) => {
-    const uid = `${pq.id}_${Date.now()}`
     setPrompt(pq.prompt)
-    addJob(uid, pq.label, pq.prompt)
-    setActive(uid)
-    try {
-      const res = await api.recommend({ user_id: uid, prompt: pq.prompt, num_items: numItems, scene: 'course_selection' })
-      setResponse(uid, res)
-    } catch (e: unknown) {
-      setError(uid, e instanceof Error ? e.message : '请求失败')
-      message.error(e instanceof Error ? e.message : '推荐请求失败')
-    }
-  }, [numItems, addJob, setActive, setResponse, setError, setPrompt])
+    setStreamPrompt(pq.prompt)
+    setStreamNumItems(numItems)
+    setStreamKey((k) => k + 1)
+    setActiveTab('stream')
+  }, [numItems, setPrompt])
 
   const handleCompareAll = useCallback(async () => {
     setActiveTab('compare')
@@ -211,8 +222,15 @@ export default function RecommendPage() {
           <div style={{ flex: 1 }} />
 
           <Space>
-            <Button type="primary" icon={<SendOutlined />} onClick={handleSubmit} size="large">
+            <Button type="primary" icon={<SendOutlined />} onClick={handleStreamSubmit} size="large">
               开始推荐
+            </Button>
+            <Button
+              icon={<ExperimentOutlined />}
+              onClick={handleSubmit}
+              size="large"
+            >
+              经典模式
             </Button>
             <Button
               style={{ borderColor: '#c88c3e', color: '#c88c3e' }}
@@ -284,11 +302,42 @@ export default function RecommendPage() {
           onChange={setActiveTab}
           items={[
             {
+              key: 'stream',
+              label: (
+                <Space size={4}>
+                  <SendOutlined />
+                  <span>流式对话</span>
+                  {streamKey > 0 && (
+                    <Tag style={{ background: '#f0faf4', color: '#166534', border: 'none', marginLeft: 4 }}>
+                      实时
+                    </Tag>
+                  )}
+                </Space>
+              ),
+              children: streamKey > 0 ? (
+                <StreamView
+                  key={streamKey}
+                  prompt={streamPrompt}
+                  numItems={streamNumItems}
+                  onRetry={() => {
+                    setStreamKey((k) => k + 1)
+                  }}
+                />
+              ) : (
+                <div className="animate-fade-in">
+                  <Empty
+                    image={<SendOutlined style={{ fontSize: 48, color: '#c88c3e' }} />}
+                    description="输入选课需求，点击「开始推荐」或选择预设查询，AI 将逐字生成推荐反馈"
+                  />
+                </div>
+              ),
+            },
+            {
               key: 'single',
               label: (
                 <Space size={4}>
                   <ExperimentOutlined />
-                  <span>单次推荐结果</span>
+                  <span>经典结果</span>
                 </Space>
               ),
               children: activeJob?.response ? (

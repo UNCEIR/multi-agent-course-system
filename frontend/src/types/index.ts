@@ -101,3 +101,75 @@ export interface PresetQuery {
   icon: string
   prompt: string
 }
+
+// ── SSE Stream Events ──
+
+export interface SSEPhaseData {
+  phase: string
+  request_id?: string
+  num_items?: number
+  profile_extracted?: boolean
+  wide_recall_count?: number
+  ranked_count?: number
+  available_count?: number
+  warning_count?: number
+  final_count?: number
+}
+
+export interface SSECourseStartData {
+  course_id: string
+  course_name: string
+  index: number
+}
+
+export interface SSECourseEndData {
+  course_id: string
+}
+
+export interface SSETextData {
+  course_id: string | null
+  token: string
+}
+
+export interface SSEDoneData {
+  request_id: string
+  user_id: string
+  courses: Course[]
+  recommendation_reasons: Array<{ course_id: string; reason: string }>
+  selection_warnings: Array<Record<string, unknown>>
+  experiment_group: string
+  agent_results: Record<string, AgentResult>
+  total_latency_ms: number
+}
+
+export interface SSEErrorData {
+  code: string
+  message: string
+  phase: string
+  agent?: string
+  request_id?: string
+}
+
+export type SSEEvent =
+  | { event: "phase"; data: SSEPhaseData }
+  | { event: "course_start"; data: SSECourseStartData }
+  | { event: "course_end"; data: SSECourseEndData }
+  | { event: "text"; data: SSETextData }
+  | { event: "done"; data: SSEDoneData }
+  | { event: "error"; data: SSEErrorData }
+
+export interface StreamSegment {
+  course_id: string | null
+  course_name?: string
+  tokens: string[]
+}
+
+export interface StreamDonePayload {
+  courses: Course[]
+  recommendation_reasons: Array<{ course_id: string; reason: string }>
+  selection_warnings: Array<Record<string, unknown>>
+  experiment_group: string
+  agent_results: Record<string, AgentResult>
+  total_latency_ms: number
+  request_id: string
+}

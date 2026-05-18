@@ -102,3 +102,81 @@ body::before {
   font-family: var(--font-serif);
   letter-spacing: 0.02em;
 }
+
+/* ===== Streaming ===== */
+@keyframes blinkCursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes tokenFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes cardSlideIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes phasePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(30,58,95,0.2); }
+  50% { box-shadow: 0 0 0 6px rgba(30,58,95,0); }
+}
+
+.stream-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--color-primary);
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  animation: blinkCursor 0.7s steps(1) infinite;
+}
+
+.stream-cursor-hidden {
+  opacity: 0;
+}
+
+.stream-token {
+  animation: tokenFadeIn 0.08s ease-out both;
+}
+
+.card-slide-in {
+  animation: cardSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.phase-dot-active {
+  animation: phasePulse 2s ease-in-out infinite;
+}
+
+.stream-text-block {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.85;
+  font-size: 15px;
+  color: #2d2d3a;
+}
+
+.stream-text-block strong {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.stream-intro {
+  color: #5c5c6e;
+  font-style: italic;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px dashed #e8e0d5;
+}
+
+.stream-course-name {
+  display: inline-block;
+  color: var(--color-primary);
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-size: 16px;
+  margin-top: 20px;
+  margin-bottom: 6px;
+}
