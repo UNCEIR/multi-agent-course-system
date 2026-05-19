@@ -2,12 +2,22 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+from dataclasses import dataclass
 from typing import Any
 
 import redis.asyncio as redis
 
 from config import get_settings
 from models.schemas import StudentProfile
+
+
+@dataclass(frozen=True)
+class RecallCacheContext:
+    cache_key: str
+    payload: dict[str, Any]
+    structured_signature: str
+    normalized_prompt: str
 
 
 class RecallCacheKeyBuilder:
@@ -21,6 +31,31 @@ class RecallCacheKeyBuilder:
         prompt: str = "",
         context: dict[str, Any] | None = None,
     ) -> str:
+        return self.build_context(profile=profile, prompt=prompt, context=context).cache_key
+
+    def build_context(
+        self,
+        profile: StudentProfile | None,
+        prompt: str = "",
+        context: dict[str, Any] | None = None,
+    ) -> RecallCacheContext:
+        payload = self._build_payload(profile=profile, prompt=prompt, context=context)
+        raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+        cache_key = f"recall:{self.version}:{digest}"
+        return RecallCacheContext(
+            cache_key=cache_key,
+            payload=payload,
+            structured_signature=self._structured_signature(payload),
+            normalized_prompt=self._normalize_scalar(prompt),
+        )
+
+    def _build_payload(
+        self,
+        profile: StudentProfile | None,
+        prompt: str = "",
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         context = context or {}
         payload: dict[str, Any] = {
             "domains": self._normalize_list(profile.preferred_domains if profile else []),
@@ -41,10 +76,15 @@ class RecallCacheKeyBuilder:
         }
         if not any(payload.values()):
             payload["prompt"] = self._normalize_scalar(prompt)[:80]
+        return payload
 
-        raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
-        return f"recall:{self.version}:{digest}"
+    @staticmethod
+    def _structured_signature(payload: dict[str, Any]) -> str:
+        structured_payload = {key: value for key, value in payload.items() if key != "prompt"}
+        if not any(structured_payload.values()):
+            return "none"
+        raw = json.dumps(structured_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
     @staticmethod
     def _normalize_list(value: Any) -> list[str]:
@@ -107,6 +147,91 @@ class CourseRecallCacheRepository:
         except Exception:
             self._client = None
 
+    async def index_semantic_cache(
+        self,
+        cache_key: str,
+        structured_signature: str,
+        prompt: str,
+        embedding: list[float],
+    ) -> None:
+        if (
+            not self.settings.course_recall_cache_enabled
+            or not self.settings.course_recall_cache_semantic_enabled
+            or not prompt.strip()
+            or not embedding
+        ):
+            return
+        try:
+            client = await self.connect()
+            meta_payload = {
+                "cache_key": cache_key,
+                "structured_signature": structured_signature or "none",
+                "prompt": prompt.strip()[:120],
+                "embedding": [float(value) for value in embedding],
+            }
+            ttl = int(self.settings.course_recall_cache_ttl_seconds)
+            await client.set(self.semantic_meta_key(cache_key), json.dumps(meta_payload, ensure_ascii=False), ex=ttl)
+            bucket_key = self.semantic_bucket_key(structured_signature or "none")
+            await client.sadd(bucket_key, cache_key)
+            await client.expire(bucket_key, ttl)
+        except Exception:
+            self._client = None
+
+    async def find_semantic_cache_key(
+        self,
+        structured_signature: str,
+        query_embedding: list[float],
+        similarity_threshold: float,
+        max_candidates: int,
+        exclude_keys: set[str] | None = None,
+    ) -> tuple[str | None, float]:
+        if (
+            not self.settings.course_recall_cache_enabled
+            or not self.settings.course_recall_cache_semantic_enabled
+            or not query_embedding
+        ):
+            return None, 0.0
+        try:
+            client = await self.connect()
+            bucket_key = self.semantic_bucket_key(structured_signature or "none")
+            member_keys = sorted(await client.smembers(bucket_key))
+            if not member_keys:
+                return None, 0.0
+            excluded = exclude_keys or set()
+            stale_keys: list[str] = []
+            best_key: str | None = None
+            best_score = -1.0
+
+            for cache_key in member_keys[: max(max_candidates, 1)]:
+                if cache_key in excluded:
+                    continue
+                if not await client.exists(cache_key):
+                    stale_keys.append(cache_key)
+                    continue
+                raw_meta = await client.get(self.semantic_meta_key(cache_key))
+                if not raw_meta:
+                    stale_keys.append(cache_key)
+                    continue
+                try:
+                    meta = json.loads(raw_meta)
+                    candidate_embedding = [float(value) for value in meta.get("embedding") or []]
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    stale_keys.append(cache_key)
+                    continue
+                score = self._cosine_similarity(query_embedding, candidate_embedding)
+                if score > best_score:
+                    best_score = score
+                    best_key = cache_key
+
+            if stale_keys:
+                await client.srem(bucket_key, *stale_keys)
+            if best_key is None or best_score < similarity_threshold:
+                return None, max(best_score, 0.0)
+            return best_key, best_score
+        except Exception:
+            self._client = None
+            return None, 0.0
+
     async def try_acquire_lock(self, cache_key: str) -> bool:
         if not self.settings.course_recall_cache_enabled:
             return False
@@ -126,3 +251,22 @@ class CourseRecallCacheRepository:
     @staticmethod
     def lock_key(cache_key: str) -> str:
         return f"{cache_key}:lock"
+
+    @staticmethod
+    def semantic_meta_key(cache_key: str) -> str:
+        return f"{cache_key}:semantic"
+
+    @staticmethod
+    def semantic_bucket_key(structured_signature: str) -> str:
+        return f"recall:semantic:v1:{structured_signature}"
+
+    @staticmethod
+    def _cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
+        if not vec_a or not vec_b or len(vec_a) != len(vec_b):
+            return 0.0
+        dot = sum(a * b for a, b in zip(vec_a, vec_b))
+        norm_a = math.sqrt(sum(a * a for a in vec_a))
+        norm_b = math.sqrt(sum(b * b for b in vec_b))
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+        return dot / (norm_a * norm_b)

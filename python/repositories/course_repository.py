@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
+import structlog
 from sqlalchemy import text
 
 from models.schemas import Course
 
 from .mysql_repository import MySQLRepository
+
+logger = structlog.get_logger()
 
 
 class CourseRepository(MySQLRepository):
@@ -141,7 +145,17 @@ class CourseRepository(MySQLRepository):
         campus: list[str] | None = None,
         query_text: str = "",
     ) -> list[Course]:
+        start = time.perf_counter()
         if not self.ping():
+            logger.warning(
+                "course_repository.fetch_courses.skip",
+                reason="mysql_unavailable",
+                limit=limit,
+                domains_count=len(domains or []),
+                categories_count=len(categories or []),
+                campus_count=len(campus or []),
+                query_len=len(query_text.strip()),
+            )
             return []
         assert self._engine is not None
 
@@ -186,10 +200,30 @@ class CourseRepository(MySQLRepository):
         """
         with self._engine.connect() as conn:
             rows = conn.execute(text(sql), params).mappings().all()
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "course_repository.fetch_courses.done",
+            limit=limit,
+            domains_count=len(domains or []),
+            categories_count=len(categories or []),
+            campus_count=len(campus or []),
+            query_len=len(query_text.strip()),
+            row_count=len(rows),
+            latency_ms=round(elapsed_ms, 1),
+        )
         return [self._row_to_course(dict(row)) for row in rows]
 
     def fetch_courses_by_ids(self, course_ids: list[str]) -> list[Course]:
-        if not course_ids or not self.ping():
+        if not course_ids:
+            logger.info("course_repository.fetch_courses_by_ids.skip", reason="empty_ids")
+            return []
+        start = time.perf_counter()
+        if not self.ping():
+            logger.warning(
+                "course_repository.fetch_courses_by_ids.skip",
+                reason="mysql_unavailable",
+                id_count=len(course_ids),
+            )
             return []
         assert self._engine is not None
         seen_order = list(dict.fromkeys(course_ids))
@@ -206,6 +240,14 @@ class CourseRepository(MySQLRepository):
         )
         with self._engine.connect() as conn:
             rows = conn.execute(sql, params).mappings().all()
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "course_repository.fetch_courses_by_ids.done",
+            requested_count=len(course_ids),
+            unique_id_count=len(seen_order),
+            row_count=len(rows),
+            latency_ms=round(elapsed_ms, 1),
+        )
         id_to_course = {row["course_id"]: self._row_to_course(dict(row)) for row in rows}
         return [id_to_course[course_id] for course_id in seen_order if course_id in id_to_course]
 

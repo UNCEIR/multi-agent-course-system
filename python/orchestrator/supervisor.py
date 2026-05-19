@@ -109,12 +109,16 @@ class SupervisorOrchestrator:
 
         student_profile: StudentProfile | None = getattr(profile_result, "profile", None)
         raw_courses: list[Course] = getattr(recall_result, "courses", [])
+        if not isinstance(getattr(recall_result, "data", None), dict):
+            recall_result.data = {}
         logger.info(
             "course_supervisor.phase1_complete",
             request_id=request_id,
             profile_extracted=student_profile is not None,
             wide_recall_count=len(raw_courses),
             recall_success=getattr(recall_result, "success", False),
+            hard_constraints=self._hard_constraint_snapshot(student_profile),
+            wide_recall_strategies=getattr(recall_result, "recall_strategies", []),
         )
 
         # 如果画像提取出了强约束，再补一次轻量结构化召回，避免只靠宽召回漏掉课程。
@@ -129,17 +133,21 @@ class SupervisorOrchestrator:
                 raw_courses,
                 getattr(refined_result, "courses", []),
             )
+            recall_result.data["wide_recall_strategies"] = getattr(recall_result, "recall_strategies", [])
+            recall_result.data["refined_recall_strategies"] = getattr(refined_result, "recall_strategies", [])
             recall_result.data["refined_candidate_count"] = len(raw_courses)
             logger.info(
                 "course_supervisor.refined_recall_complete",
                 request_id=request_id,
                 refined_count=len(getattr(refined_result, "courses", [])),
                 merged_candidate_count=len(raw_courses),
+                refined_strategies=getattr(refined_result, "recall_strategies", []),
             )
 
         # Phase 1.5: 硬约束确定性过滤 — 违反硬约束的课程不进入重排。
         warnings: list[dict[str, Any]] = []
         if student_profile and has_active_constraints(student_profile.hard_constraints):
+            pre_filter_summary = self._course_axis_summary(raw_courses)
             raw_courses, hc_filtered, hc_warnings = self.hard_constraint_filter.filter(
                 raw_courses, student_profile.hard_constraints
             )
@@ -149,6 +157,9 @@ class SupervisorOrchestrator:
                 request_id=request_id,
                 hard_filtered_count=len(hc_filtered),
                 remaining_after_filter=len(raw_courses),
+                hard_constraints=self._hard_constraint_snapshot(student_profile),
+                before_filter_summary=pre_filter_summary,
+                after_filter_summary=self._course_axis_summary(raw_courses),
             )
 
         # Phase 2: 课程重排与选课可行性检查并行。
@@ -166,10 +177,22 @@ class SupervisorOrchestrator:
         )
 
         ranked_courses: list[Course] = getattr(rerank_result, "courses", raw_courses)
+        allowed_course_ids = {course.course_id for course in raw_courses}
+        ranked_courses = [course for course in ranked_courses if course.course_id in allowed_course_ids]
         available_ids = set(getattr(feasibility_result, "available_courses", []))
         final_courses = [course for course in ranked_courses if course.course_id in available_ids]
         final_courses = final_courses[: request.num_items]
         warnings.extend(getattr(feasibility_result, "selection_warnings", []))
+        if len(final_courses) < request.num_items:
+            warnings.append(
+                self._build_shortage_warning(
+                    requested_count=request.num_items,
+                    final_count=len(final_courses),
+                    ranked_count=len(ranked_courses),
+                    available_count=len(available_ids),
+                    candidate_count=len(raw_courses),
+                )
+            )
         logger.info(
             "course_supervisor.phase2_complete",
             request_id=request_id,
@@ -177,6 +200,7 @@ class SupervisorOrchestrator:
             feasibility_count=len(available_ids),
             warning_count=len(warnings),
             final_count=len(final_courses),
+            final_course_summary=self._course_axis_summary(final_courses),
         )
 
         # Phase 3: 面向学生生成推荐理由和选课提醒。
@@ -259,6 +283,8 @@ class SupervisorOrchestrator:
 
             student_profile: StudentProfile | None = getattr(profile_result, "profile", None)
             raw_courses: list[Course] = getattr(recall_result, "courses", [])
+            if not isinstance(getattr(recall_result, "data", None), dict):
+                recall_result.data = {}
             agent_results["student_profile"] = profile_result
             agent_results["course_recall"] = recall_result
 
@@ -282,17 +308,22 @@ class SupervisorOrchestrator:
                     raw_courses,
                     getattr(refined_result, "courses", []),
                 )
+                recall_result.data["wide_recall_strategies"] = getattr(recall_result, "recall_strategies", [])
+                recall_result.data["refined_recall_strategies"] = getattr(refined_result, "recall_strategies", [])
+                recall_result.data["refined_candidate_count"] = len(raw_courses)
                 agent_results["course_recall"] = recall_result
                 logger.info(
                     "course_supervisor.refined_recall_complete",
                     request_id=request_id,
                     refined_count=len(getattr(refined_result, "courses", [])),
                     merged_candidate_count=len(raw_courses),
+                    refined_strategies=getattr(refined_result, "recall_strategies", []),
                 )
 
             # Phase 1.5: 硬约束确定性过滤 — 违反硬约束的课程不进入重排。
             warnings: list[dict[str, Any]] = []
             if student_profile and has_active_constraints(student_profile.hard_constraints):
+                pre_filter_summary = self._course_axis_summary(raw_courses)
                 raw_courses, hc_filtered, hc_warnings = self.hard_constraint_filter.filter(
                     raw_courses, student_profile.hard_constraints
                 )
@@ -302,6 +333,9 @@ class SupervisorOrchestrator:
                     request_id=request_id,
                     hard_filtered_count=len(hc_filtered),
                     remaining_after_filter=len(raw_courses),
+                    hard_constraints=self._hard_constraint_snapshot(student_profile),
+                    before_filter_summary=pre_filter_summary,
+                    after_filter_summary=self._course_axis_summary(raw_courses),
                 )
                 yield {
                     "event": "phase",
@@ -328,10 +362,22 @@ class SupervisorOrchestrator:
             )
 
             ranked_courses: list[Course] = getattr(rerank_result, "courses", raw_courses)
+            allowed_course_ids = {course.course_id for course in raw_courses}
+            ranked_courses = [course for course in ranked_courses if course.course_id in allowed_course_ids]
             available_ids = set(getattr(feasibility_result, "available_courses", []))
             final_courses = [course for course in ranked_courses if course.course_id in available_ids]
             final_courses = final_courses[: request.num_items]
             warnings.extend(getattr(feasibility_result, "selection_warnings", []))
+            if len(final_courses) < request.num_items:
+                warnings.append(
+                    self._build_shortage_warning(
+                        requested_count=request.num_items,
+                        final_count=len(final_courses),
+                        ranked_count=len(ranked_courses),
+                        available_count=len(available_ids),
+                        candidate_count=len(raw_courses),
+                    )
+                )
             agent_results["course_rerank"] = rerank_result
             agent_results["course_feasibility"] = feasibility_result
 
@@ -432,3 +478,63 @@ class SupervisorOrchestrator:
                     seen.add(course.course_id)
                     merged.append(course)
         return merged
+
+    @staticmethod
+    def _hard_constraint_snapshot(profile: StudentProfile | None) -> dict[str, Any]:
+        if not profile:
+            return {}
+        hard = profile.hard_constraints
+        return {
+            "campus": list(hard.campus),
+            "categories": list(hard.categories),
+            "avoid_time_slots": list(hard.avoid_time_slots),
+            "teacher": hard.teacher,
+            "no_exam": hard.no_exam,
+            "no_group_work": hard.no_group_work,
+            "max_difficulty": hard.max_difficulty,
+            "max_workload": hard.max_workload,
+        }
+
+    @staticmethod
+    def _course_axis_summary(courses: list[Course]) -> dict[str, Any]:
+        campus_count: dict[str, int] = {}
+        category_count: dict[str, int] = {}
+        for course in courses:
+            campus = course.campus or "unknown"
+            campus_count[campus] = campus_count.get(campus, 0) + 1
+            category = course.course_category or course.domain or "unknown"
+            category_count[category] = category_count.get(category, 0) + 1
+        return {
+            "count": len(courses),
+            "campus_count": campus_count,
+            "category_count": category_count,
+        }
+
+    @staticmethod
+    def _build_shortage_warning(
+        requested_count: int,
+        final_count: int,
+        ranked_count: int,
+        available_count: int,
+        candidate_count: int,
+    ) -> dict[str, Any]:
+        if candidate_count < requested_count:
+            cause = "candidate_insufficient"
+            message = "召回候选数量不足，建议放宽筛选条件或调整需求描述。"
+        elif available_count < requested_count:
+            cause = "feasibility_filter_insufficient"
+            message = "可行性过滤后课程不足，建议放宽硬约束或准备替代课程。"
+        else:
+            cause = "rerank_output_insufficient"
+            message = "排序后可返回课程不足，建议补充偏好或减少请求数量。"
+        return {
+            "type": "requested_count_shortage",
+            "level": "medium",
+            "cause": cause,
+            "requested_count": requested_count,
+            "final_count": final_count,
+            "ranked_count": ranked_count,
+            "available_count": available_count,
+            "candidate_count": candidate_count,
+            "message": message,
+        }

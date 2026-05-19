@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     course_recall_cache_lock_ttl_seconds: int = 5
     course_recall_cache_wait_retries: int = 3
     course_recall_cache_wait_seconds: float = 0.1
+    course_recall_cache_semantic_enabled: bool = True
+    course_recall_cache_semantic_threshold: float = 0.9
+    course_recall_cache_semantic_max_candidates: int = 12
+    course_recall_cache_semantic_min_prompt_chars: int = 8
 
     mysql_host: str = "localhost"
     mysql_port: int = 3306

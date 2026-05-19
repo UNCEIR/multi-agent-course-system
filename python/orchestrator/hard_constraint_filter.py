@@ -104,9 +104,10 @@ class HardConstraintFilter:
             )
 
         if hc.categories:
-            category_match = (
-                course.course_category in hc.categories
-                or course.domain in hc.categories
+            category_match = any(
+                HardConstraintFilter._fuzzy_text_match(required, course.course_category)
+                or HardConstraintFilter._fuzzy_text_match(required, course.domain)
+                for required in hc.categories
             )
             if not category_match:
                 required = "/".join(hc.categories)
@@ -195,6 +196,23 @@ class HardConstraintFilter:
             )
 
         return warnings
+
+    @staticmethod
+    def _fuzzy_text_match(required: str, actual: str) -> bool:
+        required_text = (required or "").strip()
+        actual_text = (actual or "").strip()
+        if not required_text or not actual_text:
+            return False
+        if required_text == actual_text:
+            return True
+        required_core = required_text.replace("类", "")
+        actual_core = actual_text.replace("类", "")
+        return (
+            required_core in actual_core
+            or actual_core in required_core
+            or required_text in actual_text
+            or actual_text in required_text
+        )
 
     @staticmethod
     def _active_constraint_summary(hc: HardConstraints) -> dict[str, Any]:
