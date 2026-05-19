@@ -32,31 +32,101 @@ class CourseRecallAgent(BaseAgent):
         context: dict[str, Any] = kwargs.get("context", {})
         num_items: int = kwargs.get("num_items", 10)
         query = (prompt or context.get("query") or "").strip()
-        cache_key = self.cache_key_builder.build(profile=profile, prompt=query, context=context)
+        cache_context = self.cache_key_builder.build_context(profile=profile, prompt=query, context=context)
+        cache_key = cache_context.cache_key
+        self.logger.info(
+            "course_recall.cache_probe",
+            cache_key_suffix=self._cache_key_suffix(cache_key),
+            structured_signature=cache_context.structured_signature,
+            query_len=len(query),
+            has_profile=profile is not None,
+        )
 
-        cached_courses = await self._cached_courses(cache_key)
+        cached_courses = await self._cached_courses(cache_key, source="exact")
         if cached_courses:
+            self.logger.info(
+                "course_recall.cache_hit",
+                match_type="exact",
+                cache_key_suffix=self._cache_key_suffix(cache_key),
+                candidate_count=len(cached_courses),
+                milvus_skipped=True,
+            )
             candidates = self._score_candidates(cached_courses, profile, query)
             candidates.sort(key=lambda course: course.score, reverse=True)
             return CourseRecallResult(
                 success=True,
                 courses=candidates[: num_items * 3],
                 recall_strategies=["redis_recall_cache_hit"],
-                data={"total_candidates": len(candidates), "strategies": ["redis_recall_cache_hit"]},
+                data={
+                    "total_candidates": len(candidates),
+                    "strategies": ["redis_recall_cache_hit"],
+                    "cache_match_type": "exact",
+                    "cache_key_suffix": self._cache_key_suffix(cache_key),
+                    "milvus_skipped": True,
+                },
                 confidence=0.88,
             )
 
+        semantic_courses, semantic_similarity, semantic_cache_key = await self._semantic_cached_courses(
+            query=query,
+            structured_signature=cache_context.structured_signature,
+            excluded_keys={cache_key},
+        )
+        if semantic_courses:
+            self.logger.info(
+                "course_recall.cache_hit",
+                match_type="semantic",
+                cache_key_suffix=self._cache_key_suffix(semantic_cache_key),
+                similarity=round(semantic_similarity, 4),
+                candidate_count=len(semantic_courses),
+                milvus_skipped=True,
+            )
+            candidates = self._score_candidates(semantic_courses, profile, query)
+            candidates.sort(key=lambda course: course.score, reverse=True)
+            return CourseRecallResult(
+                success=True,
+                courses=candidates[: num_items * 3],
+                recall_strategies=["redis_recall_cache_semantic_hit"],
+                data={
+                    "total_candidates": len(candidates),
+                    "strategies": ["redis_recall_cache_semantic_hit"],
+                    "cache_match_type": "semantic",
+                    "cache_key_suffix": self._cache_key_suffix(semantic_cache_key),
+                    "cache_similarity": round(semantic_similarity, 4),
+                    "milvus_skipped": True,
+                },
+                confidence=0.87,
+            )
+
         lock_acquired = await self.recall_cache.try_acquire_lock(cache_key)
+        self.logger.info(
+            "course_recall.cache_lock",
+            cache_key_suffix=self._cache_key_suffix(cache_key),
+            lock_acquired=lock_acquired,
+        )
         if not lock_acquired:
             cached_courses = await self._wait_for_cached_courses(cache_key)
             if cached_courses:
+                self.logger.info(
+                    "course_recall.cache_hit",
+                    match_type="wait_hit",
+                    cache_key_suffix=self._cache_key_suffix(cache_key),
+                    candidate_count=len(cached_courses),
+                    milvus_skipped=True,
+                )
                 candidates = self._score_candidates(cached_courses, profile, query)
                 candidates.sort(key=lambda course: course.score, reverse=True)
                 return CourseRecallResult(
                     success=True,
                     courses=candidates[: num_items * 3],
                     recall_strategies=["redis_recall_cache_wait_hit"],
-                    data={"total_candidates": len(candidates), "strategies": ["redis_recall_cache_wait_hit"]},
+                    data={
+                        "total_candidates": len(candidates),
+                        "strategies": ["redis_recall_cache_wait_hit"],
+                        "cache_match_type": "wait_hit",
+                        "cache_key_suffix": self._cache_key_suffix(cache_key),
+                        "milvus_skipped": True,
+                    },
                     confidence=0.87,
                 )
 
@@ -68,6 +138,12 @@ class CourseRecallAgent(BaseAgent):
             query_text=self._short_query(query),
         )
         strategies = ["mysql_structured"]
+        self.logger.info(
+            "course_recall.mysql_structured.done",
+            cache_key_suffix=self._cache_key_suffix(cache_key),
+            candidate_count=len(db_candidates),
+            query_short_used=bool(self._short_query(query)),
+        )
 
         semantic_courses: list[Course] = []
         semantic_status: str | None = None
@@ -80,6 +156,12 @@ class CourseRecallAgent(BaseAgent):
                 strategies.append("milvus_course_chunks_empty")
             elif semantic_status == "hit":
                 strategies.append("milvus_course_chunks")
+            self.logger.info(
+                "course_recall.milvus_query.done",
+                status=semantic_status,
+                semantic_id_count=len(semantic_ids),
+                semantic_course_count=len(semantic_courses),
+            )
 
         if not db_candidates and not semantic_courses:
             db_candidates = self._fallback_courses()
@@ -89,7 +171,19 @@ class CourseRecallAgent(BaseAgent):
         candidates = self._score_candidates(candidates, profile, query)
         candidates.sort(key=lambda course: course.score, reverse=True)
         await self.recall_cache.set_course_ids(cache_key, [course.course_id for course in candidates])
+        if lock_acquired and query:
+            await self._index_semantic_cache(
+                cache_key=cache_key,
+                structured_signature=cache_context.structured_signature,
+                query=query,
+            )
         strategies.append("redis_recall_cache_write" if lock_acquired else "redis_recall_cache_bypass")
+        self.logger.info(
+            "course_recall.cache_write",
+            cache_key_suffix=self._cache_key_suffix(cache_key),
+            lock_acquired=lock_acquired,
+            candidate_count=len(candidates),
+        )
 
         return CourseRecallResult(
             success=True,
@@ -99,26 +193,115 @@ class CourseRecallAgent(BaseAgent):
                 "total_candidates": len(candidates),
                 "strategies": strategies,
                 "semantic_status": semantic_status or "skipped",
+                "cache_match_type": "miss",
+                "cache_key_suffix": self._cache_key_suffix(cache_key),
             },
             confidence=0.86,
         )
 
-    async def _cached_courses(self, cache_key: str) -> list[Course]:
+    async def _cached_courses(self, cache_key: str, source: str = "exact") -> list[Course]:
         cached_ids = await self.recall_cache.get_course_ids(cache_key)
         if not cached_ids:
+            self.logger.info(
+                "course_recall.cache_miss",
+                source=source,
+                cache_key_suffix=self._cache_key_suffix(cache_key),
+            )
             return []
         courses = self.course_repo.fetch_courses_by_ids(cached_ids)
         if not courses:
+            self.logger.warning(
+                "course_recall.cache_ids_stale",
+                source=source,
+                cache_key_suffix=self._cache_key_suffix(cache_key),
+                cached_id_count=len(cached_ids),
+            )
             return []
+        self.logger.info(
+            "course_recall.cache_course_ids_loaded",
+            source=source,
+            cache_key_suffix=self._cache_key_suffix(cache_key),
+            cached_id_count=len(cached_ids),
+            loaded_course_count=len(courses),
+        )
         return courses
 
     async def _wait_for_cached_courses(self, cache_key: str) -> list[Course]:
         for _ in range(max(self.settings.course_recall_cache_wait_retries, 0)):
             await asyncio.sleep(self.settings.course_recall_cache_wait_seconds)
-            courses = await self._cached_courses(cache_key)
+            courses = await self._cached_courses(cache_key, source="wait")
             if courses:
                 return courses
         return []
+
+    async def _semantic_cached_courses(
+        self,
+        query: str,
+        structured_signature: str,
+        excluded_keys: set[str],
+    ) -> tuple[list[Course], float, str]:
+        if (
+            not getattr(self.settings, "course_recall_cache_semantic_enabled", False)
+            or not query
+            or len(query) < max(int(self.settings.course_recall_cache_semantic_min_prompt_chars), 1)
+        ):
+            return [], 0.0, ""
+        find_match = getattr(self.recall_cache, "find_semantic_cache_key", None)
+        if not callable(find_match):
+            return [], 0.0, ""
+        try:
+            query_embedding = self.vector_repo.embedding_client.embed_text(query)
+        except Exception as exc:
+            self.logger.warning("course_recall.semantic_embedding_failed", error=str(exc))
+            return [], 0.0, ""
+
+        matched_key, similarity = await find_match(
+            structured_signature=structured_signature,
+            query_embedding=query_embedding,
+            similarity_threshold=float(self.settings.course_recall_cache_semantic_threshold),
+            max_candidates=int(self.settings.course_recall_cache_semantic_max_candidates),
+            exclude_keys=excluded_keys,
+        )
+        if not matched_key:
+            self.logger.info(
+                "course_recall.semantic_cache_miss",
+                structured_signature=structured_signature,
+                similarity=round(similarity, 4),
+            )
+            return [], 0.0, ""
+        courses = await self._cached_courses(matched_key, source="semantic")
+        if not courses:
+            return [], 0.0, ""
+        return courses, similarity, matched_key
+
+    async def _index_semantic_cache(
+        self,
+        cache_key: str,
+        structured_signature: str,
+        query: str,
+    ) -> None:
+        index_semantic = getattr(self.recall_cache, "index_semantic_cache", None)
+        if not callable(index_semantic):
+            return
+        try:
+            query_embedding = self.vector_repo.embedding_client.embed_text(query)
+            await index_semantic(
+                cache_key=cache_key,
+                structured_signature=structured_signature,
+                prompt=query,
+                embedding=query_embedding,
+            )
+            self.logger.info(
+                "course_recall.semantic_cache_indexed",
+                cache_key_suffix=self._cache_key_suffix(cache_key),
+                structured_signature=structured_signature,
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "course_recall.semantic_cache_index_failed",
+                cache_key_suffix=self._cache_key_suffix(cache_key),
+                error=str(exc),
+            )
 
     def _semantic_course_ids(self, query: str, limit: int) -> tuple[list[str], Literal["hit", "empty", "failed"]]:
         try:
@@ -198,6 +381,10 @@ class CourseRecallAgent(BaseAgent):
         if len(query) > 12:
             return ""
         return query[:30]
+
+    @staticmethod
+    def _cache_key_suffix(cache_key: str) -> str:
+        return cache_key.rsplit(":", 1)[-1]
 
     @staticmethod
     def _fallback_courses() -> list[Course]:

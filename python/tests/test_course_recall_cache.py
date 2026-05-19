@@ -46,6 +46,29 @@ class _UnavailableCache:
         return False
 
 
+class _SemanticCacheHit:
+    async def get_course_ids(self, cache_key: str) -> list[str]:
+        if cache_key == "semantic:hit:key":
+            return ["GXK003"]
+        return []
+
+    async def find_semantic_cache_key(
+        self,
+        structured_signature: str,
+        query_embedding: list[float],
+        similarity_threshold: float,
+        max_candidates: int,
+        exclude_keys: set[str] | None = None,
+    ) -> tuple[str | None, float]:
+        return "semantic:hit:key", 0.97
+
+    async def set_course_ids(self, cache_key: str, course_ids: list[str]) -> None:
+        raise AssertionError("semantic cache hit should not rewrite")
+
+    async def try_acquire_lock(self, cache_key: str) -> bool:
+        raise AssertionError("semantic cache hit should bypass lock")
+
+
 @pytest.mark.asyncio
 async def test_course_recall_uses_cached_course_ids_and_skips_vector_search():
     agent = CourseRecallAgent()
@@ -129,3 +152,27 @@ async def test_course_recall_falls_back_to_full_recall_when_cache_unavailable():
     assert [course.course_id for course in result.courses] == ["GXK001"]
     assert "mysql_structured" in result.recall_strategies
     assert "redis_recall_cache_bypass" in result.recall_strategies
+
+
+@pytest.mark.asyncio
+async def test_course_recall_uses_semantic_cache_when_exact_key_misses():
+    agent = CourseRecallAgent()
+    agent.recall_cache = _SemanticCacheHit()
+
+    profile = StudentProfile(student_id="S10001", preferred_domains=[])
+    semantic_course = Course(course_id="GXK003", course_name="地球科学概论", domain="自然环境")
+
+    agent.course_repo.fetch_courses_by_ids = MagicMock(return_value=[semantic_course])
+    agent.course_repo.fetch_courses = MagicMock(side_effect=AssertionError("semantic hit should skip structured recall"))
+    agent.vector_repo.search = MagicMock(side_effect=AssertionError("semantic hit should skip milvus search"))
+
+    result = await agent.run(
+        student_profile=profile,
+        prompt="我想找轻松一点的地理相关通识课",
+        context={},
+        num_items=1,
+    )
+
+    assert [course.course_id for course in result.courses] == ["GXK003"]
+    assert result.recall_strategies == ["redis_recall_cache_semantic_hit"]
+    assert result.data["cache_match_type"] == "semantic"

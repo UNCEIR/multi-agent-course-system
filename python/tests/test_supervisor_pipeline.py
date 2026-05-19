@@ -9,6 +9,7 @@ from models.schemas import (
     CourseFeasibilityResult,
     CourseRecallResult,
     CourseRerankResult,
+    HardConstraints,
     RecommendationReasonResult,
     RecommendationRequest,
     StudentProfile,
@@ -95,6 +96,7 @@ async def test_supervisor_filters_time_conflict_and_returns_course_reasons():
     assert response.recommendation_reasons[0]["course_id"] == "GXK001"
     assert "course_recall" in response.agent_results
     assert response.agent_results["course_feasibility"].data["filtered_count"] == 1
+    assert any(w.get("type") == "requested_count_shortage" for w in response.selection_warnings)
 
 
 @pytest.mark.agent
@@ -164,3 +166,69 @@ async def test_supervisor_pipeline_uses_cached_recall_candidates():
     assert [course.course_id for course in response.courses] == ["GXK010"]
     assert response.agent_results["course_recall"].recall_strategies == ["redis_recall_cache_hit"]
     recall_agent.course_repo.fetch_courses_by_ids.assert_called()
+
+
+@pytest.mark.agent
+@pytest.mark.asyncio
+async def test_supervisor_hard_constraint_filter_blocks_non_west_campus_courses():
+    req = RecommendationRequest(
+        user_id="S10003",
+        num_items=3,
+        prompt="我要去西校区上课，而且我只要上自然科学类的课",
+    )
+    profile = StudentProfile(
+        student_id="S10003",
+        raw_prompt=req.prompt,
+        preferred_domains=["自然环境"],
+        preferred_categories=["自然科学类"],
+        preferred_campus=["西校区"],
+        hard_constraints=HardConstraints(campus=["西校区"], categories=["自然科学类"]),
+    )
+    west_course = Course(
+        course_id="GXK201",
+        course_name="地球系统科学导论",
+        campus="西校区",
+        course_category="自然科学类",
+        domain="自然环境",
+        has_exam=0,
+    )
+    east_course = Course(
+        course_id="GXK202",
+        course_name="海洋科学与文明",
+        campus="东校区",
+        course_category="自然科学类",
+        domain="自然环境",
+        has_exam=0,
+    )
+    recall_result = CourseRecallResult(
+        success=True,
+        courses=[east_course, west_course],
+        recall_strategies=["mysql_structured"],
+    )
+    rerank_result = CourseRerankResult(
+        success=True,
+        courses=[east_course, west_course],
+        rerank_strategy="llm_course_rerank",
+    )
+    feasibility_result = CourseFeasibilityResult(
+        success=True,
+        available_courses=["GXK201", "GXK202"],
+        data={"total_checked": 2, "available_count": 2, "filtered_count": 0},
+    )
+    reason_result = RecommendationReasonResult(
+        success=True,
+        reasons=[{"course_id": "GXK201", "reason": "符合西校区与自然科学偏好。"}],
+    )
+
+    orchestrator = SupervisorOrchestrator(
+        student_profile_agent=_AgentStub(StudentProfileResult(success=True, profile=profile)),
+        course_recall_agent=_AgentStub(recall_result),
+        course_rerank_agent=_AgentStub(rerank_result),
+        course_feasibility_agent=_AgentStub(feasibility_result),
+        recommendation_reason_agent=_AgentStub(reason_result),
+    )
+
+    response = await orchestrator.recommend(req)
+
+    assert [course.course_id for course in response.courses] == ["GXK201"]
+    assert all(course.campus == "西校区" for course in response.courses)

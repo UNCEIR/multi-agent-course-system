@@ -139,6 +139,13 @@ class StudentProfileAgent(BaseAgent):
             campus = self._list(context, "hard_campus")
         if not avoid_time_slots and context.get("hard_avoid_time_slots"):
             avoid_time_slots = self._list(context, "hard_avoid_time_slots")
+        prompt_hard = self._extract_prompt_hard_constraints(prompt)
+        if prompt_hard["campus"]:
+            campus = self._merge_unique(campus, prompt_hard["campus"])
+        if prompt_hard["categories"]:
+            categories = self._merge_unique(categories, prompt_hard["categories"])
+        if prompt_hard["no_exam"]:
+            no_exam = True
 
         return HardConstraints(
             campus=campus,
@@ -150,6 +157,43 @@ class StudentProfileAgent(BaseAgent):
             max_difficulty=max_difficulty if isinstance(max_difficulty, str) else None,
             max_workload=max_workload if isinstance(max_workload, str) else None,
         )
+
+    def _extract_prompt_hard_constraints(self, prompt: str) -> dict[str, Any]:
+        normalized = prompt or ""
+        campus = []
+        for campus_name in ["东校区", "南校区", "北校区", "西校区", "主校区"]:
+            if campus_name in normalized:
+                campus.append(campus_name)
+
+        categories: list[str] = []
+        category_rules = {
+            "自然科学": "自然科学与工程技术类",
+            "工程技术": "自然科学与工程技术类",
+            "人文": "人文与社会科学类",
+            "社会科学": "人文与社会科学类",
+            "心理": "人文与社会科学类",
+        }
+        for keyword, category in category_rules.items():
+            if keyword in normalized and category not in categories:
+                categories.append(category)
+
+        no_exam = any(
+            keyword in normalized
+            for keyword in ["不考试", "不要考试", "没有考试", "没有期末", "无考试", "免考试"]
+        )
+        return {
+            "campus": campus,
+            "categories": categories,
+            "no_exam": no_exam,
+        }
+
+    @staticmethod
+    def _merge_unique(base: list[str], incoming: list[str]) -> list[str]:
+        merged = list(base)
+        for item in incoming:
+            if item and item not in merged:
+                merged.append(item)
+        return merged
 
     def _parse_json(self, raw: str) -> dict[str, Any]:
         try:
