@@ -1,314 +1,77 @@
----
-name: 多Agent电商推荐系统
-overview: 构建一个面向面试的企业级多Agent电商推荐与营销系统项目，包含Java/Go/Python三语言实现、配套八股文、简历模板和面试STAR法指南，从零到面试全流程覆盖。
-todos:
-  - id: phase1-python-core
-    content: "Phase 1: Python核心骨架 - LangGraph + Supervisor + 4 Agent + MiniMax M2.7接入"
-    status: completed
-  - id: phase2-feature-storage
-    content: "Phase 2: 实时特征工程(Redis) + 向量检索(Milvus) + 业务数据(MySQL/SQLite)"
-    status: completed
-  - id: phase3-ab-testing
-    content: "Phase 3: A/B测试引擎 + MAB动态调优 + 监控面板"
-    status: completed
-  - id: phase4-java
-    content: "Phase 4: Java版实现 - Spring AI Alibaba + Spring Boot 3"
-    status: completed
-  - id: phase5-go
-    content: "Phase 5: Go版实现 - LangChainGo + goroutine并行编排"
-    status: completed
-  - id: phase6-docs
-    content: "Phase 6: 面试全套文档 - 八股文/简历模板/STAR法/代码讲解"
-    status: completed
-  - id: phase7-github
-    content: "Phase 7: GitHub发布 - README/CI/CD/Docker一键部署"
-    status: completed
-isProject: false
----
+# Legacy：多 Agent 电商推荐项目历史规划
 
-# 多Agent电商推荐与营销系统 — 从零到面试全攻略
+> 本文件是历史参考，不代表当前主推荐 API。当前主线是学校公选课 Multi-Agent 推荐系统，请优先阅读 `docs/INDEX.md`、`docs/interview-guide.md`、`docs/architecture.md` 和 `docs/code-walkthrough.md`。
 
-> Legacy 文档：本文件用于保留历史电商推荐项目规划，不代表当前主推荐 API。
-> 当前主线请参考 [README](../README.md)、[面试讲解文档](./interview-guide.md) 和 [课程改造设计](./plans/2026-05-11-course-agent-redesign.md)。
+## 1. 为什么保留这份文档
 
-## 一、调研结论：企业级多Agent项目参考
+项目早期规划过“多 Agent 电商推荐与营销系统”，包含用户画像、商品推荐、营销文案、库存决策、A/B 测试等内容。后续主线已经改造成学校公选课推荐系统，但历史规划仍有参考价值：
 
-### 1.1 GitHub 顶级参考项目
+- 解释项目为什么会残留 `Product`、`products`、`ECOM_` 等命名。
+- 帮助面试时回答“这个项目是怎么从通用推荐迁移到公选课场景的”。
+- 保留多语言和电商方向的扩展思路，但不把它们当成当前已完成能力。
 
-- **NVIDIA Retail Agentic Commerce** (`NVIDIA-AI-Blueprints/Retail-Agentic-Commerce`)
-  - 企业级参考实现，含4个专业Agent（促销/推荐/搜索/售后）
-  - 技术栈：Python + Milvus向量库 + ACP/UCP协议
-  - 亮点：ARAG（Agent-RAG）推荐管线、语义搜索、多语言售后
+## 2. 不再作为当前主线的内容
 
-- **Spring AI Alibaba Multi-Agent Demo** (`spring-ai-alibaba/spring-ai-alibaba-multi-agent-demo`)
-  - Java企业级，Supervisor + 3子Agent（咨询/订单/反馈）
-  - 技术栈：Spring AI Alibaba + MySQL + Redis + Nacos + MCP协议
-  - 亮点：将Multi-Agent开发从5天压缩到5小时
+以下内容只作为历史设想，不应写进当前简历主叙事：
 
-- **京东商家智能助手**（非开源，但有技术博客）
-  - Master Agent + Sub Agents协同，ReAct范式
-  - 支持2000+店铺，日均3000+对话，人工介入率降低70%
+- 商品推荐、营销文案、库存决策 Agent。
+- CTR、GMV、文案点击率、库存预警准确率等未验证业务指标。
+- Java / Go 三语言完整企业级实现。
+- Redis 实时用户行为特征、RFM 模型、MAB 动态调优等未接入当前公选课主链路的能力。
+- 面向电商 WMS、促销、广告法合规的功能描述。
 
-- **DualAgent-Rec** (`GuilinDev/Dual-Agent-Recommendation`)
-  - 双Agent推荐（Exploitation + Exploration），Qwen2.5-14B
-  - 处理类目公平、卖家覆盖、新品曝光等多目标约束
+## 3. 可以如何对外解释
 
-### 1.2 三大框架对比
+推荐说法：
 
-- **LangGraph（Python，生产首选）**：状态机图架构，原生持久化，human-in-the-loop，适合复杂编排
-- **Spring AI Alibaba（Java，企业首选）**：Tool Calling + Handoffs两种模式，Spring生态无缝集成
-- **go-deepagent / LangChainGo（Go，高并发首选）**：递归多Agent层级，typed state，原生并发
+> 这个项目早期参考过电商推荐场景，所以仓库里还保留了一些历史命名和规划文档。后来我把主线收敛到学校公选课推荐，因为这个场景更适合展示自然语言偏好、真实课程约束、语义召回、硬约束过滤和可解释推荐。Legacy 文档只作为迁移背景，当前可运行链路以 Python 公选课推荐为准。
 
-### 1.3 行业趋势
+不推荐说法：
 
-- 2026年AI Agent工程师岗位需求增长380%，应届生年薪突破45万
-- Token成本较2023年下降10x，5-Agent管线每次运行 <$0.10
-- 企业招聘重点：不只"会用"框架，更要"懂原理" + 工程化能力（部署/监控/性能）
+> 我同时完成了电商推荐、公选课推荐、Java、Go、Python 三套生产级系统。
 
----
+原因：当前仓库主线、验证记录和面试材料都聚焦 Python 公选课链路，不能把历史规划包装成已完成事实。
 
-## 二、项目架构设计
+## 4. 历史规划摘要
 
-### 2.1 系统总览
+早期目标是构建一个面向面试的多 Agent 电商推荐项目：
 
-```mermaid
-graph TB
-    User[用户请求] --> Supervisor[Supervisor协调Agent]
-    Supervisor --> |并行分发| UserProfile[用户画像Agent]
-    Supervisor --> |并行分发| ProductRec[商品推荐Agent]
-    Supervisor --> |并行分发| MarketCopy[营销文案Agent]
-    Supervisor --> |并行分发| InventoryDec[库存决策Agent]
-    UserProfile --> Aggregator[结果聚合器]
-    ProductRec --> Aggregator
-    MarketCopy --> Aggregator
-    InventoryDec --> Aggregator
-    Aggregator --> ABTest[A/B测试引擎]
-    ABTest --> Response[个性化响应]
-    
-    UserProfile --> FeatureStore["实时特征库(Redis)"]
-    ProductRec --> VectorDB["向量数据库(Milvus)"]
-    MarketCopy --> LLM["LLM(MiniMax M2.7)"]
-    InventoryDec --> WMS["库存系统(MySQL)"]
-```
+- 用户画像 Agent：基于行为特征和用户标签生成推荐上下文。
+- 商品推荐 Agent：结合向量召回和排序策略推荐商品。
+- 营销文案 Agent：基于用户画像生成个性化文案。
+- 库存决策 Agent：根据库存和促销状态调整推荐。
+- A/B 测试引擎：对比不同推荐策略。
 
-### 2.2 四大Agent详细设计
+这些思路后来被迁移为公选课场景中的对应能力：
 
-**用户画像Agent**
-- 实时特征提取：浏览/点击/购买/收藏行为 -> Redis Feature Store
-- 用户分群：RFM模型 + 实时标签（价格敏感/品类偏好/活跃度）
-- 画像合并：离线标签（T+1批处理） + 在线标签（实时流处理）
+| 历史电商设想 | 当前公选课主线 |
+| --- | --- |
+| 用户画像 Agent | 学生画像 Agent |
+| 商品推荐 Agent | 课程召回 + 课程重排 |
+| 库存决策 Agent | 选课容量和风险判断 |
+| 营销文案 Agent | 推荐理由 Agent |
+| 电商商品事实 | 课程 CSV + MySQL 课程事实 |
+| 商品向量召回 | 课程 chunk Milvus 召回 |
+| 热门请求缓存 | Redis 课程候选 ID 缓存 |
 
-**商品推荐Agent**
-- 召回层：协同过滤 + 向量检索（Milvus）+ 热度/新品策略
-- 排序层：LLM重排 + 特征交叉（用户画像 x 商品属性）
-- 多样性控制：类目打散、卖家去重、新品加权
+## 5. 面试可讲的迁移价值
 
-**营销文案Agent**
-- Prompt模板引擎：基于用户画像动态选择模板（新客/老客/高价值）
-- 个性化生成：调用MiniMax M2.7生成文案
-- 合规校验：敏感词过滤 + 广告法合规检查
+可以讲：
 
-**库存决策Agent**
-- 实时库存查询：MCP协议同步WMS
-- 库存预警：安全库存阈值 + 补货建议
-- 限购策略：基于库存深度 + 促销热度动态调整
+- 我没有机械保留电商叙事，而是根据当前项目主线重新定义领域模型和 Agent 职责。
+- 我保留历史兼容字段和 `ECOM_` 配置前缀，是为了降低改动风险，不是业务还停留在电商。
+- 我把“库存风险”迁移成“容量/爆满/抢课风险”，把“商品召回”迁移成“课程语义召回 + 结构化过滤”。
 
-### 2.3 技术亮点
+需要谨慎：
 
-- **实时特征**：Redis Sorted Set存储用户行为序列，滑动窗口计算实时特征
-- **A/B测试引擎**：流量分桶 + 多臂赌博机（MAB）动态调整，支持Agent级别A/B
-- **个性化生成**：用户画像驱动的Prompt工程，不同用户看到不同风格的文案
+- 如果面试官问 Java/Go 版本，只能说它们是历史扩展方向或仓库参考内容，不能说已经完成同等质量主链路。
+- 如果面试官问业务指标，只能说真实指标待补充，当前验证集中在导入、接口、缓存、硬约束和流式链路。
 
----
+## 6. 当前主线跳转
 
-## 三、三语言实现方案
-
-### 3.1 Python版（推荐入门，代码量最少）
-
-- **框架**：LangGraph + LangChain
-- **LLM**：MiniMax M2.7（通过OpenAI兼容接口）
-- **存储**：Redis（特征）+ Milvus（向量）+ SQLite（业务数据）
-- **Web**：FastAPI
-- **核心文件结构**：
-  - `agents/user_profile_agent.py` - 用户画像Agent
-  - `agents/product_rec_agent.py` - 商品推荐Agent
-  - `agents/marketing_copy_agent.py` - 营销文案Agent
-  - `agents/inventory_agent.py` - 库存决策Agent
-  - `orchestrator/supervisor.py` - Supervisor编排器
-  - `services/ab_test.py` - A/B测试引擎
-  - `services/feature_store.py` - 实时特征服务
-
-### 3.2 Java版（企业级，Spring生态）
-
-- **框架**：Spring AI Alibaba + Spring Boot 3
-- **LLM**：MiniMax M2.7
-- **存储**：Redis + Milvus + MySQL
-- **核心模块**：
-  - `agent/` - 四个Agent实现（Spring AI Alibaba Agentic API）
-  - `orchestrator/` - Supervisor编排（Tool Calling模式）
-  - `service/` - 业务服务层
-  - `config/` - MCP服务器配置
-
-### 3.3 Go版（高并发，云原生）
-
-- **框架**：LangChainGo + 自研编排层
-- **LLM**：MiniMax M2.7
-- **存储**：Redis + Milvus + PostgreSQL
-- **亮点**：goroutine并行Agent调用，channel聚合结果
-- **核心模块**：
-  - `agent/` - 四个Agent（接口+实现）
-  - `orchestrator/` - 基于goroutine的并行编排
-  - `handler/` - HTTP Handler
-  - `middleware/` - A/B测试中间件
-
----
-
-## 四、面试全套材料
-
-### 4.1 简历项目经验写法
-
-```
-多Agent电商推荐与营销系统 | 独立项目 | 2026.01-2026.03
-- 设计并实现基于Supervisor模式的多Agent协同架构，含用户画像、商品推荐、
-  营销文案、库存决策4个专业Agent，采用并行分发+聚合的编排模式
-- 基于Redis实现实时用户特征工程（RFM模型+行为序列），特征更新延迟<100ms
-- 集成MiniMax M2.7实现个性化营销文案生成，基于用户画像动态切换Prompt模板
-- 设计流量分桶A/B测试引擎，支持Agent级别策略对比，推荐CTR提升15%
-- 技术栈：Python/LangGraph | Java/Spring AI Alibaba | Go/LangChainGo
-```
-
-### 4.2 STAR法面试话术
-
-**S（Situation）**：在电商场景中，传统推荐系统存在推荐单一、营销文案千篇一律、库存与推荐脱节等问题
-
-**T（Task）**：设计一个多Agent协同系统，让各专业Agent并行处理并聚合结果，实现从用户理解到个性化推荐到文案生成的全链路智能化
-
-**A（Action）**：
-- 采用Supervisor模式，将任务并行分发给4个专业Agent
-- 用户画像Agent：基于Redis实现实时特征，RFM模型+行为序列
-- 商品推荐Agent：协同过滤+向量检索召回，LLM重排
-- 营销文案Agent：用户画像驱动的Prompt模板+MiniMax生成
-- 库存决策Agent：MCP协议同步WMS，安全库存预警
-- A/B测试引擎：流量分桶+MAB算法动态调优
-
-**R（Result）**：
-- 推荐CTR提升15%，文案点击率提升23%
-- 系统延迟P99 < 2s（4Agent并行）
-- 库存异常预警准确率95%+
-
-### 4.3 八股文必备知识点
-
-**Q1: 为什么选择Multi-Agent而不是单Agent？**
-- 上下文隔离：每个Agent专注自己领域，避免上下文污染
-- 工具过载：单Agent管理几十个工具时准确率下降
-- 并行加速：4个Agent可以并行执行，延迟约等于最慢的Agent
-- 独立演进：各Agent可独立升级、A/B测试
-
-**Q2: Supervisor模式 vs Handoffs模式？**
-- Supervisor：集中控制，适合流程明确的场景，本项目采用
-- Handoffs：去中心化，Agent间直接传递控制权，适合对话场景
-
-**Q3: 如何保证Agent调用的稳定性？**
-- 重试机制：指数退避 + 最大重试次数
-- 超时控制：每个Agent设置独立超时
-- 降级策略：Agent失败时返回默认结果
-- 熔断器：连续失败时自动熔断
-
-**Q4: 实时特征怎么做的？**
-- Redis Sorted Set存储用户行为序列（score=时间戳）
-- 滑动窗口：最近1h/24h/7d的点击/购买统计
-- 离线+在线合并：T+1批处理标签 + 实时流式标签
-
-**Q5: A/B测试怎么设计？**
-- 流量分桶：用户ID哈希取模分桶
-- 实验层：支持Agent级别、模型级别、Prompt级别实验
-- 指标收集：CTR/CVR/GMV/停留时长
-- MAB算法：Thompson Sampling动态分配流量
-
-**Q6: ReAct模式详解？**
-- Thought -> Action -> Observation 循环
-- 与纯CoT区别：ReAct能与外部工具交互，用真实数据修正推理
-- 本项目中：每个Agent内部用ReAct与工具交互
-
-**Q7: 记忆系统如何设计？**
-- 短期记忆：当前会话上下文（LangGraph State）
-- 长期记忆：向量数据库存储历史画像+推荐反馈
-- 工作记忆：Redis缓存当前推荐session的中间结果
-
-**Q8: 如何处理Agent间的决策冲突？**
-- 分层仲裁：Supervisor根据优先级决策
-- 库存优先原则：推荐Agent结果需经过库存Agent校验
-- 置信度加权：各Agent结果附带置信度分数，聚合时加权
-
----
-
-## 五、项目目录结构
-
-```
-multi-agent-ecommerce/
-├── README.md                 # 项目介绍 + 快速开始
-├── docs/
-│   ├── architecture.md       # 架构设计文档
-│   ├── interview-guide.md    # 面试指南（STAR法+八股文）
-│   ├── resume-template.md    # 简历模板
-│   └── ab-testing.md         # A/B测试设计文档
-├── python/                   # Python实现
-│   ├── requirements.txt
-│   ├── main.py
-│   ├── agents/
-│   ├── orchestrator/
-│   ├── services/
-│   └── tests/
-├── java/                     # Java实现
-│   ├── pom.xml
-│   ├── src/main/java/
-│   └── src/test/java/
-├── go/                       # Go实现
-│   ├── go.mod
-│   ├── cmd/
-│   ├── agent/
-│   ├── orchestrator/
-│   └── handler/
-└── docker-compose.yml        # 一键启动（Redis+Milvus+MySQL）
-```
-
----
-
-## 六、实施计划
-
-分阶段实施，每个阶段都可以独立展示：
-
-**Phase 1 - 核心骨架（Python版）**
-- Supervisor + 4 Agent基础框架
-- LangGraph状态图编排
-- MiniMax M2.7接入
-- 基本的并行调用 + 结果聚合
-
-**Phase 2 - 特征与存储**
-- Redis实时特征工程
-- Milvus向量检索
-- MySQL业务数据
-
-**Phase 3 - A/B测试与监控**
-- 流量分桶引擎
-- MAB动态调优
-- Agent调用监控面板
-
-**Phase 4 - Java版实现**
-- Spring AI Alibaba重构
-- Spring Boot 3 + WebFlux
-
-**Phase 5 - Go版实现**
-- LangChainGo + goroutine并行
-- 高并发优化
-
-**Phase 6 - 文档与面试材料**
-- 详细代码讲解文档
-- 面试八股文合集
-- 简历模板
-- STAR法话术
-
-**Phase 7 - 上传GitHub**
-- README完善
-- CI/CD配置
-- Docker一键部署
+- 面试入口：`docs/interview-guide.md`
+- STAR 故事：`docs/interview-star-stories.md`
+- 简历模板：`docs/resume-template.md`
+- 系统架构：`docs/architecture.md`
+- 代码证据链：`docs/code-walkthrough.md`
+- 追问题库：`docs/interview-question-bank.md`

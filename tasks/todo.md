@@ -133,3 +133,24 @@
 - Phase3 报错：`astream_reasons` 形参为 `profile`，编排器误传 `student_profile=`，已改为 `profile=`（`supervisor.py`）。
 - 流式超时：`stream_timeout_seconds` 原从整次请求计时，Phase3 开始前已超过 60s 会误触发 `STREAM_TIMEOUT`；改为从 Phase3 流开始后计时（`supervisor.py`）。
 - 验证记录详见 `docs/notes/2026-05-18-docker-stream-recommend-phase15.md`。
+
+---
+
+## 面试文档体系重构（2026-05-20）
+
+- [x] 读取并梳理 `docs/architecture.md`、`docs/code-walkthrough.md`、`docs/interview-guide.md`、`docs/project-plan.md`、`docs/resume-template.md` 的现状与重复内容。
+- [x] 设计重构后的文档分工：面试主入口、STAR 故事库、追问题库、架构讲法、代码证据链、Legacy 历史参考。
+- [x] 编辑目标文档并按需新增索引/素材文档，确保中文表达聚焦“为什么、我改了什么、如何验证、可追问点”。
+- [x] 执行轻量 Markdown 格式与链接检查，并用 ReadLints 检查编辑过的文档。
+- [x] 在 `tasks/todo.md` 记录本轮 Review。
+- [x] 在 `docs/notes/` 新增本次文档重构复盘笔记。
+
+### 面试文档重构 Review
+
+- 已重构 5 个目标文档：`docs/interview-guide.md` 改为面试准备主入口；`docs/resume-template.md` 收敛为简历 bullet 与口播模板；`docs/architecture.md` 保留架构事实并补充设计取舍/可追问点；`docs/code-walkthrough.md` 改为从入口到 Agent/召回/硬约束/流式输出的代码证据链；`docs/project-plan.md` 明确标注为 Legacy 电商历史规划。
+- 已新增 3 个文档：`docs/INDEX.md`、`docs/interview-star-stories.md`、`docs/interview-question-bank.md`，用于减少 STAR、追问和简历内容在多个文档间重复。
+- 已参考必要复盘材料：容器导入与链路验证、硬/软约束分离、流式推荐验证、Redis 缓存与硬约束排查改进；未搬空 `docs/notes`，保留时间线复盘。
+- 验证：`ReadLints` 检查本轮编辑的 8 个 docs 文档已无 markdownlint 警告；`tasks/todo.md` 仍有历史多 H1 与重复 Review 警告，未为本轮任务重构整个任务文件。
+- 验证：使用 `rg "\[[^\]]+\]\([^)]+\)" docs --glob "*.md"` 检查 Markdown 链接写法，未发现本轮根目录文档中的 Markdown 链接；当前文档间引用主要使用代码样式路径。
+- 验证：使用 `rg "^\|---|^\|----|^### 代码承担的职责$|^### 支撑的面试故事$" docs --glob "*.md"` 复查后，匹配仅来自既有 `docs/notes` 历史复盘，未命中本轮编辑的根目录文档。
+- 未完成/风险：原计划尝试用 Python 脚本做更完整的本地链接解析，但两次被 PowerShell 引号转义影响，未采用该结果；本轮改用 `rg` 轻量检查。未运行业务代码测试，因为本次只改 Markdown 文档。
