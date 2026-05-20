@@ -14,7 +14,7 @@
 
 ### Q2：哪些是当前主线，哪些是 Legacy？
 
-**推荐回答**：当前主线是 `python/` 下的公选课推荐链路；`docs/project-plan.md` 里的电商推荐、商品、营销文案、库存决策是历史规划，只作为迁移背景。
+**推荐回答**：当前主线是 `python/` 下的公选课推荐链路；
 
 **证据**：`docs/architecture.md` 和 `docs/code-walkthrough.md` 都以 `python/main.py`、`SupervisorOrchestrator`、课程 Agent 和课程数据仓储为主线。
 

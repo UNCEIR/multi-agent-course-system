@@ -8,7 +8,7 @@
 
 ## 总体架构方案
 
-- 涉及模块：`docs/interview-guide.md`、`docs/resume-template.md`、`docs/architecture.md`、`docs/code-walkthrough.md`、`docs/project-plan.md`，以及新增的 `docs/INDEX.md`、`docs/interview-star-stories.md`、`docs/interview-question-bank.md`。
+- 涉及模块：`docs/interview-guide.md`、`docs/resume-template.md`、`docs/architecture.md`、`docs/code-walkthrough.md`、以及新增的 `docs/INDEX.md`、`docs/interview-star-stories.md`、`docs/interview-question-bank.md`。
 - 文档分工：
   - `interview-guide.md`：面试准备主入口，负责阅读路径、主叙事和训练方式。
   - `interview-star-stories.md`：集中承载 STAR 故事、60 秒口播和可追问点。
@@ -25,14 +25,13 @@
   - `docs/resume-template.md`：删除大量追问重复内容，保留三类岗位导向 bullet 和口播模板。
   - `docs/architecture.md`：补充 Phase 1.5 硬约束、SSE 流式接口、Redis 语义缓存、失败回退和可追问点。
   - `docs/code-walkthrough.md`：按执行顺序组织代码文件，并说明每段代码支撑哪个面试故事。
-  - `docs/project-plan.md`：重写为 Legacy 文档，避免电商规划混入当前项目主叙事。
   - `tasks/todo.md`：追加本轮执行清单与 Review。
 - 核心逻辑：把“主入口、STAR 故事、简历模板、架构事实、代码证据、追问题库、Legacy 历史参考”拆成独立文档，避免同一段话在多个文件里反复出现。
 - 兼容性与风险控制：只改 Markdown；文档中对真实未验证指标保持克制，不写 CTR、P99 或高并发等无法证明的数据。
 
 ## Debug 结论
 
-- 根因：旧文档的功能边界不清，`interview-guide.md` 和 `resume-template.md` 同时承载 STAR、追问、简历和技术亮点；`project-plan.md` 虽已标注 Legacy，但仍保留大量电商主叙事，容易误导阅读顺序。
+- 根因：旧文档的功能边界不清，`interview-guide.md` 和 `resume-template.md` 同时承载 STAR、追问、简历和技术亮点；
 - 排查过程：先读取 `tasks/todo.md` 和 5 个目标文档，再读取必要复盘笔记核对硬约束、流式推荐、Redis 缓存和容器导入验证事实。
 - 解决方式：新增索引与素材文档，重写目标文档职责，并在 Legacy 文档中明确当前主线跳转。
 

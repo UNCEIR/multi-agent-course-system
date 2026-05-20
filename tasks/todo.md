@@ -154,3 +154,39 @@
 - 验证：使用 `rg "\[[^\]]+\]\([^)]+\)" docs --glob "*.md"` 检查 Markdown 链接写法，未发现本轮根目录文档中的 Markdown 链接；当前文档间引用主要使用代码样式路径。
 - 验证：使用 `rg "^\|---|^\|----|^### 代码承担的职责$|^### 支撑的面试故事$" docs --glob "*.md"` 复查后，匹配仅来自既有 `docs/notes` 历史复盘，未命中本轮编辑的根目录文档。
 - 未完成/风险：原计划尝试用 Python 脚本做更完整的本地链接解析，但两次被 PowerShell 引号转义影响，未采用该结果；本轮改用 `rg` 轻量检查。未运行业务代码测试，因为本次只改 Markdown 文档。
+
+---
+
+## Supervisor 主链路编排文档（2026-05-20）
+
+- [x] 读取 `tasks/todo.md` 和项目复盘技能要求，确认本轮只做文档任务。
+- [x] 阅读 `python/orchestrator/supervisor.py`、`python/orchestrator/hard_constraint_filter.py`、`python/main.py`、5 个 Agent、流式 token parser、LangGraph 示例和既有架构/面试文档。
+- [x] 新增 `docs/supervisor-main-orchestration.md`，集中说明 Supervisor 主链路流程、原理、降级、LangChain/LangGraph 边界和面试 STAR 讲法。
+- [x] 新增 `docs/notes/2026-05-20-supervisor-main-orchestration.md`，记录本轮文档任务复盘。
+- [x] 执行 ReadLints 和 Markdown 轻量只读检查，记录验证结果。
+- [x] 按用户反馈重构 `docs/supervisor-main-orchestration.md`：删除面试 STAR、LangChain/LangGraph 边界和老接口输出说明，改为流式接口工程细节文档。
+
+### 本轮 Review
+
+- 已确认生产推荐主路径是 `SupervisorOrchestrator`：`/api/v1/recommend` 调用 `recommend()`，`/api/v1/recommend/stream` 调用 `stream_recommend()`；`/api/v1/recommend/graph` 是 LangGraph 展示接口，不是同步/流式主路径。
+- 已按阶段梳理主链路：Phase 1 画像与宽召回并行，画像成功后二次精召回；Phase 1.5 在重排前做确定性硬约束过滤；Phase 2 重排与可行性并行；Phase 3 串行生成推荐理由，流式路径用 marker parser 拆 token。
+- 文档中已补充错误处理和降级边界：Agent fallback、LLM JSON 失败、Redis/Milvus/Embedding 失败、空候选、硬约束过严、数量不足和流式超时。
+- 文档中已按 STAR 思路补充 60-90 秒口播、2-3 分钟展开版、追问回答和避免“报菜名”替换表。
+- 验证：ReadLints 检查两份新增文档无 Markdown 诊断；只读搜索确认 `docs/supervisor-main-orchestration.md` 标题结构完整；两份新增文档未发现 Markdown 链接写法。
+- 验证：ReadLints 仍报告 `tasks/todo.md` 历史多 H1 和重复 Review 标题警告，本轮仅追加任务记录，未重构历史任务文件。
+- 本轮未修改业务代码，未提交 git commit，新增文件控制为 2 个。
+- 用户反馈后已重写主文档为流式接口工程细节版，重点补充请求字段转换、召回缓存 key、Redis 精确/语义缓存、MySQL 结构化召回、Milvus chunk 召回、候选合并、召回初始打分公式、二次精召回、硬过滤规则、重排规则分、可行性 warning、Phase 3 marker parser、SSE 事件和 `done` 收口。
+- 验证：ReadLints 检查 `docs/supervisor-main-orchestration.md` 无 Markdown 诊断；搜索确认主文档无 `STAR`、`LangChain`、`LangGraph`、`面试`、`报菜名`、`自测`、`老接口` 等残留表述。
+
+---
+
+## 流式编排架构问答与 note 沉淀（2026-05-20）
+
+- [x] 澄清「没有结构化条件」、精确缓存 vs 语义缓存、前端 query/prompt 字段含义。
+- [x] 说明 HardConstraintFilter 与 CourseFeasibilityAgent 职责边界及为何不合并 Phase。
+- [x] 新增 `docs/notes/2026-05-20-stream-cache-feasibility-architecture-qna.md` 复盘笔记。
+
+### 架构问答 Review
+
+- 已对照 `RecallCacheKeyBuilder`、`CourseRecallAgent`、前端 `StreamView`/`RecommendPage`、`hard_constraint_filter.py`、`course_feasibility_agent.py` 与 Supervisor Phase 编排，确认问答结论与代码一致。
+- 本轮未修改业务代码，未提交 git commit，未运行 pytest/Docker。
