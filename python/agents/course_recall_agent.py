@@ -378,9 +378,9 @@ class CourseRecallAgent(BaseAgent):
     def _short_query(query: str) -> str:
         if not query:
             return ""
-        if len(query) > 12:
+        if len(query) > 50:
             return ""
-        return query[:30]
+        return query[:50]
 
     @staticmethod
     def _cache_key_suffix(cache_key: str) -> str:

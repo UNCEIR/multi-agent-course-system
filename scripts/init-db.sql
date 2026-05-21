@@ -25,7 +25,13 @@ CREATE TABLE IF NOT EXISTS course_records (
     group_work_required TINYINT DEFAULT 0,
     tags TEXT,
     raw_json JSON,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    search_text TEXT GENERATED ALWAYS AS (CONCAT_WS(' ', course_name, teacher, course_category, domain, campus, time_slot, tags)) STORED,
+    FULLTEXT INDEX ft_search_text (search_text) WITH PARSER ngram,
+    INDEX idx_domain (domain),
+    INDEX idx_course_category (course_category),
+    INDEX idx_campus (campus),
+    INDEX idx_popularity_enrolled (popularity_level DESC, current_enrolled DESC, course_id ASC)
 );
 
 CREATE TABLE IF NOT EXISTS course_chunks (

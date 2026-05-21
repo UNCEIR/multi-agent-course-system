@@ -61,6 +61,42 @@ class CourseRepository(MySQLRepository):
                 conn.execute(text(statement))
             self._add_column_if_missing(conn, "course_records", "has_exam", "TINYINT DEFAULT 0")
             self._add_column_if_missing(conn, "course_records", "group_work_required", "TINYINT DEFAULT 0")
+            self._add_column_if_missing(
+                conn,
+                "course_records",
+                "search_text",
+                "TEXT GENERATED ALWAYS AS (CONCAT_WS(' ', course_name, teacher, course_category, domain, campus, time_slot, tags)) STORED",
+            )
+            self._add_index_if_missing(
+                conn,
+                "course_records",
+                "ft_search_text",
+                "ALTER TABLE course_records ADD FULLTEXT INDEX ft_search_text (search_text) WITH PARSER ngram",
+            )
+            self._add_index_if_missing(
+                conn,
+                "course_records",
+                "idx_domain",
+                "CREATE INDEX idx_domain ON course_records (domain)",
+            )
+            self._add_index_if_missing(
+                conn,
+                "course_records",
+                "idx_course_category",
+                "CREATE INDEX idx_course_category ON course_records (course_category)",
+            )
+            self._add_index_if_missing(
+                conn,
+                "course_records",
+                "idx_campus",
+                "CREATE INDEX idx_campus ON course_records (campus)",
+            )
+            self._add_index_if_missing(
+                conn,
+                "course_records",
+                "idx_popularity_enrolled",
+                "CREATE INDEX idx_popularity_enrolled ON course_records (popularity_level DESC, current_enrolled DESC, course_id ASC)",
+            )
 
     @staticmethod
     def _add_column_if_missing(conn: Any, table_name: str, column_name: str, column_definition: str) -> None:
@@ -79,6 +115,13 @@ class CourseRepository(MySQLRepository):
         ).scalar_one()
         if int(column_count) == 0:
             conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}"))
+
+    @staticmethod
+    def _add_index_if_missing(conn: Any, table_name: str, index_name: str, index_ddl: str) -> None:
+        check_sql = text(f"SHOW INDEX FROM {table_name} WHERE Key_name = :idx")
+        existing = conn.execute(check_sql, {"idx": index_name}).fetchall()
+        if not existing:
+            conn.execute(text(index_ddl))
 
     def upsert_course(self, row: dict[str, Any]) -> None:
         if not self.ping():
@@ -174,17 +217,24 @@ class CourseRepository(MySQLRepository):
             conditions.append(f"campus IN ({placeholders})")
             params.update({f"campus_{idx}": value for idx, value in enumerate(campus)})
         if query_text.strip():
-            conditions.append(
-                """
-                (
-                    course_name LIKE :query_text OR teacher LIKE :query_text
-                    OR course_category LIKE :query_text OR domain LIKE :query_text
-                    OR campus LIKE :query_text OR time_slot LIKE :query_text
-                    OR tags LIKE :query_text
+            kw = query_text.strip()
+            if len(kw) <= 2:
+                conditions.append(
+                    """
+                    (
+                        course_name LIKE :query_text OR teacher LIKE :query_text
+                        OR course_category LIKE :query_text OR domain LIKE :query_text
+                        OR campus LIKE :query_text OR time_slot LIKE :query_text
+                        OR tags LIKE :query_text
+                    )
+                    """
                 )
-                """
-            )
-            params["query_text"] = f"%{query_text.strip()}%"
+                params["query_text"] = f"%{kw}%"
+            else:
+                conditions.append(
+                    "MATCH(search_text) AGAINST(:query_text IN NATURAL LANGUAGE MODE)"
+                )
+                params["query_text"] = kw
 
         sql = f"""
             SELECT course_id, course_name, teacher, credits, course_type, course_category,
