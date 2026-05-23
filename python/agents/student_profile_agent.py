@@ -68,7 +68,6 @@ class StudentProfileAgent(BaseAgent):
             name="student_profile",
             timeout=settings.agent_timeout_user_profile,
         )
-        logger.info("student_profile.init", settings=settings)
         self.llm = build_chat_openai(temperature=0.2, max_tokens=1024)
 
     async def _execute(self, **kwargs: Any) -> StudentProfileResult:
@@ -76,7 +75,21 @@ class StudentProfileAgent(BaseAgent):
         prompt: str = kwargs.get("prompt", "")
         context: dict[str, Any] = kwargs.get("context", {})
         profile = await self._analyze_profile(student_id, prompt, context)
-        logger.info("student_profile.success", student_id=student_id, prompt=prompt, context=context, profile=profile)
+        domains = profile.preferred_domains or ["none"]
+        campus = profile.preferred_campus or ["none"]
+        has_hard = bool(profile.hard_constraints and (
+            profile.hard_constraints.campus
+            or profile.hard_constraints.categories
+            or profile.hard_constraints.no_exam
+            or profile.hard_constraints.teacher
+        ))
+        logger.info(
+            "student_profile.done",
+            student_id=student_id,
+            domains=domains,
+            campus=campus,
+            hard_constraints=has_hard,
+        )
         return StudentProfileResult(
             success=True,
             profile=profile,
@@ -87,7 +100,6 @@ class StudentProfileAgent(BaseAgent):
     async def _analyze_profile(
         self, student_id: str, prompt: str, context: dict[str, Any]
     ) -> StudentProfile:
-        logger.info("student_profile.analyze_profile", student_id=student_id, prompt=prompt, context=context)
         messages = [
             SystemMessage(content=SYSTEM_PROMPT),
             HumanMessage(
@@ -99,13 +111,11 @@ class StudentProfileAgent(BaseAgent):
             ),
         ]
         response = await self.llm.ainvoke(messages)
-        logger.info("student_profile.llm_response", response=response)
         data = self._parse_json(response.content)
         if not data:
+            logger.warning("student_profile.llm_fallback", student_id=student_id)
             data = self._heuristic_profile(prompt, context)
-        logger.info("student_profile.heuristic_profile", data=data)
         hard_constraints = self._parse_hard_constraints(data, prompt, context)
-        logger.info("student_profile.parse_hard_constraints", hard_constraints=hard_constraints)
         return StudentProfile(
             student_id=student_id,
             raw_prompt=prompt,
@@ -128,7 +138,6 @@ class StudentProfileAgent(BaseAgent):
     def _parse_hard_constraints(
         self, data: dict[str, Any], prompt: str, context: dict[str, Any]
     ) -> HardConstraints:
-        logger.info("student_profile.parse_hard_constraints", data=data, prompt=prompt, context=context)
         hc_raw = data.get("hard_constraints") or {}
         if not isinstance(hc_raw, dict):
             hc_raw = {}
@@ -154,7 +163,6 @@ class StudentProfileAgent(BaseAgent):
             categories = self._merge_unique(categories, prompt_hard["categories"])
         if prompt_hard["no_exam"]:
             no_exam = True
-        logger.info("student_profile.merge_unique", campus=campus, avoid_time_slots=avoid_time_slots, categories=categories, teacher=teacher, no_exam=no_exam, no_group_work=no_group_work, max_difficulty=max_difficulty, max_workload=max_workload)
         return HardConstraints(
             campus=campus,
             avoid_time_slots=avoid_time_slots,
@@ -189,7 +197,6 @@ class StudentProfileAgent(BaseAgent):
             keyword in normalized
             for keyword in ["不考试", "不要考试", "没有考试", "没有期末", "无考试", "免考试"]
         )
-        logger.info("student_profile.extract_prompt_hard_constraints", campus=campus, categories=categories, no_exam=no_exam)
         return {
             "campus": campus,
             "categories": categories,

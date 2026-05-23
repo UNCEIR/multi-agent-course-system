@@ -62,22 +62,26 @@ class RecommendationReasonAgent(BaseAgent):
         self.llm = build_chat_openai(
             temperature=0.55, max_tokens=1536, streaming=True
         )
-        logger.info("recommendation_reason.init", settings=settings)
     async def _execute(self, **kwargs: Any) -> RecommendationReasonResult:
         profile: StudentProfile | None = kwargs.get("student_profile")
         courses: list[Course] = kwargs.get("courses", [])
         warnings: list[dict[str, Any]] = kwargs.get("warnings", [])
-        logger.info("recommendation_reason.execute", profile=profile, courses=courses, warnings=warnings)
         if not courses:
-            logger.info("recommendation_reason.no_courses", profile=profile, warnings=warnings)
             return RecommendationReasonResult(success=True, reasons=[], confidence=1.0)
 
         reasons = await self._llm_reasons(profile, courses, warnings)
         if not reasons:
-            logger.info("recommendation_reason.fallback_reasons", courses=courses, warnings=warnings)
+            logger.warning(
+                "recommendation_reason.llm_fallback",
+                course_count=len(courses),
+                warning_count=len(warnings),
+            )
             reasons = self._fallback_reasons(courses, warnings)
-            logger.info("recommendation_reason.fallback_reasons_success", reasons=reasons)
-        logger.info("recommendation_reason.success", reasons=reasons)
+        logger.info(
+            "recommendation_reason.done",
+            course_count=len(courses),
+            reason_count=len(reasons),
+        )
         return RecommendationReasonResult(
             success=True,
             reasons=reasons,
@@ -92,7 +96,6 @@ class RecommendationReasonAgent(BaseAgent):
         warnings: list[dict[str, Any]],
     ) -> list[dict[str, str]]:
         course_payload = self._build_course_payload(courses)
-        logger.info("recommendation_reason.llm_reasons", course_payload=course_payload)
         response = await self.llm.ainvoke(
             [
                 SystemMessage(content=REASON_PROMPT),
@@ -119,7 +122,7 @@ class RecommendationReasonAgent(BaseAgent):
                 if item.get("course_id") and item.get("reason")
             ]
         except (json.JSONDecodeError, IndexError, TypeError):
-            logger.error("recommendation_reason.llm_reasons_error", response=response)
+            logger.error("recommendation_reason.llm_parse_failed")
             return []
 
     @staticmethod
@@ -166,7 +169,6 @@ class RecommendationReasonAgent(BaseAgent):
                 )
             ),
         ]
-        logger.info("recommendation_reason.astream_reasons", messages=messages)
         parser = StreamTokenMarkupParser()
         token_stream = self._extract_tokens(messages)
         async for chunk in parser.parse(token_stream):
@@ -205,5 +207,4 @@ class RecommendationReasonAgent(BaseAgent):
                     "reason": "，".join(part for part in parts if part) + risk,
                 }
             )
-        logger.info("recommendation_reason.fallback_reasons_success", reasons=reasons)
         return reasons

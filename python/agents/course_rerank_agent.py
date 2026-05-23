@@ -43,7 +43,6 @@ class CourseRerankAgent(BaseAgent):
             timeout=settings.agent_timeout_product_rerank,
         )
         self.llm = build_chat_openai(temperature=0.25, max_tokens=1024)
-        logger.info("course_rerank.init", settings=settings)
     async def _execute(self, **kwargs: Any) -> CourseRerankResult:
         profile: StudentProfile | None = kwargs.get("student_profile")
         candidates: list[Course] = kwargs.get("candidates", [])
@@ -58,16 +57,13 @@ class CourseRerankAgent(BaseAgent):
         else:
             ranked_ids = self._rule_based_rerank(candidates, num_items)
             strategy = "rule_based_course_rerank"
-        logger.info("course_rerank.ranked_ids", ranked_ids=ranked_ids, strategy=strategy)
         id_to_course = {course.course_id: course for course in candidates}
-        logger.info("course_rerank.id_to_course", id_to_course=id_to_course)
         final_courses: list[Course] = []
         for course_id in ranked_ids:
             if course_id in id_to_course and id_to_course[course_id] not in final_courses:
                 final_courses.append(id_to_course[course_id])
 
         if len(final_courses) < num_items:
-            logger.info("course_rerank.final_courses_less_than_num_items", final_courses=final_courses, num_items=num_items)
             for course in candidates:
                 if course not in final_courses:
                     final_courses.append(course)
@@ -75,7 +71,6 @@ class CourseRerankAgent(BaseAgent):
                     break
 
         final_courses = self._ensure_domain_diversity(final_courses, num_items)
-        logger.info("course_rerank.final_courses", final_courses=final_courses)
         return CourseRerankResult(
             success=True,
             courses=final_courses[:num_items],
@@ -87,8 +82,10 @@ class CourseRerankAgent(BaseAgent):
     async def _llm_rerank(
         self, profile: StudentProfile, candidates: list[Course], num_items: int
     ) -> list[str]:
-        logger.info("course_rerank.llm_rerank", profile=profile, candidates=candidates, num_items=num_items)
         profile_summary = profile.model_dump()
+        scored = [(self._compute_score(course, profile), course) for course in candidates]
+        scored.sort(key=lambda item: item[0], reverse=True)
+        prefiltered = [course for _, course in scored[:40]]
         candidate_summary = [
             {
                 "id": course.course_id,
@@ -107,7 +104,7 @@ class CourseRerankAgent(BaseAgent):
                 "assessment": course.assessment,
                 "tags": course.tags,
             }
-            for course in candidates[:40]
+            for course in prefiltered
         ]
         prompt = RERANK_PROMPT.format(
             num_items=num_items,
@@ -125,12 +122,9 @@ class CourseRerankAgent(BaseAgent):
             if raw.startswith("```"):
                 raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
             ids = json.loads(raw)
-            logger.info("course_rerank.llm_rerank_success", ids=ids)
             return [str(course_id) for course_id in ids]
         except (json.JSONDecodeError, IndexError, TypeError):
-            logger.error("course_rerank.llm_rerank_error", response=response)
-
-            logger.info("course_rerank.rule_based_rerank", candidates=candidates, num_items=num_items)
+            logger.warning("course_rerank.llm_parse_failed")
             return self._rule_based_rerank(candidates, num_items)
 
     @staticmethod
@@ -146,7 +140,6 @@ class CourseRerankAgent(BaseAgent):
                 score -= 0.4
             scored.append((score, course.course_id))
         scored.sort(key=lambda item: item[0], reverse=True)
-        logger.info("course_rerank.rule_based_rerank", scored=scored)
         return [course_id for _, course_id in scored[:num_items]]
 
     @staticmethod
@@ -166,3 +159,31 @@ class CourseRerankAgent(BaseAgent):
             if len(result) >= num_items:
                 break
         return result
+
+    @staticmethod
+    def _compute_score(course: Course, profile: StudentProfile | None) -> float:
+        milvus_sim = course.score
+        profile_score = 0.0
+        if profile:
+            if course.domain in profile.preferred_domains:
+                profile_score += 4.0
+            if course.course_category in profile.preferred_categories:
+                profile_score += 3.0
+            if course.campus in profile.preferred_campus:
+                profile_score += 2.0
+            if profile.workload_preference == "少" and course.workload in ("低", "少"):
+                profile_score += 1.5
+            if profile.exam_preference == "不考试" and course.has_exam == 0:
+                profile_score += 1.5
+            if profile.grade_friendly_preference == "高" and course.grade_friendly in ("高", "中"):
+                profile_score += 1.2
+        if course.popularity_level >= 3:
+            profile_score += 0.8
+        if course.has_exam == 0:
+            profile_score += 0.5
+        if course.workload in ("低", "少"):
+            profile_score += 0.5
+        if course.popularity_level >= 4:
+            profile_score -= 0.4
+        milvus_weight = 0.5
+        return round(profile_score * (1.0 + milvus_sim * milvus_weight), 4)

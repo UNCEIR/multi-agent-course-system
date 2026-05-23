@@ -15,7 +15,6 @@ class CourseFeasibilityAgent(BaseAgent):
         from config import get_settings
 
         settings = get_settings()
-        logger.info("course_feasibility.init", settings=settings)
         super().__init__(
             name="course_feasibility",
             timeout=settings.agent_timeout_inventory,
@@ -42,7 +41,13 @@ class CourseFeasibilityAgent(BaseAgent):
             warnings.extend(course_warnings)
             priority_advice[course.course_id] = self._priority_advice(course)
 
-        logger.info("course_feasibility.execute", available=available, warnings=warnings, filtered=filtered, priority_advice=priority_advice)
+        logger.info(
+            "course_feasibility.done",
+            total=len(courses),
+            available=len(available),
+            filtered=len(filtered),
+            warnings=len(warnings),
+        )
 
         return CourseFeasibilityResult(
             success=True,
@@ -62,28 +67,16 @@ class CourseFeasibilityAgent(BaseAgent):
     def _hard_conflicts(
         self, course: Course, profile: StudentProfile | None, context: dict[str, Any]
     ) -> list[str]:
-        """兜底时间冲突检查。
-
-        Phase 1.5 的 HardConstraintFilter 已处理校区、分类、老师、考试等所有硬约束。
-        此处仅保留 avoid_time_slots 的二次保险，防止 profile 未能解析时遗漏时间冲突。
-        """
         reasons: list[str] = []
         avoid_time_slots = set(context.get("avoid_time_slots", []))
         if profile:
-            logger.info("course_feasibility.hard_conflicts", profile=profile)
             avoid_time_slots.update(profile.avoid_time_slots)
         for avoid in avoid_time_slots:
             if avoid and avoid in course.time_slot:
                 reasons.append(f"上课时间命中避开时段：{avoid}")
-                logger.info("course_feasibility.hard_conflicts", course=course, avoid=avoid)
         return reasons
 
     def _warnings(self, course: Course, profile: StudentProfile | None) -> list[dict[str, Any]]:
-        """软约束提示：仅作提醒，不影响 available_courses 过滤。
-
-        容量状态（高优先级警告）和偏好不匹配（低优先级参考）均在此输出。
-        到达此方法的课程均已通过 Phase 1.5 硬约束过滤，所以软偏好不匹配只作参考提示。
-        """
         warnings: list[dict[str, Any]] = []
 
         if course.capacity > 0 and course.current_enrolled >= course.capacity:
@@ -96,7 +89,6 @@ class CourseFeasibilityAgent(BaseAgent):
                     "message": "当前已选人数达到或超过容量，建议作为冲刺志愿并准备替代课程。",
                 }
             )
-            logger.info("course_feasibility.capacity_full", course=course)
         elif course.capacity > 0 and course.current_enrolled / course.capacity >= 0.85:
             warnings.append(
                 {
@@ -107,7 +99,6 @@ class CourseFeasibilityAgent(BaseAgent):
                     "message": "课程容量偏紧，选课时需要优先处理。",
                 }
             )
-            logger.info("course_feasibility.capacity_tight", course=course)
 
         if profile and profile.exam_preference == "不考试" and course.has_exam == 1:
             warnings.append(
@@ -119,7 +110,6 @@ class CourseFeasibilityAgent(BaseAgent):
                     "message": "该课程有考试，仅供参考（未设为硬性要求，可酌情选择）。",
                 }
             )
-        logger.info("course_feasibility.exam_soft_mismatch", course=course)
         if profile and profile.group_work_preference == "不小组" and course.group_work_required == 1:
             warnings.append(
                 {
@@ -130,7 +120,6 @@ class CourseFeasibilityAgent(BaseAgent):
                     "message": "该课程包含小组作业，仅供参考（未设为硬性要求，可酌情选择）。",
                 }
             )
-        logger.info("course_feasibility.group_work_soft_mismatch", course=course)
         return warnings
 
     @staticmethod

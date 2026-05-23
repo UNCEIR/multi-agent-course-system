@@ -27,13 +27,23 @@ class CourseRecallAgent(BaseAgent):
         self.vector_repo = CourseVectorRepository(build_embedding_client())
         self.cache_key_builder = RecallCacheKeyBuilder()
         self.recall_cache = CourseRecallCacheRepository()
-        logger.info("course_recall.init", settings=settings)
     async def _execute(self, **kwargs: Any) -> CourseRecallResult:
         profile: StudentProfile | None = kwargs.get("student_profile")
         prompt: str = kwargs.get("prompt", "")
         context: dict[str, Any] = kwargs.get("context", {})
         num_items: int = kwargs.get("num_items", 10)
         query = (prompt or context.get("query") or "").strip()
+        query_embedding: list[float] | None = None
+        if query:
+            try:
+                query_embedding = self.vector_repo.embedding_client.embed_text(query)
+                self.logger.info(
+                    "course_recall.query_embedded",
+                    query_len=len(query),
+                    embedding_dim=len(query_embedding),
+                )
+            except Exception as exc:
+                self.logger.warning("course_recall.query_embedding_failed", error=str(exc), query_len=len(query))
         cache_context = self.cache_key_builder.build_context(profile=profile, prompt=query, context=context)
         cache_key = cache_context.cache_key
         self.logger.info(
@@ -73,6 +83,7 @@ class CourseRecallAgent(BaseAgent):
             query=query,
             structured_signature=cache_context.structured_signature,
             excluded_keys={cache_key},
+            query_embedding=query_embedding,
         )
         if semantic_courses:
             self.logger.info(
@@ -149,9 +160,15 @@ class CourseRecallAgent(BaseAgent):
 
         semantic_courses: list[Course] = []
         semantic_status: str | None = None
-        if query:
-            semantic_ids, semantic_status = self._semantic_course_ids(query, limit=num_items * 5)
+        if query and query_embedding is not None:
+            semantic_ids, semantic_distances, semantic_status = self._semantic_course_ids(
+                query, limit=num_items * 5, query_embedding=query_embedding
+            )
             semantic_courses = self.course_repo.fetch_courses_by_ids(semantic_ids)
+            id_to_distance = dict(zip(semantic_ids, semantic_distances))
+            for course in semantic_courses:
+                distance = id_to_distance.get(course.course_id, 1.0)
+                course.score = max(0.0, 1.0 - distance)
             if semantic_status == "failed":
                 strategies.append("milvus_vector_search_failed")
             elif semantic_status == "empty":
@@ -166,18 +183,43 @@ class CourseRecallAgent(BaseAgent):
             )
 
         if not db_candidates and not semantic_courses:
+            self.logger.warning(
+                "course_recall.empty_recall",
+                cache_key_suffix=self._cache_key_suffix(cache_key),
+            )
             db_candidates = self._fallback_courses()
             strategies.append("fallback_mock")
 
+        self.logger.info(
+            "course_recall.merge_input",
+            mysql_count=len(db_candidates),
+            semantic_count=len(semantic_courses),
+        )
         candidates = self._merge_dedup([semantic_courses, db_candidates])
+        self.logger.info(
+            "course_recall.merge_done",
+            merged_count=len(candidates),
+            mysql_source=len(db_candidates),
+            semantic_source=len(semantic_courses),
+        )
         candidates = self._score_candidates(candidates, profile, query)
         candidates.sort(key=lambda course: course.score, reverse=True)
+        if candidates:
+            scores = [course.score for course in candidates]
+            self.logger.info(
+                "course_recall.scored",
+                candidate_count=len(candidates),
+                score_min=round(min(scores), 4),
+                score_max=round(max(scores), 4),
+                score_avg=round(sum(scores) / len(scores), 4),
+            )
         await self.recall_cache.set_course_ids(cache_key, [course.course_id for course in candidates])
-        if lock_acquired and query:
+        if lock_acquired and query and query_embedding is not None:
             await self._index_semantic_cache(
                 cache_key=cache_key,
                 structured_signature=cache_context.structured_signature,
                 query=query,
+                query_embedding=query_embedding,
             )
         strategies.append("redis_recall_cache_write" if lock_acquired else "redis_recall_cache_bypass")
         self.logger.info(
@@ -229,11 +271,21 @@ class CourseRecallAgent(BaseAgent):
         return courses
 
     async def _wait_for_cached_courses(self, cache_key: str) -> list[Course]:
-        for _ in range(max(self.settings.course_recall_cache_wait_retries, 0)):
+        for attempt in range(max(self.settings.course_recall_cache_wait_retries, 0)):
             await asyncio.sleep(self.settings.course_recall_cache_wait_seconds)
             courses = await self._cached_courses(cache_key, source="wait")
             if courses:
+                self.logger.info(
+                    "course_recall.wait_success",
+                    cache_key_suffix=self._cache_key_suffix(cache_key),
+                    attempt=attempt + 1,
+                )
                 return courses
+            self.logger.info(
+                "course_recall.wait_retry",
+                cache_key_suffix=self._cache_key_suffix(cache_key),
+                attempt=attempt + 1,
+            )
         return []
 
     async def _semantic_cached_courses(
@@ -241,29 +293,44 @@ class CourseRecallAgent(BaseAgent):
         query: str,
         structured_signature: str,
         excluded_keys: set[str],
+        query_embedding: list[float] | None = None,
     ) -> tuple[list[Course], float, str]:
         if (
             not getattr(self.settings, "course_recall_cache_semantic_enabled", False)
             or not query
             or len(query) < max(int(self.settings.course_recall_cache_semantic_min_prompt_chars), 1)
         ):
+            self.logger.info(
+                "course_recall.semantic_cache_skipped",
+                reason="disabled_short_or_empty",
+                semantic_enabled=getattr(self.settings, "course_recall_cache_semantic_enabled", False),
+                query_len=len(query),
+            )
+            return [], 0.0, ""
+        if query_embedding is None:
+            self.logger.info(
+                "course_recall.semantic_cache_skipped",
+                reason="no_query_embedding",
+            )
             return [], 0.0, ""
         find_match = getattr(self.recall_cache, "find_semantic_cache_key", None)
         if not callable(find_match):
             return [], 0.0, ""
         try:
-            query_embedding = self.vector_repo.embedding_client.embed_text(query)
+            matched_key, similarity = await find_match(
+                structured_signature=structured_signature,
+                query_embedding=query_embedding,
+                similarity_threshold=float(self.settings.course_recall_cache_semantic_threshold),
+                max_candidates=int(self.settings.course_recall_cache_semantic_max_candidates),
+                exclude_keys=excluded_keys,
+            )
         except Exception as exc:
-            self.logger.warning("course_recall.semantic_embedding_failed", error=str(exc))
+            self.logger.warning(
+                "course_recall.semantic_cache_find_failed",
+                error=str(exc),
+                structured_signature=structured_signature,
+            )
             return [], 0.0, ""
-
-        matched_key, similarity = await find_match(
-            structured_signature=structured_signature,
-            query_embedding=query_embedding,
-            similarity_threshold=float(self.settings.course_recall_cache_semantic_threshold),
-            max_candidates=int(self.settings.course_recall_cache_semantic_max_candidates),
-            exclude_keys=excluded_keys,
-        )
         if not matched_key:
             self.logger.info(
                 "course_recall.semantic_cache_miss",
@@ -281,12 +348,14 @@ class CourseRecallAgent(BaseAgent):
         cache_key: str,
         structured_signature: str,
         query: str,
+        query_embedding: list[float] | None = None,
     ) -> None:
         index_semantic = getattr(self.recall_cache, "index_semantic_cache", None)
         if not callable(index_semantic):
             return
+        if query_embedding is None:
+            return
         try:
-            query_embedding = self.vector_repo.embedding_client.embed_text(query)
             await index_semantic(
                 cache_key=cache_key,
                 structured_signature=structured_signature,
@@ -305,31 +374,40 @@ class CourseRecallAgent(BaseAgent):
                 error=str(exc),
             )
 
-    def _semantic_course_ids(self, query: str, limit: int) -> tuple[list[str], Literal["hit", "empty", "failed"]]:
+    def _semantic_course_ids(
+        self, query: str, limit: int, query_embedding: list[float] | None = None
+    ) -> tuple[list[str], list[float], Literal["hit", "empty", "failed"]]:
         try:
-            chunk_ids = self.vector_repo.search(query=query, limit=limit)
+            results = self.vector_repo.search(query=query, limit=limit, query_vector=query_embedding)
         except Exception as exc:
             self.logger.warning("course_recall.vector_search_failed", error=str(exc))
-            return [], "failed"
-        if not chunk_ids:
-            return [], "empty"
-        course_ids = []
-        for chunk_id in chunk_ids:
-            course_id = str(chunk_id).split(":", 1)[0]
-            if course_id and course_id not in course_ids:
+            return [], [], "failed"
+        if not results:
+            return [], [], "empty"
+        course_ids: list[str] = []
+        distances: list[float] = []
+        seen: set[str] = set()
+        for result in results:
+            course_id = str(result.get("course_id", ""))
+            if course_id and course_id not in seen:
+                seen.add(course_id)
                 course_ids.append(course_id)
+                distances.append(float(result.get("distance", 1.0)))
         if not course_ids:
-            return [], "empty"
-        return course_ids, "hit"
+            self.logger.warning(
+                "course_recall.vector_search_no_unique_courses",
+                chunk_count=len(results),
+            )
+            return [], [], "empty"
+        return course_ids, distances, "hit"
 
     def _score_candidates(
         self, courses: list[Course], profile: StudentProfile | None, query: str
     ) -> list[Course]:
         query_terms = [term for term in re.split(r"\s+|，|,|。", query) if term]
-        logger.info("course_recall.score_candidates", query_terms=query_terms, courses=courses, profile=profile, query=query)
         scored = []
         for course in courses:
-            score = 0.0
+            score = course.score
             text = " ".join(
                 [
                     course.course_name,
@@ -344,23 +422,9 @@ class CourseRecallAgent(BaseAgent):
             for term in query_terms:
                 if term and term in text:
                     score += 1.5
-            if profile:
-                if course.domain in profile.preferred_domains:
-                    score += 4.0
-                if course.course_category in profile.preferred_categories:
-                    score += 3.0
-                if course.campus in profile.preferred_campus:
-                    score += 2.0
-                if profile.workload_preference == "少" and course.workload in ("低", "少"):
-                    score += 1.5
-                if profile.exam_preference == "不考试" and course.has_exam == 0:
-                    score += 1.5
-                if profile.grade_friendly_preference == "高" and course.grade_friendly in ("高", "中"):
-                    score += 1.2
             if course.popularity_level >= 3:
                 score += 0.8
             scored.append(course.model_copy(update={"score": round(score, 4)}))
-        logger.info("course_recall.score_candidates", scored=scored)
         return scored
 
     @staticmethod

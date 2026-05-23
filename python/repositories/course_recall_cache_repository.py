@@ -74,8 +74,7 @@ class RecallCacheKeyBuilder:
             "grade": self._normalize_scalar(context.get("grade", "")),
             "major": self._normalize_scalar(context.get("major", "")),
         }
-        if not any(payload.values()):
-            payload["prompt"] = self._normalize_scalar(prompt)[:80]
+        payload["prompt"] = self._normalize_scalar(prompt)[:80]
         return payload
 
     @staticmethod

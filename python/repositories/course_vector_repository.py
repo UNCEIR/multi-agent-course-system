@@ -80,10 +80,15 @@ class CourseVectorRepository:
             self._collection = None
             return False
 
-    def search(self, query: str, limit: int = 10) -> list[str]:
+    def search(
+        self, query: str, limit: int = 10, query_vector: list[float] | None = None
+    ) -> list[dict[str, object]]:
         self.connect()
         assert self._collection is not None
-        vector = self.embedding_client.embed_text(query)
+        if query_vector is not None:
+            vector = query_vector
+        else:
+            vector = self.embedding_client.embed_text(query)
         results = self._collection.search(
             data=[vector],
             anns_field="embedding",
@@ -93,4 +98,12 @@ class CourseVectorRepository:
         )
         if not results:
             return []
-        return [hit.id for hit in results[0]]
+        return [
+            {
+                "chunk_id": hit.id,
+                "course_id": str(hit.entity.get("course_id", "")),
+                "chunk_type": str(hit.entity.get("chunk_type", "")),
+                "distance": float(hit.distance),
+            }
+            for hit in results[0]
+        ]

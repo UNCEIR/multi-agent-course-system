@@ -90,6 +90,7 @@ async def test_course_recall_uses_cached_course_ids_and_skips_vector_search():
     agent.course_repo.fetch_courses_by_ids = MagicMock(return_value=cached_courses)
     agent.course_repo.fetch_courses = MagicMock(side_effect=AssertionError("structured recall should be skipped"))
     agent.vector_repo.search = MagicMock(side_effect=AssertionError("vector search should be skipped"))
+    agent.vector_repo.embedding_client.embed_text = MagicMock(return_value=[0.1] * 1152)
 
     result = await agent.run(
         student_profile=profile,
@@ -114,7 +115,10 @@ async def test_course_recall_writes_course_ids_when_cache_misses():
     semantic_course = Course(course_id="GXK002", course_name="心理学与生活", domain="人文艺术")
 
     agent.course_repo.fetch_courses = MagicMock(return_value=[db_course])
-    agent.vector_repo.search = MagicMock(return_value=["GXK002:0:basic"])
+    agent.vector_repo.search = MagicMock(return_value=[
+        {"chunk_id": "GXK002:0:basic", "course_id": "GXK002", "distance": 0.2}
+    ])
+    agent.vector_repo.embedding_client.embed_text = MagicMock(return_value=[0.1] * 1152)
     agent.course_repo.fetch_courses_by_ids = MagicMock(return_value=[semantic_course])
 
     result = await agent.run(
@@ -140,6 +144,7 @@ async def test_course_recall_falls_back_to_full_recall_when_cache_unavailable():
 
     agent.course_repo.fetch_courses = MagicMock(return_value=[db_course])
     agent.vector_repo.search = MagicMock(return_value=[])
+    agent.vector_repo.embedding_client.embed_text = MagicMock(return_value=[0.1] * 1152)
     agent.course_repo.fetch_courses_by_ids = MagicMock(return_value=[])
 
     result = await agent.run(
@@ -165,6 +170,7 @@ async def test_course_recall_uses_semantic_cache_when_exact_key_misses():
     agent.course_repo.fetch_courses_by_ids = MagicMock(return_value=[semantic_course])
     agent.course_repo.fetch_courses = MagicMock(side_effect=AssertionError("semantic hit should skip structured recall"))
     agent.vector_repo.search = MagicMock(side_effect=AssertionError("semantic hit should skip milvus search"))
+    agent.vector_repo.embedding_client.embed_text = MagicMock(return_value=[0.1] * 1152)
 
     result = await agent.run(
         student_profile=profile,
