@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
-
+import structlog
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from config import get_settings
@@ -11,6 +11,8 @@ from services import build_chat_openai
 
 from .base_agent import BaseAgent
 
+
+logger = structlog.get_logger()
 RERANK_PROMPT = """你是学校教务系统的公选课推荐排序专家。请根据学生画像和候选课程，选出最适合的{num_items}门公选课。
 
 学生画像:
@@ -41,7 +43,7 @@ class CourseRerankAgent(BaseAgent):
             timeout=settings.agent_timeout_product_rerank,
         )
         self.llm = build_chat_openai(temperature=0.25, max_tokens=1024)
-
+        logger.info("course_rerank.init", settings=settings)
     async def _execute(self, **kwargs: Any) -> CourseRerankResult:
         profile: StudentProfile | None = kwargs.get("student_profile")
         candidates: list[Course] = kwargs.get("candidates", [])
@@ -56,14 +58,16 @@ class CourseRerankAgent(BaseAgent):
         else:
             ranked_ids = self._rule_based_rerank(candidates, num_items)
             strategy = "rule_based_course_rerank"
-
+        logger.info("course_rerank.ranked_ids", ranked_ids=ranked_ids, strategy=strategy)
         id_to_course = {course.course_id: course for course in candidates}
+        logger.info("course_rerank.id_to_course", id_to_course=id_to_course)
         final_courses: list[Course] = []
         for course_id in ranked_ids:
             if course_id in id_to_course and id_to_course[course_id] not in final_courses:
                 final_courses.append(id_to_course[course_id])
 
         if len(final_courses) < num_items:
+            logger.info("course_rerank.final_courses_less_than_num_items", final_courses=final_courses, num_items=num_items)
             for course in candidates:
                 if course not in final_courses:
                     final_courses.append(course)
@@ -71,6 +75,7 @@ class CourseRerankAgent(BaseAgent):
                     break
 
         final_courses = self._ensure_domain_diversity(final_courses, num_items)
+        logger.info("course_rerank.final_courses", final_courses=final_courses)
         return CourseRerankResult(
             success=True,
             courses=final_courses[:num_items],
@@ -82,6 +87,7 @@ class CourseRerankAgent(BaseAgent):
     async def _llm_rerank(
         self, profile: StudentProfile, candidates: list[Course], num_items: int
     ) -> list[str]:
+        logger.info("course_rerank.llm_rerank", profile=profile, candidates=candidates, num_items=num_items)
         profile_summary = profile.model_dump()
         candidate_summary = [
             {
@@ -119,8 +125,12 @@ class CourseRerankAgent(BaseAgent):
             if raw.startswith("```"):
                 raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
             ids = json.loads(raw)
+            logger.info("course_rerank.llm_rerank_success", ids=ids)
             return [str(course_id) for course_id in ids]
         except (json.JSONDecodeError, IndexError, TypeError):
+            logger.error("course_rerank.llm_rerank_error", response=response)
+
+            logger.info("course_rerank.rule_based_rerank", candidates=candidates, num_items=num_items)
             return self._rule_based_rerank(candidates, num_items)
 
     @staticmethod
@@ -136,6 +146,7 @@ class CourseRerankAgent(BaseAgent):
                 score -= 0.4
             scored.append((score, course.course_id))
         scored.sort(key=lambda item: item[0], reverse=True)
+        logger.info("course_rerank.rule_based_rerank", scored=scored)
         return [course_id for _, course_id in scored[:num_items]]
 
     @staticmethod

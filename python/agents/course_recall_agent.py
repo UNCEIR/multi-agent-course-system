@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 from typing import Any, Literal
+import structlog
 
 from models.schemas import Course, CourseRecallResult, StudentProfile
 from repositories import CourseRecallCacheRepository, CourseRepository, CourseVectorRepository, RecallCacheKeyBuilder
@@ -10,6 +11,7 @@ from services import build_embedding_client
 
 from .base_agent import BaseAgent
 
+logger = structlog.get_logger()
 
 class CourseRecallAgent(BaseAgent):
     def __init__(self):
@@ -25,7 +27,7 @@ class CourseRecallAgent(BaseAgent):
         self.vector_repo = CourseVectorRepository(build_embedding_client())
         self.cache_key_builder = RecallCacheKeyBuilder()
         self.recall_cache = CourseRecallCacheRepository()
-
+        logger.info("course_recall.init", settings=settings)
     async def _execute(self, **kwargs: Any) -> CourseRecallResult:
         profile: StudentProfile | None = kwargs.get("student_profile")
         prompt: str = kwargs.get("prompt", "")
@@ -324,6 +326,7 @@ class CourseRecallAgent(BaseAgent):
         self, courses: list[Course], profile: StudentProfile | None, query: str
     ) -> list[Course]:
         query_terms = [term for term in re.split(r"\s+|，|,|。", query) if term]
+        logger.info("course_recall.score_candidates", query_terms=query_terms, courses=courses, profile=profile, query=query)
         scored = []
         for course in courses:
             score = 0.0
@@ -357,6 +360,7 @@ class CourseRecallAgent(BaseAgent):
             if course.popularity_level >= 3:
                 score += 0.8
             scored.append(course.model_copy(update={"score": round(score, 4)}))
+        logger.info("course_recall.score_candidates", scored=scored)
         return scored
 
     @staticmethod

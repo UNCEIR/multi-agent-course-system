@@ -2,16 +2,20 @@ from __future__ import annotations
 
 from typing import Any
 
+import structlog
+
 from models.schemas import Course, CourseFeasibilityResult, StudentProfile
 
 from .base_agent import BaseAgent
 
+logger = structlog.get_logger()
 
 class CourseFeasibilityAgent(BaseAgent):
     def __init__(self):
         from config import get_settings
 
         settings = get_settings()
+        logger.info("course_feasibility.init", settings=settings)
         super().__init__(
             name="course_feasibility",
             timeout=settings.agent_timeout_inventory,
@@ -37,6 +41,8 @@ class CourseFeasibilityAgent(BaseAgent):
             course_warnings = self._warnings(course, profile)
             warnings.extend(course_warnings)
             priority_advice[course.course_id] = self._priority_advice(course)
+
+        logger.info("course_feasibility.execute", available=available, warnings=warnings, filtered=filtered, priority_advice=priority_advice)
 
         return CourseFeasibilityResult(
             success=True,
@@ -64,10 +70,12 @@ class CourseFeasibilityAgent(BaseAgent):
         reasons: list[str] = []
         avoid_time_slots = set(context.get("avoid_time_slots", []))
         if profile:
+            logger.info("course_feasibility.hard_conflicts", profile=profile)
             avoid_time_slots.update(profile.avoid_time_slots)
         for avoid in avoid_time_slots:
             if avoid and avoid in course.time_slot:
                 reasons.append(f"上课时间命中避开时段：{avoid}")
+                logger.info("course_feasibility.hard_conflicts", course=course, avoid=avoid)
         return reasons
 
     def _warnings(self, course: Course, profile: StudentProfile | None) -> list[dict[str, Any]]:
@@ -88,6 +96,7 @@ class CourseFeasibilityAgent(BaseAgent):
                     "message": "当前已选人数达到或超过容量，建议作为冲刺志愿并准备替代课程。",
                 }
             )
+            logger.info("course_feasibility.capacity_full", course=course)
         elif course.capacity > 0 and course.current_enrolled / course.capacity >= 0.85:
             warnings.append(
                 {
@@ -98,6 +107,7 @@ class CourseFeasibilityAgent(BaseAgent):
                     "message": "课程容量偏紧，选课时需要优先处理。",
                 }
             )
+            logger.info("course_feasibility.capacity_tight", course=course)
 
         if profile and profile.exam_preference == "不考试" and course.has_exam == 1:
             warnings.append(
@@ -109,6 +119,7 @@ class CourseFeasibilityAgent(BaseAgent):
                     "message": "该课程有考试，仅供参考（未设为硬性要求，可酌情选择）。",
                 }
             )
+        logger.info("course_feasibility.exam_soft_mismatch", course=course)
         if profile and profile.group_work_preference == "不小组" and course.group_work_required == 1:
             warnings.append(
                 {
@@ -119,6 +130,7 @@ class CourseFeasibilityAgent(BaseAgent):
                     "message": "该课程包含小组作业，仅供参考（未设为硬性要求，可酌情选择）。",
                 }
             )
+        logger.info("course_feasibility.group_work_soft_mismatch", course=course)
         return warnings
 
     @staticmethod

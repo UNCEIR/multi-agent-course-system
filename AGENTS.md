@@ -57,7 +57,7 @@ python -m pytest tests/ -m "not slow"          # 跳过需外部服务的测试
 ### Embedding Client 实例化链
 
 ```
-main.py:48          → CourseVectorRepository(build_embedding_client())    # 全局单例（供 health check）
+main.py:51          → CourseVectorRepository(build_embedding_client())    # 全局单例（供 health check）
 course_recall_agent.py:25 → CourseVectorRepository(build_embedding_client())  # Agent 自己再创建一个
 ```
 
@@ -89,9 +89,20 @@ MaaS 代理的自定义域名 `llm-oe8ejw5pgtze0knw.cn-beijing.maas.aliyuncs.com
 ```
 Phase 1: StudentProfileAgent ∥ CourseRecallAgent (profile=None, wide recall)
          └─ 画像成功后, CourseRecallAgent (with profile, refined recall)
+Phase 1.5: HardConstraintFilter (确定性硬约束过滤：校区、分类、时间、老师、不考试等)
 Phase 2: CourseRerankAgent ∥ CourseFeasibilityAgent
 Phase 3: RecommendationReasonAgent (串行)
 ```
+
+Phase 1.5 违规直接剔除，候选不足时返回 `hard_constraint_sparse`，不放宽条件。排序与可行性只处理通过硬过滤的集合。
+
+### CI/CD
+
+此仓库无 CI 配置（无 `.github/workflows` 等），不要尝试 CI 命令。
+
+### 前端
+
+前端（Vite + React + TypeScript）**无 lint / test / format 脚本**。不要尝试 `npm run lint`、`npm test`、`npm run format`。
 
 ## 常见坑
 
@@ -99,3 +110,6 @@ Phase 3: RecommendationReasonAgent (串行)
 - `_env_file_candidates()` 会找根目录 `.env` 和 `python/.env` 两个文件，如果只改一个可能被另一个覆盖
 - CSV 导入在嵌入向量阶段很慢（500门=2000次 API 调用），超时概率高，建议先用 `--limit` 验证
 - 测试 `course_recall_cache.py` 直接用 mock 替换 `agent.vector_repo.search`，不会真正调 embedding
+- Milvus 向量缺失时用 `python/scripts/backfill_milvus_vectors.py` 按 MySQL 差异补数（无需重建 collection）
+- 根目录 `docker-compose.yml` 是旧的电商系统，公选课只用 `docker-compose.python.yml --profile python`
+- MySQL 宿主机端口为 **3307→3306**；容器内应用连 `3306`，宿主机直连必须用 `3307`

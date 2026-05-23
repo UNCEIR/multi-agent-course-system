@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
-
+import structlog
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from config import get_settings
@@ -10,6 +10,9 @@ from models.schemas import HardConstraints, StudentProfile, StudentProfileResult
 from services import build_chat_openai
 
 from .base_agent import BaseAgent
+
+
+logger = structlog.get_logger()
 
 SYSTEM_PROMPT = """你是教务系统里的公选课学生画像分析专家。
 请根据学生输入的自然语言需求和结构化上下文，抽取适合公选课推荐的画像。
@@ -65,6 +68,7 @@ class StudentProfileAgent(BaseAgent):
             name="student_profile",
             timeout=settings.agent_timeout_user_profile,
         )
+        logger.info("student_profile.init", settings=settings)
         self.llm = build_chat_openai(temperature=0.2, max_tokens=1024)
 
     async def _execute(self, **kwargs: Any) -> StudentProfileResult:
@@ -72,6 +76,7 @@ class StudentProfileAgent(BaseAgent):
         prompt: str = kwargs.get("prompt", "")
         context: dict[str, Any] = kwargs.get("context", {})
         profile = await self._analyze_profile(student_id, prompt, context)
+        logger.info("student_profile.success", student_id=student_id, prompt=prompt, context=context, profile=profile)
         return StudentProfileResult(
             success=True,
             profile=profile,
@@ -82,6 +87,7 @@ class StudentProfileAgent(BaseAgent):
     async def _analyze_profile(
         self, student_id: str, prompt: str, context: dict[str, Any]
     ) -> StudentProfile:
+        logger.info("student_profile.analyze_profile", student_id=student_id, prompt=prompt, context=context)
         messages = [
             SystemMessage(content=SYSTEM_PROMPT),
             HumanMessage(
@@ -93,12 +99,13 @@ class StudentProfileAgent(BaseAgent):
             ),
         ]
         response = await self.llm.ainvoke(messages)
+        logger.info("student_profile.llm_response", response=response)
         data = self._parse_json(response.content)
         if not data:
             data = self._heuristic_profile(prompt, context)
-
+        logger.info("student_profile.heuristic_profile", data=data)
         hard_constraints = self._parse_hard_constraints(data, prompt, context)
-
+        logger.info("student_profile.parse_hard_constraints", hard_constraints=hard_constraints)
         return StudentProfile(
             student_id=student_id,
             raw_prompt=prompt,
@@ -121,6 +128,7 @@ class StudentProfileAgent(BaseAgent):
     def _parse_hard_constraints(
         self, data: dict[str, Any], prompt: str, context: dict[str, Any]
     ) -> HardConstraints:
+        logger.info("student_profile.parse_hard_constraints", data=data, prompt=prompt, context=context)
         hc_raw = data.get("hard_constraints") or {}
         if not isinstance(hc_raw, dict):
             hc_raw = {}
@@ -146,7 +154,7 @@ class StudentProfileAgent(BaseAgent):
             categories = self._merge_unique(categories, prompt_hard["categories"])
         if prompt_hard["no_exam"]:
             no_exam = True
-
+        logger.info("student_profile.merge_unique", campus=campus, avoid_time_slots=avoid_time_slots, categories=categories, teacher=teacher, no_exam=no_exam, no_group_work=no_group_work, max_difficulty=max_difficulty, max_workload=max_workload)
         return HardConstraints(
             campus=campus,
             avoid_time_slots=avoid_time_slots,
@@ -181,6 +189,7 @@ class StudentProfileAgent(BaseAgent):
             keyword in normalized
             for keyword in ["不考试", "不要考试", "没有考试", "没有期末", "无考试", "免考试"]
         )
+        logger.info("student_profile.extract_prompt_hard_constraints", campus=campus, categories=categories, no_exam=no_exam)
         return {
             "campus": campus,
             "categories": categories,
