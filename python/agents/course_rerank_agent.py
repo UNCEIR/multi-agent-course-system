@@ -42,7 +42,7 @@ class CourseRerankAgent(BaseAgent):
             name="course_rerank",
             timeout=settings.agent_timeout_product_rerank,
         )
-        self.llm = build_chat_openai(temperature=0.25, max_tokens=1024)
+        self.llm = build_chat_openai(temperature=0.25, max_tokens=2048)
     async def _execute(self, **kwargs: Any) -> CourseRerankResult:
         profile: StudentProfile | None = kwargs.get("student_profile")
         candidates: list[Course] = kwargs.get("candidates", [])

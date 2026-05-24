@@ -8,6 +8,8 @@
 
 ### 1. Python 环境
 
+**首次创建 venv**
+
 ```powershell
 # Windows
 python -m venv .venv
@@ -21,26 +23,39 @@ python -m venv .venv && source .venv/bin/activate
 python -m pip install -r ./python/requirements.txt
 ```
 
+**日常进入 venv**
+
+```powershell
+# Windows
+.venv\Scripts\activate.bat
+```
+
+```bash
+# Linux/macOS
+. .venv/bin/activate
+```
+
 ### 2. 配置 `.env`
 
 根目录 `.env` 与 `python/.env` 都会被加载（先根后 `python/`）；Docker 只注入 `python/.env`，本地与容器请保持关键项一致。
 
-在 `python/.env` 中配置 LLM / Embedding（示例值见仓库，勿提交密钥）：
+在 `python/.env` 中配置 LLM / Embedding，这边示例是走第三方的阿里云百炼平台：
 
 ```env
-ECOM_LLM_API_KEY=...
+ECOM_LLM_API_KEY=sk-xxxxxxxxxxxxxxxxxxx
 ECOM_LLM_BASE_URL=https://llm-oe8ejw5pgtze0knw.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
-ECOM_LLM_MODEL=deepseek-v4-pro
+ECOM_LLM_MODEL=your-model-name
+ECOM_LLM_ENABLE_THINKING=true
 
 ECOM_EMBEDDING_PROVIDER=dashscope_multimodal
 ECOM_EMBEDDING_BASE_URL=https://llm-oe8ejw5pgtze0knw.cn-beijing.maas.aliyuncs.com/api/v1
-ECOM_EMBEDDING_API_KEY=...
-ECOM_EMBEDDING_MODEL=tongyi-embedding-vision-plus-2026-03-06
-ECOM_EMBEDDING_DIMENSION=1152
-ECOM_MILVUS_DIMENSION=1152
-ECOM_COURSE_MILVUS_COLLECTION=course_chunks_real
+ECOM_EMBEDDING_API_KEY=sk-xxxxxxxxxxxxxxxxxxx
+ECOM_EMBEDDING_MODEL=your-embedding-model-name
+ECOM_EMBEDDING_DIMENSION=xxxx
+ECOM_MILVUS_DIMENSION=xxxx
+ECOM_COURSE_MILVUS_COLLECTION=your-collection-name
 
-# MaaS 自定义域名证书 SAN 不匹配，本地/Docker 均需关闭 SSL 校验
+# 若MaaS 自定义域名证书 SAN 不匹配，本地/Docker 均需关闭 SSL 校验
 ECOM_HTTPX_VERIFY_SSL=false
 ```
 
@@ -50,15 +65,33 @@ MySQL / Redis / Milvus 在 Compose 内已配好，一般无需写入 `.env`。
 
 ### 3. Docker
 
-```bash
-# 首次或改过 Dockerfile / requirements
-docker compose -f docker-compose.python.yml --profile python up -d --build
-
-# 日常启动
-docker compose -f docker-compose.python.yml --profile python up -d
-```
+默认在仓库根目录操作，Compose 文件为 `docker-compose.python.yml`，须加 `--profile python`。
 
 MySQL 宿主机端口为 **3307→3306**（避免占用本机 3306）；容器内应用仍连 `3306`。
+
+**日常启动**
+
+```bash
+docker compose -f docker-compose.python.yml --profile python up -d
+docker compose -f docker-compose.python.yml --profile python ps
+docker compose -f docker-compose.python.yml --profile python logs --tail=80 python-api
+docker compose -f docker-compose.python.yml --profile python logs --tail=80 mysql
+docker compose -f docker-compose.python.yml --profile python logs --tail=80 redis
+docker compose -f docker-compose.python.yml --profile python logs --tail=80 milvus
+```
+
+**首次部署（拉镜像 + 构建 + 启动）**
+
+```bash
+docker compose -f docker-compose.python.yml --profile python pull
+docker compose -f docker-compose.python.yml --profile python up -d --build
+```
+
+**修改后重建**
+
+```bash
+docker compose -f docker-compose.python.yml --profile python up -d --build 容器名
+```
 
 ### 4. 导入数据
 
@@ -124,11 +157,6 @@ flowchart TD
     p3 --> out["课程 + 理由 + 风险 + Agent 轨迹"]
 ```
 
-**硬约束 vs 软约束**：画像 Agent 输出 `hard_constraints`（如「只要东校区」→ 校区硬约束；「人文艺术」可匹配 `course_category` 或 `domain`）。Phase 1.5 违规课程直接剔除，候选不足时返回 `hard_constraint_sparse`，不放宽条件。排序与可行性只处理通过硬过滤的集合。
-
-**召回缓存**：Redis 只缓存 `course_id` 列表，命中后仍回 MySQL 取最新容量/限制。支持精确 key（结构化 profile 签名）与语义近邻命中（可跳过 Milvus/embedding）；默认 TTL 15 分钟。响应 `agent_results.course_recall` 含 `cache_match_type`、`milvus_skipped` 等字段便于排查。
-
-**结果稳定性**：最终列表仅允许 Phase 1.5 后的候选；条数不足时附加 `requested_count_shortage` warning。
 
 ## 核心模块
 

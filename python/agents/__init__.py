@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-# 当前课程推荐主链路导出（旧电商 Agent 不再从包入口暴露）
+
 __all__ = [
     "BaseAgent",
     "StudentProfileAgent",
