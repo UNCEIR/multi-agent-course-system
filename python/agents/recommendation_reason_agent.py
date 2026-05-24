@@ -60,7 +60,7 @@ class RecommendationReasonAgent(BaseAgent):
             timeout=settings.agent_timeout_marketing_copy,
         )
         self.llm = build_chat_openai(
-            temperature=0.55, max_tokens=1536, streaming=True
+            temperature=0.55, max_tokens=3072, streaming=True
         )
     async def _execute(self, **kwargs: Any) -> RecommendationReasonResult:
         profile: StudentProfile | None = kwargs.get("student_profile")

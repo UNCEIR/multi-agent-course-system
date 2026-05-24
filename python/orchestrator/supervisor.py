@@ -88,6 +88,7 @@ class SupervisorOrchestrator:
             scene=request.scene,
             prompt_chars=len(prompt),
             context_keys=sorted(request.context.keys()),
+            prompt=prompt,
         )
 
         experiment = self.ab_engine.assign(request.user_id)
@@ -223,6 +224,12 @@ class SupervisorOrchestrator:
             total_latency_ms=round(total_latency, 1),
             course_count=len(final_courses),
             warning_count=len(warnings),
+        )
+        logger.info(
+            "course_supervisor.response",
+            request_id=request_id,
+            courses=[{"id": c.course_id, "name": c.course_name, "score": c.score} for c in final_courses],
+            reasons=[{"course_id": r.get("course_id"), "reason": r.get("reason", "")[:60]} for r in reasons],
         )
 
         return RecommendationResponse(
@@ -426,6 +433,12 @@ class SupervisorOrchestrator:
             yield {"event": "phase", "data": {"phase": "phase3_complete"}}
 
             total_latency = (time.perf_counter() - start) * 1000
+            logger.info(
+                "course_supervisor.response",
+                request_id=request_id,
+                courses=[{"id": c.course_id, "name": c.course_name, "score": c.score} for c in final_courses],
+                reasons=[{"course_id": cid, "reason": text[:60]} for cid, text in collected_text.items() if cid != "__prelude__"],
+            )
             yield {
                 "event": "done",
                 "data": {

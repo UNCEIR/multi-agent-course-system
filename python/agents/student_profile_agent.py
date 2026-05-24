@@ -68,7 +68,7 @@ class StudentProfileAgent(BaseAgent):
             name="student_profile",
             timeout=settings.agent_timeout_user_profile,
         )
-        self.llm = build_chat_openai(temperature=0.2, max_tokens=1024)
+        self.llm = build_chat_openai(temperature=0.2, max_tokens=2048)
 
     async def _execute(self, **kwargs: Any) -> StudentProfileResult:
         student_id: str = kwargs["user_id"]

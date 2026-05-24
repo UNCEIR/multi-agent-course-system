@@ -130,7 +130,7 @@ graph TB
 ### 3.1 Python版（推荐入门，代码量最少）
 
 - **框架**：FastAPI + 自研 SupervisorOrchestrator，另保留 LangGraph 展示入口
-- **LLM**：阿里云 OpenAI 兼容接口，当前配置示例为 `deepseek-v4-pro`
+- **LLM**：阿里云 OpenAI 兼容接口，当前配置示例为 `deepseek-v4-flash`
 - **存储**：MySQL（课程结构化数据）+ Redis（召回缓存）+ Milvus（课程 chunk 向量）
 - **Web**：FastAPI
 - **核心文件结构**：
