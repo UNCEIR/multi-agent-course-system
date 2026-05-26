@@ -163,6 +163,7 @@ async def recommend_via_graph(request: RecommendationRequest):
         "courses": [course.model_dump() for course in result.get("final_courses", [])],
         "recommendation_reasons": result.get("recommendation_reasons", []),
         "selection_warnings": result.get("selection_warnings", []),
+        "priority_advice": result.get("priority_advice", {}),
         "experiment_group": result.get("experiment_group", "control"),
         "total_latency_ms": round(result.get("total_latency_ms", 0), 1),
     }

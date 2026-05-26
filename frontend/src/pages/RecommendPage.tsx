@@ -493,6 +493,7 @@ function SingleResultView({ response, prompt }: { response: RecommendationRespon
         )}
         {response.selection_warnings.length > 0 && (
           <Collapse
+            style={{ marginBottom: 12 }}
             items={[{
               key: 'warnings',
               label: (
@@ -518,6 +519,64 @@ function SingleResultView({ response, prompt }: { response: RecommendationRespon
                       ))}
                     </Card>
                   ))}
+                </div>
+              ),
+            }]}
+          />
+        )}
+        {response.priority_advice && Object.keys(response.priority_advice).length > 0 && (
+          <Collapse
+            items={[{
+              key: 'priority_advice',
+              label: (
+                <Space>
+                  <RiseOutlined style={{ color: '#1e3a5f' }} />
+                  <Text strong className="serif-heading" style={{ color: '#1e3a5f' }}>
+                    抢课优先级建议
+                  </Text>
+                  <Tag style={{ background: '#e8eef4', color: '#1e3a5f', border: 'none' }}>
+                    {Object.keys(response.priority_advice).length} 门
+                  </Tag>
+                </Space>
+              ),
+              children: (
+                <div style={{ maxHeight: 340, overflow: 'auto' }}>
+                  {Object.entries(response.priority_advice).map(([courseId, advice]) => {
+                    const course = response.courses.find((c) => c.course_id === courseId)
+                    const priorityColors: Record<string, string> = {
+                      high: '#166534',
+                      medium: '#92400e',
+                      low: '#991b1b',
+                    }
+                    const priorityBgs: Record<string, string> = {
+                      high: '#f0faf4',
+                      medium: '#fef3c7',
+                      low: '#fef2f2',
+                    }
+                    const priorityLabels: Record<string, string> = {
+                      high: '稳妥',
+                      medium: '偏紧',
+                      low: '冲刺',
+                    }
+                    const p = advice.priority || 'medium'
+                    return (
+                      <Card key={courseId} size="small" style={{ marginBottom: 8 }}>
+                        <div style={{ marginBottom: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Text strong style={{ fontSize: 13 }}>
+                            {course?.course_name || courseId}
+                          </Text>
+                          <Tag style={{
+                            fontSize: 11, border: 'none',
+                            background: priorityBgs[p] || priorityBgs.medium,
+                            color: priorityColors[p] || priorityColors.medium,
+                          }}>
+                            {priorityLabels[p] || p}
+                          </Tag>
+                        </div>
+                        <Text style={{ fontSize: 13, color: '#5c5c6e' }}>{advice.advice}</Text>
+                      </Card>
+                    )
+                  })}
                 </div>
               ),
             }]}

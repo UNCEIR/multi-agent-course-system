@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://llm-oe8ejw5pgtze0knw.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
     llm_model: str = "deepseek-v4-flash"
     llm_temperature: float = 0.7
-    llm_max_tokens: int = 3072
+    llm_max_tokens: int = 4096
     llm_enable_thinking: bool = True
 
     redis_url: str = "redis://localhost:6379/0"

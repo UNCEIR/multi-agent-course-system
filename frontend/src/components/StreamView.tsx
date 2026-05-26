@@ -353,6 +353,11 @@ export default function StreamView({ prompt, numItems, onDone, onRetry }: Props)
               {warningCount} 条选课提醒
             </span>
           )}
+          {donePayload.priority_advice && Object.keys(donePayload.priority_advice).length > 0 && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#1e3a5f' }}>
+              {Object.keys(donePayload.priority_advice).length} 条抢课建议
+            </span>
+          )}
           <Tag style={{ fontSize: 10, background: '#e8eef4', color: '#1e3a5f', border: 'none', marginLeft: 'auto' }}>
             {donePayload.experiment_group}
           </Tag>

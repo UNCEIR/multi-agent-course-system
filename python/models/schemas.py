@@ -123,6 +123,8 @@ class StudentProfile(BaseModel):
     grade_friendly_preference: str = ""
     exam_preference: str = ""
     group_work_preference: str = ""
+    grade: str = ""
+    department: str = ""
     constraints: list[str] = Field(default_factory=list)
     real_time_tags: dict[str, Any] = Field(default_factory=dict)
     hard_constraints: HardConstraints = Field(default_factory=HardConstraints)
@@ -199,6 +201,7 @@ class RecommendationResponse(BaseModel):
     price_adjustments: dict[str, float] = Field(default_factory=dict)
     fraud_assessment: dict[str, Any] = Field(default_factory=dict)
     service_recommendation: dict[str, Any] = Field(default_factory=dict)
+    priority_advice: dict[str, PriorityAdvice] = Field(default_factory=dict)
     experiment_group: str = "control"
     agent_results: dict[str, AgentResult] = Field(default_factory=dict)
     agent_latencies: dict[str, float] = Field(default_factory=dict)
@@ -305,12 +308,17 @@ class InventoryResult(AgentResult):
     filtered_products: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class PriorityAdvice(BaseModel):
+    advice: str = ""
+    priority: str = "medium"
+
+
 class CourseFeasibilityResult(AgentResult):
     agent_name: str = "course_feasibility"
     available_courses: list[str] = Field(default_factory=list)
     selection_warnings: list[dict[str, Any]] = Field(default_factory=list)
     filtered_courses: list[dict[str, Any]] = Field(default_factory=list)
-    priority_advice: dict[str, str] = Field(default_factory=dict)
+    priority_advice: dict[str, PriorityAdvice] = Field(default_factory=dict)
 
 
 class PriceOptimizationResult(AgentResult):

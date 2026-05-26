@@ -14,7 +14,7 @@ logger = structlog.get_logger()
 
 
 class BaseAgent(ABC):
-    def __init__(self, name: str, timeout: float = 10.0, max_retries: int = 2):
+    def __init__(self, name: str, timeout: float = 30.0, max_retries: int = 5):
         self.name = name
         self.timeout = timeout
         self.max_retries = max_retries

@@ -25,9 +25,10 @@ RERANK_PROMPT = """你是学校教务系统的公选课推荐排序专家。请�
 1. 优先满足学生明确提出的兴趣、校区、时间、考核方式和学习负担要求。
 2. popularity_level 为整数编码：4=爆满，3=热门，2=正常偏热，1=正常，0=冷门。
 3. 对 popularity_level=4 的爆满课程不要直接剔除，但要降低稳定性分数，除非它与兴趣高度匹配。
-4. 对不考试、作业少、给分友好等偏好要结合课程字段判断，不要凭空臆测。
-5. 尽量保证课程领域多样性，避免结果全是同一领域。
-6. 只允许输出候选课程中存在的课程ID。
+4. 低年级学生（大一/大二）选爆满课抢课优先级低、可能被随机踢出，除非兴趣高度匹配否则排后面。
+5. 对不考试、作业少、给分友好等偏好要结合课程字段判断，不要凭空臆测。
+6. 尽量保证课程领域多样性，避免结果全是同一领域。
+7. 只允许输出候选课程中存在的课程ID。
 
 输出课程ID JSON数组，按推荐优先级排序:
 ["course_id_1", "course_id_2"]
@@ -42,7 +43,7 @@ class CourseRerankAgent(BaseAgent):
             name="course_rerank",
             timeout=settings.agent_timeout_product_rerank,
         )
-        self.llm = build_chat_openai(temperature=0.25, max_tokens=2048)
+        self.llm = build_chat_openai(temperature=0.25, max_tokens=4096)
     async def _execute(self, **kwargs: Any) -> CourseRerankResult:
         profile: StudentProfile | None = kwargs.get("student_profile")
         candidates: list[Course] = kwargs.get("candidates", [])
@@ -185,5 +186,7 @@ class CourseRerankAgent(BaseAgent):
             profile_score += 0.5
         if course.popularity_level >= 4:
             profile_score -= 0.4
+        if profile and profile.grade in ("大一", "大二") and course.popularity_level >= 4:
+            profile_score -= 2.0
         milvus_weight = 0.5
         return round(profile_score * (1.0 + milvus_sim * milvus_weight), 4)

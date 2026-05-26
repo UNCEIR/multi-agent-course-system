@@ -9,6 +9,7 @@ __all__ = [
     "MetricsCollector",
     "StreamTokenMarkupParser",
     "build_chat_openai",
+    "build_tool_calling_llm",
     "build_embedding_client",
 ]
 
@@ -41,6 +42,10 @@ def __getattr__(name: str):
         from .llm_client import build_chat_openai
 
         return build_chat_openai
+    if name == "build_tool_calling_llm":
+        from .llm_client import build_tool_calling_llm
+
+        return build_tool_calling_llm
     if name == "MetricsCollector":
         from .metrics import MetricsCollector
 
