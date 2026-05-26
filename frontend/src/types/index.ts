@@ -46,12 +46,18 @@ export interface RecommendationRequest {
   device_type?: string
 }
 
+export interface PriorityAdvice {
+  advice: string
+  priority: "high" | "medium" | "low"
+}
+
 export interface RecommendationResponse {
   request_id: string
   user_id: string
   courses: Course[]
   recommendation_reasons: Array<Record<string, string>>
   selection_warnings: Array<Record<string, unknown>>
+  priority_advice: Record<string, PriorityAdvice>
   experiment_group: string
   agent_results: Record<string, AgentResult>
   agent_latencies: Record<string, number>
@@ -137,6 +143,7 @@ export interface SSEDoneData {
   courses: Course[]
   recommendation_reasons: Array<{ course_id: string; reason: string }>
   selection_warnings: Array<Record<string, unknown>>
+  priority_advice: Record<string, PriorityAdvice>
   experiment_group: string
   agent_results: Record<string, AgentResult>
   total_latency_ms: number

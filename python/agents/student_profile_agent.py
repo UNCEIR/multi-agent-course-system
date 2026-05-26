@@ -56,6 +56,8 @@ SYSTEM_PROMPT = """你是教务系统里的公选课学生画像分析专家。
   "grade_friendly_preference": "高|中|不限",
   "exam_preference": "不考试|可考试|不限",
   "group_work_preference": "不小组|可小组|不限",
+  "grade": "大一|大二|大三|大四|研(可选，学生未提则为空字符串)",
+  "department": "学院名称(可选，学生未提则为空字符串)",
   "constraints": ["其他硬性约束描述"],
   "real_time_tags": {"画像摘要": "..."}
 }"""
@@ -89,6 +91,7 @@ class StudentProfileAgent(BaseAgent):
             domains=domains,
             campus=campus,
             hard_constraints=has_hard,
+            prompt=prompt,
         )
         return StudentProfileResult(
             success=True,
@@ -130,6 +133,8 @@ class StudentProfileAgent(BaseAgent):
             grade_friendly_preference=str(data.get("grade_friendly_preference") or context.get("grade_friendly_preference") or ""),
             exam_preference=str(data.get("exam_preference") or context.get("exam_preference") or ""),
             group_work_preference=str(data.get("group_work_preference") or context.get("group_work_preference") or ""),
+            grade=str(data.get("grade") or context.get("grade") or ""),
+            department=str(data.get("department") or context.get("department") or ""),
             constraints=self._list(data, "constraints"),
             real_time_tags=data.get("real_time_tags", {}),
             hard_constraints=hard_constraints,
@@ -276,6 +281,16 @@ class StudentProfileAgent(BaseAgent):
             data["workload_preference"] = "少"
         if "给分" in prompt or "绩点" in prompt:
             data["grade_friendly_preference"] = "高"
+        for grade_kw in ["大一", "大二", "大三", "大四", "研一", "研二", "研三"]:
+            if grade_kw in prompt:
+                data["grade"] = grade_kw
+                break
+        for dept_kw in ["计算机", "信息", "软件", "电子", "机械", "土木", "化工", "材料",
+                         "经管", "管理", "经济", "金融", "外语", "文学", "法学", "艺术",
+                         "医学", "数学", "物理", "化学", "生物", "环境", "建筑", "设计"]:
+            if dept_kw in prompt:
+                data["department"] = dept_kw + "学院"
+                break
         data.update({key: value for key, value in context.items() if key not in data})
         return data
 

@@ -12,14 +12,17 @@ Phase 3:   推荐理由 Agent 串行生成可解释建议
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 import uuid
 from typing import Any, AsyncGenerator, TYPE_CHECKING
 
 import structlog
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from models.schemas import Course, RecommendationRequest, RecommendationResponse, StudentProfile
 from orchestrator.hard_constraint_filter import HardConstraintFilter, has_active_constraints
+from services import build_chat_openai
 from services.ab_test import ABTestEngine
 from config import get_settings
 
@@ -75,6 +78,7 @@ class SupervisorOrchestrator:
         self.recommendation_reason_agent = recommendation_reason_agent
         self.ab_engine = ab_engine or ABTestEngine()
         self.hard_constraint_filter = HardConstraintFilter()
+        self._react_llm_cache: dict[str, Any] = {}
 
     async def recommend(self, request: RecommendationRequest) -> RecommendationResponse:
         request_id = str(uuid.uuid4())
@@ -92,6 +96,12 @@ class SupervisorOrchestrator:
         )
 
         experiment = self.ab_engine.assign(request.user_id)
+
+        # A/B test routing: react group uses LLM-driven tool calling pipeline
+        if experiment.get("group") == "react":
+            response = await self._react_recommend(request, request_id, start)
+            response.experiment_group = "react"
+            return response
 
         # Phase 1: 学生画像与课程召回并行。召回先用原始 prompt 和 context 做宽召回。
         profile_result, recall_result = await asyncio.gather(
@@ -163,6 +173,24 @@ class SupervisorOrchestrator:
                 after_filter_summary=self._course_axis_summary(raw_courses),
             )
 
+        # Phase 1.75: LLM 语义初筛 — 从硬约束过滤后的候选集中筛选出最相关的课程。
+        if student_profile and len(raw_courses) > 40:
+            semantic_filtered = await self._llm_semantic_filter(raw_courses, student_profile)
+            if semantic_filtered:
+                logger.info(
+                    "course_supervisor.semantic_filter_complete",
+                    request_id=request_id,
+                    before=len(raw_courses),
+                    after=len(semantic_filtered),
+                )
+                raw_courses = semantic_filtered
+            else:
+                logger.info(
+                    "course_supervisor.semantic_filter_skipped",
+                    request_id=request_id,
+                    reason="llm_failed_or_empty",
+                )
+
         # Phase 2: 课程重排与选课可行性检查并行。
         rerank_result, feasibility_result = await asyncio.gather(
             self.course_rerank_agent.run(
@@ -232,12 +260,14 @@ class SupervisorOrchestrator:
             reasons=[{"course_id": r.get("course_id"), "reason": r.get("reason", "")[:60]} for r in reasons],
         )
 
+        priority_advice = getattr(feasibility_result, "priority_advice", {})
         return RecommendationResponse(
             request_id=request_id,
             user_id=request.user_id,
             courses=final_courses,
             recommendation_reasons=reasons,
             selection_warnings=warnings,
+            priority_advice=priority_advice,
             experiment_group=experiment.get("group", "control"),
             agent_results={
                 "student_profile": profile_result,
@@ -353,6 +383,24 @@ class SupervisorOrchestrator:
                     },
                 }
 
+            # Phase 1.75: LLM 语义初筛
+            if student_profile and len(raw_courses) > 40:
+                semantic_filtered = await self._llm_semantic_filter(raw_courses, student_profile)
+                if semantic_filtered:
+                    raw_courses = semantic_filtered
+                    yield {
+                        "event": "phase",
+                        "data": {
+                            "phase": "semantic_filter_complete",
+                            "filtered_count": len(raw_courses),
+                        },
+                    }
+                else:
+                    yield {
+                        "event": "phase",
+                        "data": {"phase": "semantic_filter_skipped"},
+                    }
+
             # Phase 2: 重排 + 可行性并行
             current_phase = "phase2"
             rerank_result, feasibility_result = await asyncio.gather(
@@ -439,6 +487,8 @@ class SupervisorOrchestrator:
                 courses=[{"id": c.course_id, "name": c.course_name, "score": c.score} for c in final_courses],
                 reasons=[{"course_id": cid, "reason": text[:60]} for cid, text in collected_text.items() if cid != "__prelude__"],
             )
+            feasibility = agent_results.get("course_feasibility")
+            priority_advice = getattr(feasibility, "priority_advice", {}) if feasibility else {}
             yield {
                 "event": "done",
                 "data": {
@@ -451,6 +501,7 @@ class SupervisorOrchestrator:
                         if cid != "__prelude__"
                     ],
                     "selection_warnings": warnings,
+                    "priority_advice": {cid: pa.model_dump() for cid, pa in priority_advice.items()},
                     "experiment_group": experiment.get("group", "control"),
                     "agent_results": {
                         name: result.model_dump()
@@ -522,6 +573,142 @@ class SupervisorOrchestrator:
             "campus_count": campus_count,
             "category_count": category_count,
         }
+
+    @staticmethod
+    async def _llm_semantic_filter(
+        courses: list[Course], profile: StudentProfile | None, target_count: int = 40
+    ) -> list[Course]:
+        MAX_SEMANTIC_INPUT = 200
+        if len(courses) > MAX_SEMANTIC_INPUT:
+            courses = sorted(courses, key=lambda x: x.score, reverse=True)[:MAX_SEMANTIC_INPUT]
+        if not courses or not profile:
+            return []
+        course_data = []
+        for c in courses:
+            desc = (c.description or "")[:80]
+            tags_str = ", ".join(c.tags[:5]) if c.tags else ""
+            course_data.append({
+                "id": c.course_id,
+                "name": c.course_name,
+                "domain": c.domain,
+                "category": c.course_category,
+                "campus": c.campus,
+                "desc": desc,
+                "tags": tags_str,
+                "difficulty": c.difficulty,
+                "has_exam": c.has_exam,
+                "popularity": c.popularity_level,
+            })
+        profile_data = {
+            "interests": profile.interests,
+            "preferred_domains": profile.preferred_domains,
+            "preferred_campus": profile.preferred_campus,
+            "exam_preference": profile.exam_preference,
+            "workload_preference": profile.workload_preference,
+            "difficulty_preference": profile.difficulty_preference,
+            "grade": profile.grade,
+        }
+        system_prompt = (
+            f"你是课程语义匹配专家。根据学生画像从候选课程中选出 {target_count} 门真正相关的。"
+            "判断标准：课程名称+描述+标签是否真实匹配学生的兴趣和偏好（不是只看 domain 字段）。"
+            f"返回 JSON 数组：[\"course_id_1\", \"course_id_2\", ...]"
+        )
+        user_prompt = json.dumps({
+            "student": profile_data,
+            "candidates": course_data,
+        }, ensure_ascii=False)
+        try:
+            llm = build_chat_openai(temperature=0, max_tokens=2048)
+            response = await llm.ainvoke([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt),
+            ])
+            raw = (response.content or "").strip()
+            if not raw:
+                logger.info("course_supervisor.semantic_filter_empty_response")
+                return []
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
+            ids = json.loads(raw)
+            if isinstance(ids, list) and ids:
+                id_set = {str(i) for i in ids}
+                filtered = [c for c in courses if c.course_id in id_set]
+                if filtered:
+                    return filtered[:target_count]
+        except Exception:
+            logger.warning("course_supervisor.semantic_filter_failed", exc_info=True)
+        return []
+
+    async def _react_recommend(
+        self, request: RecommendationRequest, request_id: str, start: float
+    ) -> RecommendationResponse:
+        from orchestrator.react_tools import REACT_TOOLS, ReactToolExecutor
+        from services import build_tool_calling_llm
+
+        prompt = self._request_prompt(request)
+
+        REACT_SYSTEM_PROMPT = (
+            "你是公选课推荐系统的编排器。根据学生需求，按顺序调用工具完成推荐。\n"
+            "必须遵守的顺序：extract_profile → search_courses → filter_hard_constraints → "
+            "rerank_courses → check_feasibility → generate_reasons。\n"
+            "filter_hard_constraints 是强制的，不可跳过。\n"
+            "如果召回太少（<5门），尝试用不同策略再搜索。\n"
+            "当所有必需工具调用完成后，输出 FINISH。"
+        )
+
+        llm = build_tool_calling_llm(REACT_TOOLS)
+        executor = ReactToolExecutor(self, prompt, request.context, request.num_items, request.user_id)
+
+        messages = [
+            SystemMessage(content=REACT_SYSTEM_PROMPT),
+            HumanMessage(content=f"学生需求: {prompt}\n需要推荐 {request.num_items} 门课。"),
+        ]
+
+        max_rounds = 10
+        for round_idx in range(max_rounds):
+            response = await llm.ainvoke(messages)
+            messages.append(response)
+
+            tool_calls = getattr(response, "tool_calls", None)
+            if not tool_calls:
+                content = str(getattr(response, "content", ""))
+                if "FINISH" in content.upper():
+                    break
+                continue
+
+            for tc in tool_calls:
+                tool_name = tc.get("name", "")
+                tool_args = tc.get("args", {})
+                observation = await executor.execute_tool(tool_name, tool_args)
+                messages.append(ToolMessage(content=observation, tool_call_id=tc.get("id", "")))
+
+        # Enforce hard constraint filter if LLM skipped it
+        if executor.state.courses and not executor.state.hard_filtered and executor.state.profile:
+            await executor._tool_filter_hard_constraints()
+
+        if not executor.state.reasons_done and executor.state.courses:
+            await executor._tool_generate_reasons()
+
+        final_courses = executor.state.courses[: request.num_items]
+        total_latency = (time.perf_counter() - start) * 1000
+
+        logger.info(
+            "course_supervisor.react_complete",
+            request_id=request_id,
+            course_count=len(final_courses),
+            rounds=round_idx + 1,
+        )
+
+        return RecommendationResponse(
+            request_id=request_id,
+            user_id=request.user_id,
+            courses=final_courses,
+            recommendation_reasons=executor.state.reasons,
+            selection_warnings=executor.state.warnings,
+            priority_advice=executor.state.priority_advice,
+            experiment_group="react",
+            total_latency_ms=total_latency,
+        )
 
     @staticmethod
     def _build_shortage_warning(

@@ -67,7 +67,7 @@ class CourseRecallAgent(BaseAgent):
             candidates.sort(key=lambda course: course.score, reverse=True)
             return CourseRecallResult(
                 success=True,
-                courses=candidates[: num_items * 3],
+                courses=candidates,
                 recall_strategies=["redis_recall_cache_hit"],
                 data={
                     "total_candidates": len(candidates),
@@ -98,7 +98,7 @@ class CourseRecallAgent(BaseAgent):
             candidates.sort(key=lambda course: course.score, reverse=True)
             return CourseRecallResult(
                 success=True,
-                courses=candidates[: num_items * 3],
+                courses=candidates,
                 recall_strategies=["redis_recall_cache_semantic_hit"],
                 data={
                     "total_candidates": len(candidates),
@@ -131,7 +131,7 @@ class CourseRecallAgent(BaseAgent):
                 candidates.sort(key=lambda course: course.score, reverse=True)
                 return CourseRecallResult(
                     success=True,
-                    courses=candidates[: num_items * 3],
+                    courses=candidates,
                     recall_strategies=["redis_recall_cache_wait_hit"],
                     data={
                         "total_candidates": len(candidates),
@@ -231,7 +231,7 @@ class CourseRecallAgent(BaseAgent):
 
         return CourseRecallResult(
             success=True,
-            courses=candidates[: num_items * 3],
+            courses=candidates,
             recall_strategies=strategies,
             data={
                 "total_candidates": len(candidates),

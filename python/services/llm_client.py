@@ -8,6 +8,30 @@ from config import get_settings
 
 def build_chat_openai(*, temperature: float, max_tokens: int, streaming: bool = False) -> ChatOpenAI:
     settings = get_settings()
+    return _create_chat_openai(
+        temperature=temperature,
+        max_tokens=max_tokens,
+        streaming=streaming,
+    )
+
+
+def build_tool_calling_llm(
+    tools: list[dict],
+    *,
+    temperature: float = 0.1,
+    max_tokens: int = 4096,
+) -> ChatOpenAI:
+    llm = _create_chat_openai(temperature=temperature, max_tokens=max_tokens)
+    return llm.bind_tools(tools, tool_choice="auto")
+
+
+def _create_chat_openai(
+    *,
+    temperature: float,
+    max_tokens: int,
+    streaming: bool = False,
+) -> ChatOpenAI:
+    settings = get_settings()
     extra_body = {}
     if settings.llm_enable_thinking:
         extra_body["enable_thinking"] = True
