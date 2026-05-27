@@ -1,5 +1,5 @@
-import { Outlet, NavLink, useLocation } from 'react-router-dom'
-import { Layout as AntLayout, Menu, Badge } from 'antd'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { Layout as AntLayout, Menu } from 'antd'
 import {
   ExperimentOutlined,
   DashboardOutlined,
@@ -10,11 +10,14 @@ import {
 } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
 import { api } from '../services/api'
+import RecommendPage from '../pages/RecommendPage'
+import MonitorPage from '../pages/MonitorPage'
 
 const { Header, Content } = AntLayout
 
 export default function Layout() {
   const location = useLocation()
+  const navigate = useNavigate()
   const [apiStatus, setApiStatus] = useState<'online' | 'offline' | 'checking'>('checking')
 
   useEffect(() => {
@@ -37,16 +40,18 @@ export default function Layout() {
 
   const statusText = apiStatus === 'online' ? 'API 在线' : apiStatus === 'offline' ? 'API 离线' : '检测中'
 
+  const currentKey = location.pathname.startsWith('/monitor') ? '/monitor' : '/'
+
   const menuItems = [
     {
       key: '/',
       icon: <ExperimentOutlined />,
-      label: <NavLink to="/">推荐演示</NavLink>,
+      label: '推荐演示',
     },
     {
       key: '/monitor',
       icon: <DashboardOutlined />,
-      label: <NavLink to="/monitor">系统监控</NavLink>,
+      label: '系统监控',
     },
   ]
 
@@ -100,8 +105,9 @@ export default function Layout() {
 
         <Menu
           mode="horizontal"
-          selectedKeys={[location.pathname]}
+          selectedKeys={[currentKey]}
           items={menuItems}
+          onClick={({ key }) => navigate(key)}
           style={{ flex: 1, border: 'none', background: 'transparent', fontWeight: 500 }}
         />
 
@@ -125,7 +131,12 @@ export default function Layout() {
       </Header>
 
       <Content style={{ padding: 24, maxWidth: 1400, margin: '0 auto', width: '100%' }}>
-        <Outlet />
+        <div style={{ display: currentKey === '/' ? 'block' : 'none' }}>
+          <RecommendPage />
+        </div>
+        <div style={{ display: currentKey === '/monitor' ? 'block' : 'none' }}>
+          <MonitorPage />
+        </div>
       </Content>
     </AntLayout>
   )

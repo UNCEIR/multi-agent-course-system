@@ -219,6 +219,14 @@ def _collect_metrics(response: RecommendationResponse):
 
 async def _sse_wrapper(generator):
     async for event in generator:
+        if event["event"] == "done":
+            agent_results = event.get("data", {}).get("agent_results", {})
+            for name, result in agent_results.items():
+                metrics_collector.record_agent_call(
+                    agent_name=name,
+                    success=result.get("success", False),
+                    latency_ms=result.get("latency_ms", 0),
+                )
         payload = json.dumps(event["data"], ensure_ascii=False)
         yield f"event: {event['event']}\ndata: {payload}\n\n"
 

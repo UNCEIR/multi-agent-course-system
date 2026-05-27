@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Tag, Typography, Button, Space } from 'antd'
+import { Tag, Typography, Button, Space, Collapse, Card } from 'antd'
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -353,14 +353,67 @@ export default function StreamView({ prompt, numItems, onDone, onRetry }: Props)
               {warningCount} 条选课提醒
             </span>
           )}
-          {donePayload.priority_advice && Object.keys(donePayload.priority_advice).length > 0 && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#1e3a5f' }}>
-              {Object.keys(donePayload.priority_advice).length} 条抢课建议
-            </span>
-          )}
           <Tag style={{ fontSize: 10, background: '#e8eef4', color: '#1e3a5f', border: 'none', marginLeft: 'auto' }}>
             {donePayload.experiment_group}
           </Tag>
+        </div>
+      )}
+
+      {/* ── Warnings & Priority Advice ── */}
+      {donePayload && (
+        <div style={{ marginTop: 12 }}>
+          {donePayload.selection_warnings.length > 0 && (
+            <Collapse
+              style={{ marginBottom: 12 }}
+              items={[{
+                key: 'warnings',
+                label: (
+                  <Space>
+                    <WarningOutlined style={{ color: '#c88c3e' }} />
+                    <Text strong style={{ color: '#92400e' }}>选课可行性提醒</Text>
+                    <Tag style={{ background: '#fef3c7', color: '#92400e', border: 'none' }}>
+                      {donePayload.selection_warnings.length} 条
+                    </Tag>
+                  </Space>
+                ),
+                children: (
+                  <div style={{ maxHeight: 340, overflow: 'auto' }}>
+                    {donePayload.selection_warnings.map((w, i) => {
+                      const levelColors: Record<string, string> = {
+                        high: '#991b1b', medium: '#92400e', low: '#5c5c6e',
+                      }
+                      const levelBgs: Record<string, string> = {
+                        high: '#fef2f2', medium: '#fef3c7', low: '#f0ece5',
+                      }
+                      const levelLabels: Record<string, string> = {
+                        high: '高', medium: '中', low: '低',
+                      }
+                      const lv = String(w.level || '')
+                      const courseName = String(w.course_name || w.course_id || '')
+                      const message = String(w.message || '')
+                      return (
+                        <Card key={i} size="small" style={{ marginBottom: 8 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                            <Text strong style={{ fontSize: 13 }}>{courseName}</Text>
+                            {lv && (
+                              <Tag style={{
+                                fontSize: 11, border: 'none',
+                                background: levelBgs[lv] || levelBgs.low,
+                                color: levelColors[lv] || levelColors.low,
+                              }}>
+                                {levelLabels[lv] || lv}
+                              </Tag>
+                            )}
+                          </div>
+                          <Text style={{ fontSize: 13, color: '#5c5c6e' }}>{message}</Text>
+                        </Card>
+                      )
+                    })}
+                  </div>
+                ),
+              }]}
+            />
+          )}
         </div>
       )}
     </div>

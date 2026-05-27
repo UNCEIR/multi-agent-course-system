@@ -509,71 +509,34 @@ function SingleResultView({ response, prompt }: { response: RecommendationRespon
               ),
               children: (
                 <div style={{ maxHeight: 340, overflow: 'auto' }}>
-                  {response.selection_warnings.map((w, i) => (
-                    <Card key={i} size="small" style={{ marginBottom: 8 }}>
-                      {Object.entries(w).map(([k, v]) => (
-                        <div key={k} style={{ marginBottom: 4 }}>
-                          <Text strong style={{ fontSize: 13 }}>{k}：</Text>
-                          <Text style={{ fontSize: 13 }}>{String(v)}</Text>
-                        </div>
-                      ))}
-                    </Card>
-                  ))}
-                </div>
-              ),
-            }]}
-          />
-        )}
-        {response.priority_advice && Object.keys(response.priority_advice).length > 0 && (
-          <Collapse
-            items={[{
-              key: 'priority_advice',
-              label: (
-                <Space>
-                  <RiseOutlined style={{ color: '#1e3a5f' }} />
-                  <Text strong className="serif-heading" style={{ color: '#1e3a5f' }}>
-                    抢课优先级建议
-                  </Text>
-                  <Tag style={{ background: '#e8eef4', color: '#1e3a5f', border: 'none' }}>
-                    {Object.keys(response.priority_advice).length} 门
-                  </Tag>
-                </Space>
-              ),
-              children: (
-                <div style={{ maxHeight: 340, overflow: 'auto' }}>
-                  {Object.entries(response.priority_advice).map(([courseId, advice]) => {
-                    const course = response.courses.find((c) => c.course_id === courseId)
-                    const priorityColors: Record<string, string> = {
-                      high: '#166534',
-                      medium: '#92400e',
-                      low: '#991b1b',
+                  {response.selection_warnings.map((w, i) => {
+                    const levelColors: Record<string, string> = {
+                      high: '#991b1b', medium: '#92400e', low: '#5c5c6e',
                     }
-                    const priorityBgs: Record<string, string> = {
-                      high: '#f0faf4',
-                      medium: '#fef3c7',
-                      low: '#fef2f2',
+                    const levelBgs: Record<string, string> = {
+                      high: '#fef2f2', medium: '#fef3c7', low: '#f0ece5',
                     }
-                    const priorityLabels: Record<string, string> = {
-                      high: '稳妥',
-                      medium: '偏紧',
-                      low: '冲刺',
+                    const levelLabels: Record<string, string> = {
+                      high: '高', medium: '中', low: '低',
                     }
-                    const p = advice.priority || 'medium'
+                    const lv = String(w.level || '')
+                    const courseName = String(w.course_name || w.course_id || '')
+                    const message = String(w.message || '')
                     return (
-                      <Card key={courseId} size="small" style={{ marginBottom: 8 }}>
-                        <div style={{ marginBottom: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <Text strong style={{ fontSize: 13 }}>
-                            {course?.course_name || courseId}
-                          </Text>
-                          <Tag style={{
-                            fontSize: 11, border: 'none',
-                            background: priorityBgs[p] || priorityBgs.medium,
-                            color: priorityColors[p] || priorityColors.medium,
-                          }}>
-                            {priorityLabels[p] || p}
-                          </Tag>
+                      <Card key={i} size="small" style={{ marginBottom: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <Text strong style={{ fontSize: 13 }}>{courseName}</Text>
+                          {lv && (
+                            <Tag style={{
+                              fontSize: 11, border: 'none',
+                              background: levelBgs[lv] || levelBgs.low,
+                              color: levelColors[lv] || levelColors.low,
+                            }}>
+                              {levelLabels[lv] || lv}
+                            </Tag>
+                          )}
                         </div>
-                        <Text style={{ fontSize: 13, color: '#5c5c6e' }}>{advice.advice}</Text>
+                        <Text style={{ fontSize: 13, color: '#5c5c6e' }}>{message}</Text>
                       </Card>
                     )
                   })}
