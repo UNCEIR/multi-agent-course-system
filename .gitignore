@@ -55,3 +55,16 @@ docker-compose.override.yml
 # Local scratch (ad-hoc exports)
 1.txt
 1.csv
+
+# 多余openspec 配置agent实验文件
+/.codex/
+/.qodex/
+/.trae/
+/.github/
+/.claude/
+/.agent/
+
+# 多余文件
+/tasks/
+
+
