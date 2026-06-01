@@ -4,9 +4,9 @@
 
 ## 环境配置
 
-两个 `.env` 文件都会被 `python/config/settings.py` 的 `_env_file_candidates()` 加载（先根目录再 `python/`）。所有 env var 使用 `ECOM_` 前缀。
+`python/config/settings.py` 的 `_env_file_candidates()` 按顺序检查：根目录 `.env` → `python/.env` → CWD `.env`。仓库默认只有 `python/.env`（根目录的 `.env` 需自行从 `.env.example` 创建）。所有 env var 使用 `ECOM_` 前缀。
 
-Docker Compose 只注入 `python/.env`；根目录 `.env` 供本地 `python main.py` 使用。两者内容保持同步。
+Docker Compose 只注入 `python/.env`。本地 `python main.py` 运行时若根目录无 `.env`，则只加载 `python/.env`。
 
 ## 启动命令
 
@@ -43,6 +43,10 @@ python -m pytest tests/ -m "not slow"          # 跳过需外部服务的测试
 ```
 
 测试 mock 在 agent 层（`agent.vector_repo.search = MagicMock(...)`），不 mock 底层 embedding client。
+
+`pytest.ini` 配置了 `asyncio_mode = auto`，注册了 5 个 marker（`unit`、`integration`、`slow`、`agent`、`api`），并开启了 `--strict-markers`。用未注册的 marker 会直接报错。
+
+覆盖率：`python -m pytest tests/ --cov --cov-report=term-missing`（配置见 `.coveragerc`）。
 
 ## 架构
 
@@ -105,7 +109,7 @@ actual_core   = "自然科学与工程技术类".replace("类", "") → "自然�
 ```
 
 **"理工"不匹配"自然科学与工程技术"、"文科"不匹配"人文与社会科学"**。需要在两处修：
-1. `student_profile_agent.py:185` `_extract_prompt_hard_constraints` 的 `category_rules` 补关键词
+1. `student_profile_agent.py:190` `_extract_prompt_hard_constraints` 的 `category_rules` 补关键词
 2. `hard_constraint_filter.py:201` `_fuzzy_text_match` 加别名映射表
 
 ### Embedding Client 实例化链

@@ -333,13 +333,26 @@ semantic[0], mysql[0], semantic[1], mysql[1], ...
 | 加分项 | 分值 |
 | --- | --- |
 | query term 出现在课程文本中 | 每个 term `+1.5` |
-| `course.domain in profile.preferred_domains` | `+4.0` |
-| `course.course_category in profile.preferred_categories` | `+3.0` |
-| `course.campus in profile.preferred_campus` | `+2.0` |
-| 偏好作业少，且课程 `workload in ("低", "少")` | `+1.5` |
-| 偏好不考试，且 `has_exam == 0` | `+1.5` |
-| 偏好给分高，且 `grade_friendly in ("高", "中")` | `+1.2` |
 | `popularity_level >= 3` | `+0.8` |
+
+5/23 迭代移除的加分项（已移至 Rerank `_compute_score()`）：
+
+- ~~domain 匹配 +4.0~~
+- ~~category 匹配 +3.0~~
+- ~~campus 匹配 +2.0~~
+- ~~workload/exam/grade_friendly 偏好~~
+
+语义召回的课程（来自 Milvus）初始分从 COSINE 距离初始化：
+
+```text
+course.score = max(0.0, 1.0 - distance)
+```
+
+设计说明：
+
+- 召回阶段只负责广度，不做精细画像匹配
+- 画像匹配全部移到 Rerank 的 `_compute_score()` 中，避免两阶段评分逻辑重复
+- Milvus 的 COSINE 距离现在真正参与排序，而不是像之前一样被丢弃
 
 query term 的切分规则：
 
@@ -352,8 +365,6 @@ re.split(r"\s+|，|,|。", query)
 ```text
 course_name + teacher + domain + course_category + description + suitable_for + tags
 ```
-
-如果宽召回阶段 `profile=None`，就只有 query term 和 popularity 加分；如果画像召回带 profile，就会加入 domain/category/campus/workload/exam/grade friendly 等偏好分。
 
 打完分后按 `course.score DESC` 排序，并返回：
 
@@ -477,6 +488,39 @@ data: {
 
 如果没有任何硬约束，Phase 1.5 不执行，也不会发 `phase15_complete`。
 
+## 13.5 Phase 1.75 LLM 语义初筛
+
+触发条件：
+
+```text
+student_profile 存在
+且 len(raw_courses) > 40
+```
+
+如果不满足，Phase 1.75 不执行，候选直接进入 Phase 2。
+
+`supervisor._llm_semantic_filter(courses, profile, target_count=40)` 的处理：
+
+1. 拼课程摘要（每门课一行）：`course_id | name | domain | category | campus | description[:80] | tags[:5] | difficulty | has_exam | popularity`
+2. 拼学生画像摘要：interests, domains, campus, exam/difficulty/workload preference, grade
+3. 调 LLM（temperature=0, max_tokens=2048）
+4. 要求返回 course_id 的 JSON 数组
+5. 解析成功 → 筛出对应 Course 对象
+6. 解析失败 → 返回空列表
+
+失败时的处理：
+
+- 返回空列表
+- `raw_courses` 保持不变
+- RerankAgent 的 `_compute_score` 规则预筛作为兜底
+- 不会中断流水线
+
+流式事件：Phase 1.75 完成后不单独发事件，候选缩减后直接进入 Phase 2 事件。
+
+面试讲法：
+
+> Phase 1.75 让 LLM 看每门课的一行摘要和学生画像，从 ~150 门中挑出真正语义相关的 40 门。规则只能匹配字段，LLM 能理解"这门 Python 课实际教爬虫，跟学生说的数据分析不对口"。失败时保留原候选，不会比不做更差。
+
 ## 14. Phase 2 重排与可行性检查
 
 Phase 2 并行执行：
@@ -508,15 +552,35 @@ has_exam, group_work_required, assessment, tags
 
 ### 14.2 规则排序公式
 
-`_rule_based_rerank()` 使用召回阶段的 `course.score` 作为基础分，再加减：
+`_compute_score(course, profile)` 是重排阶段的统一评分方法（LLM 和规则路径都用它做预筛）。
 
-| 条件 | 分值 |
+| 条件 | profile_score 加减 |
 | --- | --- |
-| `has_exam == 0` | `+0.5` |
-| `workload in ("低", "少")` | `+0.5` |
+| `course.domain in profile.preferred_domains` | `+4.0` |
+| `course.course_category in profile.preferred_categories` | `+3.0` |
+| `course.campus == profile.preferred_campus` | `+2.0` |
+| `profile.workload_preference` 且 `workload in ("低","少")` | `+1.5` |
+| `profile.exam_preference == "不考试"` 且 `has_exam == 0` | `+1.5` |
+| `profile.grade_friendly_preference` 且 `grade_friendly in ("高","中")` | `+1.2` |
 | `popularity_level >= 4` | `-0.4` |
+| `profile.grade in ("大一","大二")` 且 `popularity_level >= 4` | 额外 `-2.0` |
 
-然后按分数倒序取 `num_items` 个 course_id。
+最终分公式：
+
+```text
+milvus_sim = course.score  # 由召回阶段写入的 COSINE 相似度
+final = profile_score * (1.0 + milvus_sim * 0.5)
+```
+
+即 Milvus 相似度作为**加权乘法放大器**：向量命中的课程，profile 分会被放大最多 50%。
+
+LLM 重排前预过滤：
+
+- 候选先用 `_compute_score()` 排序
+- 取前 40 门送入 LLM
+- 提升 LLM 输入质量，避免 40 门中混入低相关课程
+
+`_rule_based_rerank()` 直接使用 `_compute_score()` 产出的分数倒序取 `num_items` 个 course_id。
 
 如果模型或规则排序输出不足，重排 Agent 会按原候选顺序补齐；最后再做领域多样性：
 
@@ -578,6 +642,37 @@ avoid_time_slots = context["avoid_time_slots"] + profile.avoid_time_slots
 | `popularity_level >= 4` 或已满 | 冲刺优先级高，建议优先抢并准备替代课 |
 | 容量比例 `>= 0.85` | 容量偏紧，建议排在前序志愿 |
 | 其他 | 容量相对可控，可作为稳妥备选 |
+
+### 15.5 LLM 个性化抢课建议
+
+当 `final_courses` 数量 <= 12 时，FeasibilityAgent 会调 LLM 生成个性化建议：
+
+```text
+_llm_priority_advice(courses[:12], profile)
+max_tokens=4096, temperature=0.3
+```
+
+LLM 会考虑：
+
+- 课程容量和当前选课比例
+- 学生年级（大四 > 大三 > 大二 = 大一 的优先权）
+- 课程热度等级
+- 可能的替代课程
+
+返回 `dict[course_id, PriorityAdvice(advice, priority)]`：
+
+- `advice`：个性化建议文本（如"你是大二，这门课大三大四优先选，建议准备替代课"）
+- `priority`：high/medium/low
+
+超过 12 门或 LLM 失败时，走规则 batch：
+
+- popularity >= 4 或已满 → high，"冲刺优先级高"
+- 容量比例 >= 0.85 → medium，"排在前序志愿"
+- 其他 → low，"稳妥备选"
+
+`_parse_advice_json` 返回空 dict 时**不抛异常**，静默回退规则。排查时搜 `llm_advice_failed` 或 `llm_advice_parse_empty` 日志。
+
+数据流：`FeasibilityAgent.priority_advice → Supervisor → RecommendationResponse.priority_advice → SSE done 事件 → 前端渲染`。
 
 ## 16. final_courses 怎么形成
 
@@ -749,7 +844,7 @@ collected_text[course_id] += chunk["token"]
 | 10 | `phase` | `phase=phase3_complete` |
 | 11 | `done` | 最终课程、理由、warnings、agent_results、耗时 |
 
-如果没有硬约束，顺序 3 不出现。
+如果没有硬约束，顺序 3 不出现。如果 Phase 1.75 执行（profile 存在且候选 >40），候选会在顺序 3 和 4 之间被缩减至 ~40 门，但不会产生额外的流式事件——缩减结果体现在顺序 4 的 `ranked_count` 中。
 
 如果 Phase 3 超时：
 
@@ -831,3 +926,42 @@ data: {
 | 容量满但仍匹配 | 不直接删除，输出 high warning 和抢课建议 |
 | 前端要实时反馈 | 前置阶段发 phase，Phase 3 发 token，最后 done 收口 |
 | token 无法归属课程 | marker + parser 转成 course_start/text/course_end |
+
+## 23. ReAct 编排分支
+
+触发条件：
+
+```text
+ABTestEngine.assign(user_id) == "react"
+```
+
+当前 `ab_test.py` 仅注册 `control` 和 `treatment_llm`，**`react` 未注册**。需要在 `services/ab_test.py:48` 添加 `react` group 才能通过 A/B 触发。
+
+`_react_recommend()` 的执行：
+
+1. 用 `build_tool_calling_llm(REACT_TOOLS)` 创建工具调用 LLM
+2. System prompt 定义工具链顺序约束
+3. 最多 10 轮：
+   - LLM 返回 tool_calls
+   - ReactToolExecutor 分发到对应 Agent 方法
+   - 结果作为 observation 回传 LLM
+   - LLM 决定下一步
+4. 循环结束后检测：如果 `ReactState.hard_filtered == False`，强制补调 `filter_hard_constraints`
+
+7 个工具：
+
+| 工具 | 是否可跳过 | 说明 |
+| --- | --- | --- |
+| extract_profile | 是 | 提取学生结构画像 |
+| search_courses | 是 | 召回，strategy=wide/refined |
+| filter_hard_constraints | 否（锁死） | 硬约束过滤，循环结束时自动补调 |
+| semantic_filter_courses | 是 | LLM 语义初筛 |
+| rerank_courses | 是 | 重排序 |
+| check_feasibility | 是 | 可行性检查 |
+| generate_reasons | 是 | 生成推荐理由 |
+
+ReAct vs Pipeline 的关系：
+
+- 正常请求：ReAct 走直线（画像→召回→过滤→排序→可行性→理由），等价于 Pipeline
+- 异常分支：召回不足时 LLM 可决定 wide 再搜一轮；硬过滤后不够时放宽条件；全爆满时寻找替代
+- Token 增量：正常路径 +0（与 Pipeline 相同），异常路径 +1-2 轮（200-500 token/轮）
