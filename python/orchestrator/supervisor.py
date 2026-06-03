@@ -511,6 +511,11 @@ class SupervisorOrchestrator:
                 },
             }
 
+            self.ab_engine.record_outcome("react_vs_pipeline", "pipeline", success=True)
+            self.ab_engine.record_metric("react_vs_pipeline", "pipeline", "total_latency_ms", total_latency, request.user_id)
+            self.ab_engine.record_metric("react_vs_pipeline", "pipeline", "course_count", len(final_courses), request.user_id)
+            self.ab_engine.record_metric("react_vs_pipeline", "pipeline", "warning_count", len(warnings), request.user_id)
+
         except Exception as exc:
             logger.error(
                 "course_supervisor.stream_error",
@@ -518,6 +523,7 @@ class SupervisorOrchestrator:
                 phase=current_phase,
                 error=str(exc),
             )
+            self.ab_engine.record_outcome("react_vs_pipeline", "pipeline", success=False)
             yield {
                 "event": "error",
                 "data": {
@@ -639,18 +645,29 @@ class SupervisorOrchestrator:
             logger.warning("course_supervisor.semantic_filter_failed", exc_info=True)
         return []
 
-    async def _react_recommend(
-        self, request: RecommendationRequest, request_id: str, start: float
-    ) -> RecommendationResponse:
+    async def react_recommend(self, request: RecommendationRequest) -> RecommendationResponse:
+        """Public entry point for React-mode recommendation (non-streaming)."""
+        request_id = str(uuid.uuid4())
+        start = time.perf_counter()
+        return await self._react_recommend(request, request_id, start)
+
+    async def react_stream_recommend(
+        self, request: RecommendationRequest
+    ) -> "AsyncGenerator[dict[str, Any], None]":
+        """SSE streaming React-mode recommendation with tool-call phase events."""
+        from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
         from orchestrator.react_tools import REACT_TOOLS, ReactToolExecutor
         from services import build_tool_calling_llm
 
+        settings = get_settings()
+        request_id = str(uuid.uuid4())
+        start = time.perf_counter()
         prompt = self._request_prompt(request)
 
         REACT_SYSTEM_PROMPT = (
             "你是公选课推荐系统的编排器。根据学生需求，按顺序调用工具完成推荐。\n"
             "必须遵守的顺序：extract_profile → search_courses → filter_hard_constraints → "
-            "rerank_courses → check_feasibility → generate_reasons。\n"
+            "semantic_filter_courses → rerank_courses → check_feasibility → generate_reasons。\n"
             "filter_hard_constraints 是强制的，不可跳过。\n"
             "如果召回太少（<5门），尝试用不同策略再搜索。\n"
             "当所有必需工具调用完成后，输出 FINISH。"
@@ -664,7 +681,171 @@ class SupervisorOrchestrator:
             HumanMessage(content=f"学生需求: {prompt}\n需要推荐 {request.num_items} 门课。"),
         ]
 
-        max_rounds = 10
+        yield {
+            "event": "phase",
+            "data": {
+                "phase": "react_start",
+                "request_id": request_id,
+                "num_items": request.num_items,
+            },
+        }
+
+        try:
+            max_rounds = 20
+            round_idx = 0
+            for round_idx in range(max_rounds):
+                response = await llm.ainvoke(messages)
+                messages.append(response)
+
+                tool_calls = getattr(response, "tool_calls", None)
+                if not tool_calls:
+                    content = str(getattr(response, "content", ""))
+                    if "FINISH" in content.upper():
+                        break
+                    continue
+
+                for tc in tool_calls:
+                    tool_name = tc.get("name", "")
+                    tool_args = tc.get("args", {})
+
+                    yield {
+                        "event": "phase",
+                        "data": {"phase": f"react_{tool_name}"},
+                    }
+
+                    observation = await executor.execute_tool(tool_name, tool_args)
+                    messages.append(ToolMessage(content=observation, tool_call_id=tc.get("id", "")))
+
+            # Post-loop safety nets
+            if executor.state.courses and not executor.state.hard_filtered and executor.state.profile:
+                yield {"event": "phase", "data": {"phase": "react_filter_hard_constraints"}}
+                await executor._tool_filter_hard_constraints()
+
+            if executor.state.courses and not executor.state.feasibility_done:
+                yield {"event": "phase", "data": {"phase": "react_check_feasibility"}}
+                await executor._tool_check_feasibility()
+
+            if executor.state.courses:
+                yield {"event": "phase", "data": {"phase": "react_generate_reasons"}}
+                collected_text: dict[str, str] = {}
+                stream_start = time.perf_counter()
+                async for chunk in self.recommendation_reason_agent.astream_reasons(
+                    profile=executor.state.profile,
+                    courses=executor.state.courses[: request.num_items],
+                    warnings=executor.state.warnings,
+                ):
+                    elapsed = time.perf_counter() - stream_start
+                    if elapsed > settings.stream_timeout_seconds:
+                        yield {
+                            "event": "error",
+                            "data": {
+                                "code": "STREAM_TIMEOUT",
+                                "message": f"流式超时 ({settings.stream_timeout_seconds:.0f}s)",
+                                "phase": "react_generate_reasons",
+                                "agent": "recommendation_reason",
+                                "request_id": request_id,
+                            },
+                        }
+                        break
+
+                    if chunk["type"] == "text":
+                        cid = chunk.get("course_id") or "__prelude__"
+                        collected_text[cid] = collected_text.get(cid, "") + chunk["token"]
+                    yield {"event": chunk["type"], "data": chunk}
+
+                executor.state.reasons = [
+                    {"course_id": cid, "reason": text}
+                    for cid, text in collected_text.items()
+                    if cid != "__prelude__"
+                ]
+                executor.state.reasons_done = True
+
+            final_courses = executor.state.courses[: request.num_items]
+            total_latency = (time.perf_counter() - start) * 1000
+
+            logger.info(
+                "course_supervisor.react_stream_complete",
+                request_id=request_id,
+                course_count=len(final_courses),
+                rounds=round_idx + 1,
+                total_latency_ms=round(total_latency, 1),
+            )
+
+            yield {
+                "event": "done",
+                "data": {
+                    "request_id": request_id,
+                    "user_id": request.user_id,
+                    "courses": [c.model_dump() for c in final_courses],
+                    "recommendation_reasons": executor.state.reasons,
+                    "selection_warnings": executor.state.warnings,
+                    "priority_advice": {
+                        cid: pa.model_dump() if hasattr(pa, 'model_dump') else pa
+                        for cid, pa in executor.state.priority_advice.items()
+                    },
+                    "experiment_group": "react",
+                    "agent_results": {
+                        "react_orchestrator": {
+                            "agent_name": "react_orchestrator",
+                            "success": True,
+                            "latency_ms": round(total_latency, 1),
+                            "error": None,
+                            "data": {"rounds": round_idx + 1, "course_count": len(final_courses)},
+                            "confidence": 1.0,
+                        }
+                    },
+                    "total_latency_ms": round(total_latency, 1),
+                },
+            }
+
+            self.ab_engine.record_outcome("react_vs_pipeline", "react", success=True)
+            self.ab_engine.record_metric("react_vs_pipeline", "react", "total_latency_ms", total_latency, request.user_id)
+            self.ab_engine.record_metric("react_vs_pipeline", "react", "course_count", len(final_courses), request.user_id)
+            self.ab_engine.record_metric("react_vs_pipeline", "react", "warning_count", len(executor.state.warnings), request.user_id)
+
+        except Exception as exc:
+            logger.error(
+                "course_supervisor.react_stream_error",
+                request_id=request_id,
+                error=str(exc),
+            )
+            self.ab_engine.record_outcome("react_vs_pipeline", "react", success=False)
+            yield {
+                "event": "error",
+                "data": {
+                    "code": type(exc).__name__.upper(),
+                    "message": str(exc),
+                    "phase": "react",
+                    "request_id": request_id,
+                },
+            }
+
+    async def _react_recommend(
+        self, request: RecommendationRequest, request_id: str, start: float
+    ) -> RecommendationResponse:
+        from orchestrator.react_tools import REACT_TOOLS, ReactToolExecutor
+        from services import build_tool_calling_llm
+
+        prompt = self._request_prompt(request)
+
+        REACT_SYSTEM_PROMPT = (
+            "你是公选课推荐系统的编排器。根据学生需求，按顺序调用工具完成推荐。\n"
+            "必须遵守的顺序：extract_profile → search_courses → filter_hard_constraints → "
+            "semantic_filter_courses → rerank_courses → check_feasibility → generate_reasons。\n"
+            "filter_hard_constraints 是强制的，不可跳过。\n"
+            "如果召回太少（<5门），尝试用不同策略再搜索。\n"
+            "当所有必需工具调用完成后，输出 FINISH。"
+        )
+
+        llm = build_tool_calling_llm(REACT_TOOLS)
+        executor = ReactToolExecutor(self, prompt, request.context, request.num_items, request.user_id)
+
+        messages = [
+            SystemMessage(content=REACT_SYSTEM_PROMPT),
+            HumanMessage(content=f"学生需求: {prompt}\n需要推荐 {request.num_items} 门课。"),
+        ]
+
+        max_rounds = 20
         for round_idx in range(max_rounds):
             response = await llm.ainvoke(messages)
             messages.append(response)
@@ -727,6 +908,16 @@ class SupervisorOrchestrator:
         else:
             cause = "rerank_output_insufficient"
             message = "排序后可返回课程不足，建议补充偏好或减少请求数量。"
+        logger.warning(
+            "course_supervisor.shortage_warning",
+            requested_count=requested_count,
+            final_count=final_count,
+            ranked_count=ranked_count,
+            available_count=available_count,
+            candidate_count=candidate_count,
+            cause=cause,
+            message=message,
+        )
         return {
             "type": "requested_count_shortage",
             "level": "medium",

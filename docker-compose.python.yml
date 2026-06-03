@@ -38,7 +38,7 @@ services:
       - "3307:3306"
     volumes:
       - mysql_python_data:/var/lib/mysql
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./sql/init-db.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pecommerce123"]
       interval: 10s

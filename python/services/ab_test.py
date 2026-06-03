@@ -46,6 +46,19 @@ class ABTestEngine:
         self._init_default_experiments()
 
     def _init_default_experiments(self):
+
+        self.register_experiment(
+            Experiment(
+                id="react_vs_pipeline",
+                name="React模式和Pipeline模式对比实验",
+                groups=[
+                    ExperimentGroup(name="react", weight=50, config={"react": "react"}),
+                    ExperimentGroup(name="pipeline", weight=50, config={"pipeline": "pipeline"}),
+                ],
+            )
+        )
+
+
         self.register_experiment(
             Experiment(
                 id="rec_strategy",

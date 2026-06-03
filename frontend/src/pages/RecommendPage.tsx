@@ -117,6 +117,7 @@ export default function RecommendPage() {
 
   const [activeTab, setActiveTab] = useState('stream')
   const [streamKey, setStreamKey] = useState(0)
+  const [streamMode, setStreamMode] = useState<'pipeline' | 'react'>('pipeline')
   const [streamPrompt, setStreamPrompt] = useState('')
   const [streamNumItems, setStreamNumItems] = useState(5)
 
@@ -131,6 +132,7 @@ export default function RecommendPage() {
     }
     setStreamPrompt(query)
     setStreamNumItems(numItems)
+    setStreamMode('pipeline')
     setStreamKey((k) => k + 1)
     setActiveTab('stream')
   }, [prompt, numItems])
@@ -154,10 +156,24 @@ export default function RecommendPage() {
     }
   }, [prompt, numItems, addJob, setActive, setResponse, setError])
 
+  const handleReactSubmit = useCallback(() => {
+    const query = prompt.trim()
+    if (!query) {
+      message.warning('请输入选课需求描述')
+      return
+    }
+    setStreamPrompt(query)
+    setStreamNumItems(numItems)
+    setStreamMode('react')
+    setStreamKey((k) => k + 1)
+    setActiveTab('stream')
+  }, [prompt, numItems])
+
   const handlePresetClick = useCallback(async (pq: PresetQuery) => {
     setPrompt(pq.prompt)
     setStreamPrompt(pq.prompt)
     setStreamNumItems(numItems)
+    setStreamMode('pipeline')
     setStreamKey((k) => k + 1)
     setActiveTab('stream')
   }, [numItems, setPrompt])
@@ -231,6 +247,13 @@ export default function RecommendPage() {
               size="large"
             >
               经典模式
+            </Button>
+            <Button
+              icon={<CodeOutlined />}
+              onClick={handleReactSubmit}
+              size="large"
+            >
+              ReAct 推荐
             </Button>
             <Button
               style={{ borderColor: '#c88c3e', color: '#c88c3e' }}
@@ -316,9 +339,10 @@ export default function RecommendPage() {
               ),
               children: streamKey > 0 ? (
                 <StreamView
-                  key={streamKey}
+                  key={`${streamKey}-${streamMode}`}
                   prompt={streamPrompt}
                   numItems={streamNumItems}
+                  mode={streamMode}
                   onRetry={() => {
                     setStreamKey((k) => k + 1)
                   }}

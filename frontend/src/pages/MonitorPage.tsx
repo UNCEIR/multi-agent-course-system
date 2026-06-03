@@ -12,6 +12,7 @@ import {
   Space,
   Typography,
   Collapse,
+  Input,
 } from 'antd'
 import {
   HeartOutlined,
@@ -21,11 +22,24 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   ThunderboltOutlined,
+  ClockCircleOutlined,
+  CodeOutlined,
 } from '@ant-design/icons'
 import { api } from '../services/api'
-import type { HealthResponse, MetricsResponse, ExperimentInfo } from '../types'
+import type { HealthResponse, MetricsResponse, ExperimentInfo, SSEDoneData } from '../types'
 
 const { Text, Title } = Typography
+const { TextArea } = Input
+
+async function consumeStreamDone(
+  generator: AsyncGenerator<{ event: string; data: unknown }>
+): Promise<SSEDoneData> {
+  for await (const evt of generator) {
+    if (evt.event === 'done') return evt.data as SSEDoneData
+    if (evt.event === 'error') throw new Error((evt.data as { message: string }).message || 'Stream error')
+  }
+  throw new Error('Stream ended without done event')
+}
 
 export default function MonitorPage() {
   const [health, setHealth] = useState<HealthResponse | null>(null)
@@ -33,6 +47,34 @@ export default function MonitorPage() {
   const [experiments, setExperiments] = useState<Record<string, ExperimentInfo> | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [comparePrompt, setComparePrompt] = useState('')
+  const [compareLoading, setCompareLoading] = useState(false)
+  const [pipelineDone, setPipelineDone] = useState<SSEDoneData | null>(null)
+  const [reactDone, setReactDone] = useState<SSEDoneData | null>(null)
+  const [compareError, setCompareError] = useState<string | null>(null)
+
+  const handleCompare = useCallback(async () => {
+    const q = comparePrompt.trim()
+    if (!q) return
+    setCompareLoading(true)
+    setCompareError(null)
+    setPipelineDone(null)
+    setReactDone(null)
+    const uid = `compare_${Date.now()}`
+    const body = { user_id: uid, prompt: q, num_items: 5, scene: 'course_selection' as const }
+    try {
+      const [p, r] = await Promise.all([
+        consumeStreamDone(api.recommendStream(body)),
+        consumeStreamDone(api.recommendReactStream(body)),
+      ])
+      setPipelineDone(p)
+      setReactDone(r)
+    } catch (e: unknown) {
+      setCompareError(e instanceof Error ? e.message : '对比测试失败')
+    } finally {
+      setCompareLoading(false)
+    }
+  }, [comparePrompt])
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
@@ -295,15 +337,57 @@ export default function MonitorPage() {
                     ]}
                   />
                   {exp.stats && Object.keys(exp.stats as Record<string, unknown>).length > 0 && (
-                    <div style={{ marginTop: 12 }}>
-                      <Text type="secondary" style={{ fontSize: 11 }}>统计信息：</Text>
-                      <pre style={{
-                        fontSize: 11, background: '#faf8f5', padding: 10, borderRadius: 8, marginTop: 4,
-                        border: '1px solid #e8e0d5', color: '#5c5c6e',
-                      }}>
-                        {JSON.stringify(exp.stats, null, 2)}
-                      </pre>
-                    </div>
+                    expId === 'react_vs_pipeline' ? (
+                      <div style={{ marginTop: 12 }}>
+                        <Text type="secondary" style={{ fontSize: 11, marginBottom: 8, display: 'block' }}>
+                          指标统计
+                        </Text>
+                        <Row gutter={12}>
+                          {exp.groups.map((g) => {
+                            const groupStats = (exp.stats as Record<string, Record<string, { mean: number; count: number }>>)[g.name]
+                            if (!groupStats) return null
+                            const items = [
+                              { label: '平均延迟', key: 'total_latency_ms', unit: 'ms', color: '#1e3a5f' },
+                              { label: '平均课程', key: 'course_count', unit: '门', color: '#2d6a4f' },
+                              { label: '平均提醒', key: 'warning_count', unit: '条', color: '#c88c3e' },
+                            ]
+                            return (
+                              <Col xs={24} sm={12} key={g.name}>
+                                <Card
+                                  size="small"
+                                  title={<Text strong style={{ fontSize: 12 }}>{g.name === 'react' ? 'ReAct 模式' : 'Pipeline 模式'}</Text>}
+                                  style={{ marginBottom: 8 }}
+                                  styles={{ header: { borderBottom: '1px solid #f0ece5', padding: '8px 12px' }, body: { padding: '8px 12px' } }}
+                                >
+                                  {items.map(({ label, key, unit, color }) => {
+                                    const m = groupStats[key]
+                                    return (
+                                      <div key={key} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                        <Text type="secondary" style={{ fontSize: 11 }}>{label}</Text>
+                                        <Text strong style={{ fontSize: 12, color, fontFamily: "'Noto Serif SC', serif" }}>
+                                          {m ? `${m.mean.toFixed(0)} ${unit}` : '-'}
+                                          {m ? <span style={{ fontSize: 10, color: '#8a8980', marginLeft: 4 }}>({m.count}次)</span> : null}
+                                        </Text>
+                                      </div>
+                                    )
+                                  })}
+                                </Card>
+                              </Col>
+                            )
+                          })}
+                        </Row>
+                      </div>
+                    ) : (
+                      <div style={{ marginTop: 12 }}>
+                        <Text type="secondary" style={{ fontSize: 11 }}>统计信息：</Text>
+                        <pre style={{
+                          fontSize: 11, background: '#faf8f5', padding: 10, borderRadius: 8, marginTop: 4,
+                          border: '1px solid #e8e0d5', color: '#5c5c6e',
+                        }}>
+                          {JSON.stringify(exp.stats, null, 2)}
+                        </pre>
+                      </div>
+                    )
                   )}
                 </div>
               ),
@@ -311,6 +395,171 @@ export default function MonitorPage() {
           />
         ) : (
           <Empty description="暂无 A/B 实验数据" />
+        )}
+      </Card>
+
+      {/* ========== React vs Pipeline 对比测试 ========== */}
+      <Card
+        className="animate-fade-in"
+        style={{ border: '1px solid #e8e0d5' }}
+        styles={{
+          header: { borderBottom: '1px solid #f0ece5', padding: '16px 20px' },
+          body: { padding: 20 },
+        }}
+        title={
+          <Space>
+            <ThunderboltOutlined style={{ color: '#c88c3e' }} />
+            <span className="serif-heading">React vs Pipeline 对比测试</span>
+          </Space>
+        }
+      >
+        <div style={{ marginBottom: 16 }}>
+          <TextArea
+            value={comparePrompt}
+            onChange={(e) => setComparePrompt(e.target.value)}
+            placeholder="输入选课需求描述，同时对比 Pipeline 和 React 两种架构的表现..."
+            autoSize={{ minRows: 2, maxRows: 4 }}
+            style={{ marginBottom: 12, fontSize: 13, borderRadius: 8 }}
+          />
+          <Button
+            type="primary"
+            icon={<ThunderboltOutlined />}
+            onClick={handleCompare}
+            loading={compareLoading}
+            style={{ borderRadius: 8 }}
+          >
+            开始对比
+          </Button>
+        </div>
+
+        {compareError && (
+          <Card size="small" style={{ marginBottom: 12, background: '#fef2f2', border: '1px solid #fecaca' }}>
+            <Space>
+              <CloseCircleOutlined style={{ color: '#a52a2a' }} />
+              <Text type="danger">{compareError}</Text>
+            </Space>
+          </Card>
+        )}
+
+        {compareLoading && (
+          <div style={{ textAlign: 'center', padding: 40 }}>
+            <Spin size="large" tip="同时发起 Pipeline 和 React 流式推荐...">
+              <div style={{ marginTop: 30 }} />
+            </Spin>
+          </div>
+        )}
+
+        {(pipelineDone || reactDone) && !compareLoading && (
+          <Row gutter={16}>
+            <Col xs={24} md={12}>
+              <Card
+                size="small"
+                title={
+                  <Space>
+                    <ExperimentOutlined style={{ color: '#1e3a5f' }} />
+                    <Text strong>Pipeline 架构</Text>
+                    <Tag style={{ fontSize: 10, background: '#e8eef4', color: '#1e3a5f', border: 'none' }}>
+                      {pipelineDone?.experiment_group || 'pipeline'}
+                    </Tag>
+                  </Space>
+                }
+                styles={{ header: { borderBottom: '1px solid #f0ece5' } }}
+              >
+                {pipelineDone ? (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        <ClockCircleOutlined style={{ marginRight: 4 }} />
+                        总耗时
+                      </Text>
+                      <Text strong style={{ fontSize: 16, fontFamily: "'Noto Serif SC', serif", color: '#1e3a5f' }}>
+                        {pipelineDone.total_latency_ms.toFixed(0)} ms
+                      </Text>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>返回课程</Text>
+                      <Text strong style={{ fontSize: 16, fontFamily: "'Noto Serif SC', serif", color: '#2d6a4f' }}>
+                        {pipelineDone.courses.length} 门
+                      </Text>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>执行 Agent</Text>
+                      <Text style={{ fontSize: 12, color: '#5c5c6e' }}>
+                        {Object.keys(pipelineDone.agent_results || {}).join(' / ')}
+                      </Text>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>选课提醒</Text>
+                      <Text style={{ fontSize: 12, color: '#5c5c6e' }}>
+                        {pipelineDone.selection_warnings.length} 条
+                      </Text>
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                      <Text type="secondary" style={{ fontSize: 11 }}>
+                        Top 3: {pipelineDone.courses.slice(0, 3).map((c) => c.course_name).join(' → ')}
+                      </Text>
+                    </div>
+                  </div>
+                ) : (
+                  <Text type="secondary">等待中...</Text>
+                )}
+              </Card>
+            </Col>
+            <Col xs={24} md={12}>
+              <Card
+                size="small"
+                title={
+                  <Space>
+                    <CodeOutlined style={{ color: '#c88c3e' }} />
+                    <Text strong>React 架构</Text>
+                    <Tag style={{ fontSize: 10, background: '#f5e6d0', color: '#92400e', border: 'none' }}>
+                      {reactDone?.experiment_group || 'react'}
+                    </Tag>
+                  </Space>
+                }
+                styles={{ header: { borderBottom: '1px solid #f0ece5' } }}
+              >
+                {reactDone ? (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        <ClockCircleOutlined style={{ marginRight: 4 }} />
+                        总耗时
+                      </Text>
+                      <Text strong style={{ fontSize: 16, fontFamily: "'Noto Serif SC', serif", color: '#c88c3e' }}>
+                        {reactDone.total_latency_ms.toFixed(0)} ms
+                      </Text>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>返回课程</Text>
+                      <Text strong style={{ fontSize: 16, fontFamily: "'Noto Serif SC', serif", color: '#2d6a4f' }}>
+                        {reactDone.courses.length} 门
+                      </Text>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>执行 Agent</Text>
+                      <Text style={{ fontSize: 12, color: '#5c5c6e' }}>
+                        {Object.keys(reactDone.agent_results || {}).join(' / ')}
+                      </Text>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>选课提醒</Text>
+                      <Text style={{ fontSize: 12, color: '#5c5c6e' }}>
+                        {reactDone.selection_warnings.length} 条
+                      </Text>
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                      <Text type="secondary" style={{ fontSize: 11 }}>
+                        Top 3: {reactDone.courses.slice(0, 3).map((c) => c.course_name).join(' → ')}
+                      </Text>
+                    </div>
+                  </div>
+                ) : (
+                  <Text type="secondary">等待中...</Text>
+                )}
+              </Card>
+            </Col>
+          </Row>
         )}
       </Card>
     </div>

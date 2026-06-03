@@ -307,7 +307,7 @@ multi-agent-ecommerce-system/
 │   ├── services/
 │   ├── scripts/
 │   └── tests/
-├── scripts/
+├── sql/
 │   └── init-db.sql           # MySQL 首次初始化表结构
 ├── docs/                     # 文档与面试材料
 └── docker-compose.yml        # 历史/对照栈，当前主链路不以它为准

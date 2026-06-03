@@ -106,24 +106,23 @@ async def _health_payload() -> dict[str, Any]:
         },
     }
 
-
+# 健康检查
 @app.get("/health")
 async def health():
     return await _health_payload()
 
-
+# 健康检查
 @app.get("/api/v1/health")
 async def health_api_v1():
     return await _health_payload()
 
-
+# 初始推荐
 @app.post("/api/v1/recommend", response_model=RecommendationResponse)
 async def recommend(request: RecommendationRequest):
     """使用Supervisor编排器进行公选课推荐 (生产推荐用法)"""
     response = await supervisor.recommend(request)
     _collect_metrics(response)
     return response
-
 
 def _recommend_stream_response(request: RecommendationRequest) -> StreamingResponse:
     """SSE 流式公选课推荐。"""
@@ -137,13 +136,35 @@ def _recommend_stream_response(request: RecommendationRequest) -> StreamingRespo
         },
     )
 
-
+# 流式推荐
 @app.post("/api/v1/recommend/stream")
 async def recommend_stream(request: RecommendationRequest):
     """SSE 流式公选课推荐 (前端打字效果 + 阶段进度推送)"""
     return _recommend_stream_response(request)
 
+# React推荐
+@app.post("/api/v1/recommend/react")
+async def recommend_react(request: RecommendationRequest):
+    """React推荐"""
+    return await supervisor.react_recommend(request)
 
+
+# React流式推荐
+@app.post("/api/v1/recommend/react/stream")
+async def recommend_react_stream(request: RecommendationRequest):
+    """SSE 流式 React 推荐 (ReAct 工具调用 + 阶段进度推送)"""
+    return StreamingResponse(
+        _sse_wrapper(supervisor.react_stream_recommend(request)),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# 通过LangGraph进行公选课推荐
 @app.post("/api/v1/recommend/graph")
 async def recommend_via_graph(request: RecommendationRequest):
     """使用LangGraph状态图进行公选课推荐 (展示LangGraph能力)"""

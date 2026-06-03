@@ -28,16 +28,26 @@ const PHASE_LABELS: Record<string, string> = {
   phase2_complete: '重排 & 检查完成',
   phase3_start: '正在生成推荐...',
   phase3_complete: '推荐完成',
+  react_start: 'ReAct: 初始化',
+  react_extract_profile: 'ReAct: 提取学生画像',
+  react_search_courses: 'ReAct: 课程召回',
+  react_filter_hard_constraints: 'ReAct: 硬约束过滤',
+  react_semantic_filter_courses: 'ReAct: 语义初筛',
+  react_rerank_courses: 'ReAct: 课程重排',
+  react_check_feasibility: 'ReAct: 可行性检查',
+  react_generate_reasons: 'ReAct: 正在生成推荐...',
+  react_round: 'ReAct: LLM 决策中...',
 }
 
 interface Props {
   prompt: string
   numItems: number
+  mode?: 'pipeline' | 'react'
   onDone?: (payload: StreamDonePayload) => void
   onRetry?: () => void
 }
 
-export default function StreamView({ prompt, numItems, onDone, onRetry }: Props) {
+export default function StreamView({ prompt, numItems, mode = 'pipeline', onDone, onRetry }: Props) {
   const [phase, setPhase] = useState<string>('start')
   const [segments, setSegments] = useState<StreamSegment[]>([])
   const [courseCards, setCourseCards] = useState<Map<string, Course>>(new Map())
@@ -74,7 +84,8 @@ export default function StreamView({ prompt, numItems, onDone, onRetry }: Props)
 
     ;(async () => {
       try {
-        for await (const evt of api.recommendStream(body)) {
+        const streamFn = mode === 'react' ? api.recommendReactStream : api.recommendStream
+        for await (const evt of streamFn(body)) {
           if (ac.signal.aborted) return
 
           switch (evt.event) {
