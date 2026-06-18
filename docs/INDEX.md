@@ -14,6 +14,18 @@
 | `docs/code-walkthrough.md` | 从入口到 Agent、ReAct 工具、召回、硬约束、流式输出的代码证据链 | 面试官要求看代码 |
 | `docs/supervisor-main-orchestration.md` | 流式推荐接口编排细节：召回打分、硬过滤规则、marker parser、SSE 事件 | 深入讲编排实现 |
 
+## LLM Intern 项目包装（`docs/llm-intern/`）
+
+按 llm-intern 方法论对项目进行系统化真值边界、证据契约和 JD 匹配度评估。**不替代已有文档**，补充结构化分析层。
+
+| 文档 | 作用 | 适合什么时候读 |
+| --- | --- | --- |
+| `docs/llm-intern/README.md` | 包装目录入口，fit verdict 速览，与已有文档的关系 | 第一次了解 llm-intern 包装 |
+| `docs/llm-intern/01_truth_boundary.md` | 逐条声明真值边界分类（可以写 / 谨慎写 / 补证据后写 / 不能写 / 无法判断） | 写简历/口播前逐条检查 |
+| `docs/llm-intern/02_evidence_contract.md` | 9 条核心声明的证据契约（代码:行号→测试→风险→安全措辞） | 被追问时找证据 |
+| `docs/llm-intern/03_fit_verdict.md` | 按 5 个 LLM 实习方向评估项目匹配度 + 描述切换建议 | 投不同方向时切换侧重点 |
+| `docs/llm-intern/04_upgrade_plan.md` | 16 项证据升级计划（半天→1天→3天→1周）+ 优先级矩阵 | 投递截止前快速补短板 |
+
 ## 历史参考
 
 | 文档 | 定位 | 注意事项 |
@@ -36,6 +48,12 @@
 3. 读 `docs/code-walkthrough.md`，按请求链路找代码证据。
 4. 读 `docs/supervisor-main-orchestration.md`，理解召回打分和硬过滤规则。
 5. 对照 `docs/notes/` 中的验证记录，补充真实测试结果。
+
+### 投递前检查（llm-intern 路径）
+
+1. 读 `docs/llm-intern/01_truth_boundary.md`，逐条确认简历 bullet 在 🟢/🟡 等级。
+2. 读 `docs/llm-intern/03_fit_verdict.md`，按目标岗位切换项目描述侧重点。
+3. 读 `docs/llm-intern/04_upgrade_plan.md`，挑半天/一天能完成的升级项快速补齐。
 
 ## 对外讲项目的统一口径
 
