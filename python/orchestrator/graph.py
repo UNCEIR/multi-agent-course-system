@@ -68,7 +68,7 @@ async def init_node(state: PipelineState) -> PipelineState:
     state["request_id"] = str(uuid.uuid4())
     state["_start_time"] = time.perf_counter()
     state["agent_results"] = {}
-    exp = ab_engine.assign(state["user_id"])
+    exp = ab_engine.assign(state["user_id"], "react_vs_pipeline")
     state["experiment_group"] = exp.get("group", "control")
     return state
 

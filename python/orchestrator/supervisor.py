@@ -95,7 +95,7 @@ class SupervisorOrchestrator:
             prompt=prompt,
         )
 
-        experiment = self.ab_engine.assign(request.user_id)
+        experiment = self.ab_engine.assign(request.user_id, "react_vs_pipeline")
 
         # A/B test routing: react group uses LLM-driven tool calling pipeline
         if experiment.get("group") == "react":
@@ -261,6 +261,14 @@ class SupervisorOrchestrator:
         )
 
         priority_advice = getattr(feasibility_result, "priority_advice", {})
+
+        # Record metrics for Pipeline path (non-streaming)
+        group_name = experiment.get("group", "pipeline")
+        self.ab_engine.record_outcome("react_vs_pipeline", group_name, success=True)
+        self.ab_engine.record_metric("react_vs_pipeline", group_name, "total_latency_ms", total_latency, request.user_id)
+        self.ab_engine.record_metric("react_vs_pipeline", group_name, "course_count", len(final_courses), request.user_id)
+        self.ab_engine.record_metric("react_vs_pipeline", group_name, "warning_count", len(warnings), request.user_id)
+
         return RecommendationResponse(
             request_id=request_id,
             user_id=request.user_id,
@@ -300,7 +308,7 @@ class SupervisorOrchestrator:
         }
 
         try:
-            experiment = self.ab_engine.assign(request.user_id)
+            experiment = self.ab_engine.assign(request.user_id, "react_vs_pipeline")
 
             # Phase 1: 画像 + 宽召回并行
             current_phase = "phase1"
@@ -511,10 +519,11 @@ class SupervisorOrchestrator:
                 },
             }
 
-            self.ab_engine.record_outcome("react_vs_pipeline", "pipeline", success=True)
-            self.ab_engine.record_metric("react_vs_pipeline", "pipeline", "total_latency_ms", total_latency, request.user_id)
-            self.ab_engine.record_metric("react_vs_pipeline", "pipeline", "course_count", len(final_courses), request.user_id)
-            self.ab_engine.record_metric("react_vs_pipeline", "pipeline", "warning_count", len(warnings), request.user_id)
+            group_name = experiment.get("group", "pipeline")
+            self.ab_engine.record_outcome("react_vs_pipeline", group_name, success=True)
+            self.ab_engine.record_metric("react_vs_pipeline", group_name, "total_latency_ms", total_latency, request.user_id)
+            self.ab_engine.record_metric("react_vs_pipeline", group_name, "course_count", len(final_courses), request.user_id)
+            self.ab_engine.record_metric("react_vs_pipeline", group_name, "warning_count", len(warnings), request.user_id)
 
         except Exception as exc:
             logger.error(
@@ -523,7 +532,7 @@ class SupervisorOrchestrator:
                 phase=current_phase,
                 error=str(exc),
             )
-            self.ab_engine.record_outcome("react_vs_pipeline", "pipeline", success=False)
+            self.ab_engine.record_outcome("react_vs_pipeline", experiment.get("group", "pipeline"), success=False)
             yield {
                 "event": "error",
                 "data": {

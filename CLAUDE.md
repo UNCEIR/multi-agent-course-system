@@ -68,12 +68,30 @@ POST /api/v1/recommend
 
 | 模式 | 触发方式 | 代码路径 |
 |------|---------|-----------|
-| 固定 Pipeline | 默认（`ab_engine.assign()` → `rec_strategy` → `control`/`treatment_llm`） | `supervisor.recommend()` |
-| ReAct 工具调用 | 需要路由到 `react_vs_pipeline` 实验 → `react` 分组 | `supervisor._react_recommend()` |
+| 固定 Pipeline | 默认实验 `react_vs_pipeline` → `pipeline` 分组（50%） | `supervisor.recommend()` |
+| ReAct 工具调用 | 默认实验 `react_vs_pipeline` → `react` 分组（50%） | `supervisor._react_recommend()` |
 
-**当前状态**：`supervisor.recommend()` 调用 `ab_engine.assign(user_id)`，默认使用实验 `rec_strategy`（分组：`control`、`treatment_llm`）。`react_vs_pipeline` 实验已在 `ab_test.py:48` 注册，但 supervisor 从未路由到它。第 101 行的 `if experiment.get("group") == "react"` 检查目前是死代码，除非将 supervisor 改为使用 `react_vs_pipeline` 实验。
+**路由机制**：`supervisor.recommend()` 与流式入口都调用 `ab_engine.assign(user_id, "react_vs_pipeline")`。`ab_test.py` 的 `assign()` / `assign_thompson()` 默认实验已改为 `react_vs_pipeline`（分组 `react` / `pipeline`，各 50%，按 user_id 一致性哈希分桶，同一用户始终落同一组）。返回 `group == "react"` 时走 `_react_recommend()`，否则走固定 Pipeline。`graph.py` 的 LangGraph 演示链路也用同一实验写 `experiment_group`。
 
-ReAct 模式使用 7 个工具（`orchestrator/react_tools.py`）：`extract_profile`、`search_courses`、`filter_hard_constraints`（已锁定 —— 如 LLM 跳过，循环结束时会强制执行）、`semantic_filter_courses`、`rerank_courses`、`check_feasibility`、`generate_reasons`。最多 10 轮 LLM 工具调用。
+> ⚠️ `rec_strategy` 实验仍在 `ab_test.py` 注册（分组 `control` / `treatment_llm`），但其 config（rerank: rule_based vs llm）**未被 pipeline 消费** —— 只作为 response 字段透传，不影响实际重排，是未来切换重排策略的占位实验。要真正切换重排方式，应在 RerankAgent 读取该 group 的 config。
+
+ReAct 模式使用 7 个工具（`orchestrator/react_tools.py`）：`extract_profile`、`search_courses`、`filter_hard_constraints`（已锁定 —— 如 LLM 跳过，循环结束时会强制执行）、`semantic_filter_courses`、`rerank_courses`、`check_feasibility`、`generate_reasons`。最多 `max_rounds = 20` 轮 LLM 工具调用（同步与流式两条 `_react_recommend` 路径一致）。
+
+### API 端点（`python/main.py`）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/v1/recommend` | 同步推荐 —— Supervisor 主链路，按 A/B 自动分流 Pipeline / ReAct |
+| `POST` | `/api/v1/recommend/stream` | SSE 流式（Pipeline 路径，`supervisor.stream_recommend`） |
+| `POST` | `/api/v1/recommend/react` | 强制 ReAct 同步（`supervisor.react_recommend`，绕过 A/B 分流） |
+| `POST` | `/api/v1/recommend/react/stream` | 强制 ReAct 流式 |
+| `POST` | `/api/v1/recommend/graph` | LangGraph 演示链路（`rec_graph.ainvoke`），结果结构与主链路不同 |
+| `GET` | `/api/v1/experiments` | 所有 A/B 实验状态 |
+| `POST` | `/api/v1/experiments/{id}/outcome` | 记录实验结果 |
+| `GET` | `/api/v1/metrics` | Agent / 业务指标 |
+| `GET` | `/health`、`/api/v1/health` | MySQL / Redis / Milvus / LLM / Embedding 探活 |
+
+> `/recommend` 随 A/B 分流；`/recommend/react*` 直接走 ReAct，可用来与 Pipeline 路径对照；`/recommend/graph` 仅展示 LangGraph 能力。
 
 ### 关键设计决策
 
@@ -93,20 +111,30 @@ ReAct 模式使用 7 个工具（`orchestrator/react_tools.py`）：`extract_pro
 |------|------|------|
 | MySQL `course_records` | 500 门课程结构化字段 + `raw_json` | 事实来源 |
 | MySQL `course_chunks` | 500×4=2000 条文本块（basic、schedule_capacity、learning_profile、audience_tags） | 块元数据 |
-| Milvus `course_chunks_real` | 2000 条向量，维度 1152 | 语义召回 |
+| Milvus `course_chunks_real` | 每门课 4 条向量，维度 1024 | 语义召回 |
 | Redis | 候选课程 ID 列表（非完整对象） | 召回缓存（TTL 15 分钟） |
 
 分块策略避免语义稀释 —— 例如"不考试、作业少"命中 `learning_profile` 块，不会被校区、地点等文本淹没。
 
-### LLM 与 Embedding —— 两种不同的 API 协议
+### LLM 与 Embedding —— 统一走公司中转站 OpenAI 协议
+
+LLM 与 Embedding 均通过公司内部中转站（`one.zhique.cn`）暴露为 OpenAI 兼容协议，共用同一套 `api_key` / `base_url`（`/v1`）。
 
 | | LLM | Embedding |
 |---|---|---|
-| 端点 | `/compatible-mode/v1`（OpenAI 兼容） | `/api/v1`（DashScope 原生） |
-| 客户端 | `ChatOpenAI` | 自定义 `EmbeddingClient` |
-| 模型 | 可配置 | `tongyi-embedding-vision-plus` |
+| 端点 | `/v1/chat/completions`（OpenAI 兼容） | `/v1/embeddings`（OpenAI 兼容） |
+| 客户端 | `ChatOpenAI` | `OpenAIEmbeddingClient`（`embedding_client.py`） |
+| 模型 | `deepseek-v4-flash`（可配置） | `text-embedding-v4`（可配置，维度 1152） |
 
-Embedding 模型**不支持** OpenAI `/embeddings` 格式 —— 仅支持 DashScope 原生 API。**不要**将 Embedding 切换到 `/compatible-mode/v1`。
+- `ECOM_EMBEDDING_PROVIDER=openai` 走 `OpenAIEmbeddingClient`（默认）；`dashscope_multimodal` 仍保留为旧 DashScope 原生协议的兼容 provider，仅在直连灵积 MaaS 时使用。
+- 中转站证书 SAN 不匹配时需 `ECOM_HTTPX_VERIFY_SSL=false`。
+- 旧 MaaS 直连配置（`/compatible-mode/v1` + DashScope `/api/v1`）已废弃，不要再切回。
+
+## 文档与工作流
+
+- **`docs/INDEX.md` 是文档总索引**。架构细节查 `docs/architecture.md`、`docs/code-walkthrough.md`、`docs/supervisor-main-orchestration.md`；本文件不重复这些深度内容。`docs/notes/` 是历轮任务复盘笔记（证据来源），`docs/llm-intern/` 是项目包装/真值边界层，`docs/interview-*.md` 是面试材料。
+- **`openspec/` 是 spec-driven 变更工作流**。`openspec/specs/` 存当前规范，`openspec/changes/` 存变更提案（已合并的归档在 `changes/archive/`，如 `2026-05-28-fix-category-fuzzy-match`）。配套 Cursor 命令 `opsx-propose` / `opsx-apply` / `opsx-explore` / `opsx-archive`。改 spec 级行为前先看现有 spec。
+- **`tasks/` 有 `todo.md`（待办）与 `lessons.md`（经验）**。`.cursor/rules/write-notes-for-project.mdc`（Cursor `alwaysApply`）要求每次对话读 `todo.md` 并把复盘写入 `docs/notes/` —— 这是 Cursor 端规则，Claude Code 默认不自动执行；需要同等行为时请明示。
 
 ## 常见陷阱
 
@@ -134,6 +162,7 @@ Embedding 模型**不支持** OpenAI `/embeddings` 格式 —— 仅支持 DashS
 | `python/orchestrator/supervisor.py` | 核心编排（约 800 行）—— Pipeline + ReAct 双模式 |
 | `python/orchestrator/hard_constraint_filter.py` | 确定性硬约束过滤 |
 | `python/orchestrator/react_tools.py` | 7 个 ReAct 工具定义 + `ReactToolExecutor` |
+| `python/orchestrator/graph.py` | LangGraph 演示链路（`/api/v1/recommend/graph`），独立 StateGraph，不复用 Supervisor 主链路 |
 | `python/agents/base_agent.py` | Agent 基类，含重试/兜底/耗时统计 |
 | `python/agents/student_profile_agent.py` | 从自然语言中提取结构化画像 + 硬约束 |
 | `python/agents/course_recall_agent.py` | 多源召回（Redis→MySQL→Milvus→mock 兜底） |
@@ -144,7 +173,7 @@ Embedding 模型**不支持** OpenAI `/embeddings` 格式 —— 仅支持 DashS
 | `python/repositories/course_vector_repository.py` | Milvus 向量检索 |
 | `python/repositories/course_recall_cache_repository.py` | Redis 精确 + 语义召回缓存 |
 | `python/services/ab_test.py` | A/B 分桶 + Thompson Sampling |
-| `python/services/embedding_client.py` | DashScope 原生 Embedding 客户端 |
+| `python/services/embedding_client.py` | OpenAI 协议 Embedding 客户端（默认），兼容 DashScope 原生与本地确定性 |
 | `python/services/stream_token_markup_parser.py` | SSE token 级 `[COURSE:id:name]` 标记解析器 |
 | `python/scripts/ingest_course_dataset.py` | CSV → MySQL + Milvus 数据导入流水线 |
 | `frontend/src/pages/RecommendPage.tsx` | 推荐主界面 |

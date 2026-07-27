@@ -59,6 +59,10 @@ class ABTestEngine:
         )
 
 
+        # NOTE: rec_strategy experiment is registered but its config (rerank: rule_based
+        # vs rerank: llm) is not yet consumed by the pipeline. The experiment_group is
+        # recorded in responses but does not affect actual reranking behavior.
+        # This experiment is a placeholder for future rerank-strategy toggling.
         self.register_experiment(
             Experiment(
                 id="rec_strategy",
@@ -83,7 +87,7 @@ class ABTestEngine:
     def register_experiment(self, exp: Experiment):
         self.experiments[exp.id] = exp
 
-    def assign(self, user_id: str, experiment_id: str = "rec_strategy") -> dict[str, Any]:
+    def assign(self, user_id: str, experiment_id: str = "react_vs_pipeline") -> dict[str, Any]:
         """Assign user to an experiment group using consistent hashing."""
         exp = self.experiments.get(experiment_id)
         if not exp or not exp.enabled:
@@ -93,7 +97,7 @@ class ABTestEngine:
         group = self._bucket_to_group(bucket, exp.groups)
         return {"group": group.name, "config": group.config}
 
-    def assign_thompson(self, user_id: str, experiment_id: str = "rec_strategy") -> dict[str, Any]:
+    def assign_thompson(self, user_id: str, experiment_id: str = "react_vs_pipeline") -> dict[str, Any]:
         """Use Thompson Sampling for dynamic traffic allocation."""
         exp = self.experiments.get(experiment_id)
         if not exp or not exp.enabled:

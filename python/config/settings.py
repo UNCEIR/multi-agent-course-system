@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     llm_api_key: str = ""
-    llm_base_url: str = "https://llm-oe8ejw5pgtze0knw.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+    llm_base_url: str = "https://one.zhique.cn/v1"
     llm_model: str = "deepseek-v4-flash"
     llm_temperature: float = 0.7
     llm_max_tokens: int = 4096
@@ -57,15 +57,17 @@ class Settings(BaseSettings):
     milvus_uri: str = ""
     milvus_collection: str = "product_embeddings"
     course_milvus_collection: str = "course_chunks_real"
-    milvus_dimension: int = 1152
+    milvus_dimension: int = 1024
     milvus_metric_type: str = "COSINE"
     milvus_index_type: str = "AUTOINDEX"
 
-    embedding_provider: str = "dashscope_multimodal"
-    embedding_dimension: int = 1152
-    embedding_base_url: str = "https://llm-oe8ejw5pgtze0knw.cn-beijing.maas.aliyuncs.com/api/v1"
+    # Embedding 走公司内部中转站的 OpenAI /embeddings 协议；
+    # 保留 dashscope_multimodal 作为旧 DashScope 原生协议的兼容 provider。
+    embedding_provider: str = "openai"
+    embedding_dimension: int = 1024
+    embedding_base_url: str = "https://one.zhique.cn/v1"
     embedding_api_key: str = ""
-    embedding_model: str = "tongyi-embedding-vision-plus-2026-03-06"
+    embedding_model: str = "text-embedding-v4"
     embedding_batch_size: int = 8
     embedding_timeout_seconds: float = 30.0
     httpx_verify_ssl: bool = True

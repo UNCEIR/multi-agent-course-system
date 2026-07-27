@@ -56,7 +56,7 @@ docker-compose.override.yml
 1.txt
 1.csv
 
-# 多余openspec 配置agent实验文件
+# 多余openspec 实验文件
 /.codex/
 /.qodex/
 /.trae/
