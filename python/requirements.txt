@@ -18,6 +18,16 @@ tenacity>=9.0.0
 structlog>=24.4.0
 prometheus-client>=0.21.0
 
+# v2.0.0 — deepagents 框架 + 平台基座（对应 docs/v2.0.0/notes 决策 3/6/7/8）
+deepagents>=0.1.0  # 决策3: deep-agent 框架（建在 LangGraph 之上，文件系统+TodoWrite+subagents）
+langchain-mcp-adapters>=0.1.0  # 决策8/6b: MCP client，对接二次开发的 FastGPT KB
+minio>=7.2.0  # 决策6: MinIO 对象存储（源文档 + 生成的 Word 报告，双角色）
+jinja2>=3.1.0  # 决策7: 报告 HTML 渲染（1.html 模板填表）
+weasyprint>=60.0  # 决策5/7: 报告 PDF 渲染（每学生独有 PDF 链接，1.html→PDF）
+python-docx>=1.1.0  # 决策6b: doc 文件解析兜底（报告输出已改 PDF，docxtpl Word 作废）
+pypdf>=4.0.0  # 决策6b: PDF 文件解析兜底（FastGPT KB 不可用/特定格式时）
+tavily-python>=0.3.0  # 决策7: 网页搜索 skill
+
 # Testing
 pytest>=8.0.0
 pytest-asyncio>=0.24.0
