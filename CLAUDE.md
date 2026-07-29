@@ -159,7 +159,7 @@ LLM 与 Embedding 均通过公司内部中转站（`one.zhique.cn`）暴露为 O
 | `python/main.py` | FastAPI 入口 —— 薄层，委托给 Supervisor |
 | `python/config/settings.py` | 所有配置，`ECOM_` 前缀，先加载仓库根 `.env` 再加载 `python/.env` |
 | `python/models/schemas.py` | Pydantic 模型：请求、响应、Course、StudentProfile、AgentResult |
-| `python/orchestrator/supervisor.py` | 核心编排（约 800 行）—— Pipeline + ReAct 双模式 |
+| `python/orchestrator/supervisor.py` | 核心编排（约 940 行）—— Pipeline + ReAct 双模式 |
 | `python/orchestrator/hard_constraint_filter.py` | 确定性硬约束过滤 |
 | `python/orchestrator/react_tools.py` | 7 个 ReAct 工具定义 + `ReactToolExecutor` |
 | `python/orchestrator/graph.py` | LangGraph 演示链路（`/api/v1/recommend/graph`），独立 StateGraph，不复用 Supervisor 主链路 |
