@@ -58,7 +58,7 @@
 
 - 环境变量前缀仍是 `ECOM_`。
 - Milvus 课程 collection 为 `course_chunks_real`。
-- embedding 维度按配置为 1152。
+- embedding 维度按配置为 1024。
 - Redis 召回缓存有 TTL、短锁 TTL、等待重试等配置。
 
 ### 支撑的面试故事

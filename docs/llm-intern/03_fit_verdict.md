@@ -99,7 +99,7 @@
 | --- | --- | --- |
 | 召回（Recall） | ✅ 多源召回（Redis→MySQL→Milvus→兜底） | 强（代码） |
 | 粗排/精排（Ranking） | ✅ 规则预打分 + LLM 候选内重排 | 强（代码） |
-| 向量检索 | ✅ Milvus COSINE + 1152 维 Embedding | 强（代码） |
+| 向量检索 | ✅ Milvus COSINE + 1024 维 Embedding | 强（代码） |
 | 硬约束/过滤 | ✅ 确定性规则过滤 | 强（代码） |
 | 语义理解 / NLP | ✅ LLM 画像提取 + 语义初筛 | 中（缺效果评估） |
 | 冷启动 | ❌ 未涉及 | 无 |

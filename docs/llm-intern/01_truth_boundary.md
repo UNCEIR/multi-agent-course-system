@@ -64,7 +64,7 @@
 | --- | --- | --- | --- |
 | 4.1 | "MySQL+Milvus+Redis 三层数据架构" | 🟢 可以写 | 三个 Repository 文件均在 `repositories/` |
 | 4.2 | "MySQL 存储 500 门课程结构化字段" | 🟢 可以写 | `course_records` 表，ingest 脚本 |
-| 4.3 | "Milvus 存储 2000 条向量块（1152 维）" | 🟢 可以写 | `course_chunks_real` 集合，4 类 chunk × 500 门 |
+| 4.3 | "Milvus 存储 2000 条向量块（1024 维）" | 🟢 可以写 | `course_chunks_real` 集合，4 类 chunk × 500 门 |
 | 4.4 | "四类 chunk 避免语义稀释" | 🟢 可以写 | basic/schedule_capacity/learning_profile/audience_tags 分块逻辑 |
 | 4.5 | "Redis 缓存候选 ID，不缓存完整对象" | 🟢 可以写 | `CourseRecallCacheRepository` 只存 course_id 列表 |
 | 4.6 | "语义缓存：同 bucket 内 cosine ≥ 0.95 复用" | 🟢 可以写 | `course_recall_cache_repository.py` 语义缓存逻辑 |

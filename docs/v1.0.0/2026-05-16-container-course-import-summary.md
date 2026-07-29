@@ -24,7 +24,7 @@
 - Docker Compose 启动 `mysql`、`redis`、`minio`、`etcd`、`milvus`、`python-api`。
 - `python-api` 容器运行 `python/scripts/ingest_course_dataset.py`，从容器内 `/tmp/course.csv` 读取课程数据。
 - 每门课程写入 MySQL `course_records`，并拆分 4 个 chunk 写入 `course_chunks`。
-- 每个 chunk 通过 DashScope 原生 embedding API 生成 1152 维向量后写入 Milvus collection `course_chunks_real`。
+- 每个 chunk 通过 DashScope 原生 embedding API 生成 1024 维向量后写入 Milvus collection `course_chunks_real`。
 - 推荐请求通过 Supervisor 三阶段编排执行：画像与召回、排序与可行性检查、推荐理由生成。
 
 ## 细节修改

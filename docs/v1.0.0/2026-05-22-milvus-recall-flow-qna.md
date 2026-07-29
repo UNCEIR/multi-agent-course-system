@@ -24,7 +24,7 @@ CourseRecallAgent._execute()
   → MySQL 结构化召回 fetch_courses()
   → _semantic_course_ids(query, limit=num_items*5)
        → CourseVectorRepository.search()
-            → embed_text(query)           # 1152 维向量
+            → embed_text(query)           # 1024 维向量
             → Collection.search(anns_field=embedding, COSINE)
             → [chunk_id, ...]
        → split(":")[0] 去重 → course_ids
@@ -77,7 +77,7 @@ return [hit.id for hit in results[0]]  # 仅返回主键 chunk_id
 
 - Collection：`course_chunks_real`（`ECOM_COURSE_MILVUS_COLLECTION`）
 - 索引：`embedding` 字段 AUTOINDEX + COSINE
-- 维度：1152（`milvus_dimension` / `embedding_dimension` 对齐）
+- 维度：1024（`milvus_dimension` / `embedding_dimension` 对齐）
 - **注意**：虽请求 `output_fields`，当前实现未读取 `hit.entity["course_id"]`，course_id 由上层从 `chunk_id` 前缀解析。
 
 ### 2. embed_text

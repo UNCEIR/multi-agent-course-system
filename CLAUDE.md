@@ -124,7 +124,7 @@ LLM 与 Embedding 均通过公司内部中转站（`one.zhique.cn`）暴露为 O
 |---|---|---|
 | 端点 | `/v1/chat/completions`（OpenAI 兼容） | `/v1/embeddings`（OpenAI 兼容） |
 | 客户端 | `ChatOpenAI` | `OpenAIEmbeddingClient`（`embedding_client.py`） |
-| 模型 | `deepseek-v4-flash`（可配置） | `text-embedding-v4`（可配置，维度 1152） |
+| 模型 | `deepseek-v4-flash`（可配置） | `text-embedding-v4`（可配置，维度 1024） |
 
 - `ECOM_EMBEDDING_PROVIDER=openai` 走 `OpenAIEmbeddingClient`（默认）；`dashscope_multimodal` 仍保留为旧 DashScope 原生协议的兼容 provider，仅在直连灵积 MaaS 时使用。
 - 中转站证书 SAN 不匹配时需 `ECOM_HTTPX_VERIFY_SSL=false`。
@@ -145,7 +145,7 @@ LLM 与 Embedding 均通过公司内部中转站（`one.zhique.cn`）暴露为 O
 - **HardConstraintFilter 类别匹配是纯子串**：`"理工"` **不匹配** `"自然科学与工程技术"`。需要在 `student_profile_agent.py:190`（`category_rules`）和 `hard_constraint_filter.py:201`（`_fuzzy_text_match`）中添加别名映射。
 - **FeasibilityAgent 的 LLM 调用失败是静默的**：`_parse_advice_json()` 解析失败时返回空 dict → 规则兜底，不抛异常。排查时搜索日志 `llm_advice_parse_empty` 或 `llm_advice_failed`。
 - **FeasibilityAgent 最多送 12 门课给 LLM**（`max_tokens=4096`）。超过 12 门 → 仅走规则兜底。
-- **语义缓存阈值是 0.95**（从 0.9 提高），因为 1152 维向量对句式模板相似但关键词不同的查询区分度不足。Prompt 始终参与缓存 key 计算。
+- **语义缓存阈值是 0.95**（从 0.9 提高），因为 1024 维向量对句式模板相似但关键词不同的查询区分度不足。Prompt 始终参与缓存 key 计算。
 - **无 CI/CD** —— 没有 `.github/workflows`。不要尝试 CI 命令。
 - **前端无 lint/test/format 脚本** —— `npm run lint`、`npm test`、`npm run format` 都不存在。
 - **`_score_candidates` 接受但不使用 `profile` 参数是有意为之**，不是 bug。

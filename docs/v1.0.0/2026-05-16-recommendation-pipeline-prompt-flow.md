@@ -158,7 +158,7 @@ Milvus 会同时命中多种类型的 chunk（例如 `learning_profile`、`audie
 - **抽象**：`EmbeddingClient`，`embed_text` / 默认 `embed_texts` 逐条调用。
 - **`LocalDeterministicEmbeddingClient`**：本地与稳定测试用，对文本做 SHA-256 维哈希到固定维度向量并归一化，**不调外部 API**。
 - **`DashScopeMultimodalEmbeddingClient`**：生产用，按 `batch_size` 分批 `_embed_batch`。
-  - 请求 JSON 形态示例：`model`、`input.contents` 为 `[{"text": "..."}]`、`parameters.dimension` 与配置维度一致（默认 `1152`）。
+  - 请求 JSON 形态示例：`model`、`input.contents` 为 `[{"text": "..."}]`、`parameters.dimension` 与配置维度一致（默认 `1024`）。
   - 响应：取 `output.embeddings`，按 `index` 排序后拼成向量列表，并校验条数与维度。
   - 端点由 `_build_endpoint(base_url)` 拼接为 `.../api/v1/services/embeddings/multimodal-embedding/multimodal-embedding`（若 `base_url` 已含完整 path 则沿用）。
 - **工厂**：`build_embedding_client()` 读 `get_settings()`：`ECOM_EMBEDDING_PROVIDER` 为 `local` → 本地确定性客户端；为 `dashscope_multimodal` → DashScope；`verify_ssl` 使用 `ECOM_HTTPX_VERIFY_SSL`（MaaS 自定义域名证书 SAN 不匹配时需关校验，与 LLM 侧一致）。
@@ -168,7 +168,7 @@ Milvus 会同时命中多种类型的 chunk（例如 `learning_profile`、`audie
 ### 向量仓库：`python/repositories/course_vector_repository.py`
 
 - **连接**：`milvus_uri` 或 host/port/user/password；collection 名为 `settings.course_milvus_collection`（默认 `course_chunks_real`）。
-- **Schema**：`chunk_id`（VARCHAR 主键）、`course_id`、`chunk_type`、`embedding`（`FLOAT_VECTOR`，维度 `milvus_dimension`，默认与 embedding 一致 **1152**）；索引 metric 默认 **COSINE**，`AUTOINDEX`。
+- **Schema**：`chunk_id`（VARCHAR 主键）、`course_id`、`chunk_type`、`embedding`（`FLOAT_VECTOR`，维度 `milvus_dimension`，默认与 embedding 一致 **1024**）；索引 metric 默认 **COSINE**，`AUTOINDEX`。
 - **写入** `upsert_chunks(chunks)`：取每条的 `content`，`embedding_client.embed_texts(contents)` 得到向量矩阵，再 `upsert` 四列主键/元数据/向量并 `flush`。
 - **检索** `search(query, limit)`：对查询语句 `embed_text(query)` 得到查询向量，`collection.search` 返回命中行的主键；当前实现返回 **Milvus 命中的 `chunk_id` 列表**（即 `hit.id`），由上层 `CourseRecallAgent._semantic_course_ids` 用 `chunk_id.split(":", 1)[0]` 还原 **course_id**。
 

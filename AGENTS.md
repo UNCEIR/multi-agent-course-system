@@ -87,7 +87,7 @@ Supervisor 每请求调两次召回——wide（profile=None）和 refined（带
 |---|---|---|
 | 端点 | `/compatible-mode/v1` | `/api/v1` |
 | 协议 | OpenAI 兼容 (`ChatOpenAI`) | **DashScope 原生** |
-| 请求体 | `{"model":"...","messages":[...]}` | `{"model":"...","input":{"contents":[{"text":"..."}]},"parameters":{"dimension":1152}}` |
+| 请求体 | `{"model":"...","messages":[...]}` | `{"model":"...","input":{"contents":[{"text":"..."}]},"parameters":{"dimension":1024}}` |
 | 响应路径 | `choices[0].message` | `output.embeddings[].embedding` |
 
 `tongyi-embedding-vision-plus-2026-03-06` **只支持 DashScope 原生 API**，不支持 OpenAI 兼容格式。不要试图把 embedding 切到 `/compatible-mode/v1/embeddings`——会返回 404。
@@ -134,9 +134,9 @@ course_recall_agent.py:27 → CourseVectorRepository(build_embedding_client())  
 |---|---|---|
 | MySQL | `course_records` | 500 门课程完整结构化字段 |
 | MySQL | `course_chunks` | 500×4=2000 条 chunk 文本元数据 |
-| Milvus | `course_chunks_real` | 2000 条 1152 维向量 |
+| Milvus | `course_chunks_real` | 2000 条 1024 维向量 |
 
-每门课拆成 4 类 chunk：`basic`、`schedule_capacity`、`learning_profile`、`audience_tags`。维度 1152。
+每门课拆成 4 类 chunk：`basic`、`schedule_capacity`、`learning_profile`、`audience_tags`。维度 1024。
 
 ### CI/CD
 

@@ -174,7 +174,7 @@ flowchart TD
 | --- | --- |
 | MySQL `course_records` | 课程结构化字段（筛选、展示、容量判断） |
 | MySQL `course_chunks` | 每课 4 类 chunk 文本元数据 |
-| Milvus `course_chunks_real` | 1152 维向量 |
+| Milvus `course_chunks_real` | 1024 维向量 |
 
 Chunk 类型：`basic`、`schedule_capacity`、`learning_profile`、`audience_tags`——避免整行 CSV 直接 embedding 导致语义混杂。
 
@@ -211,7 +211,7 @@ Chunk 类型：`basic`、`schedule_capacity`、`learning_profile`、`audience_ta
 | 同 prompt 一直很快、无 embedding | Redis 缓存命中，换 prompt 或等 TTL |
 | 指定校区/分类仍不对 | 查 `hard_constraints` 与 Phase 1.5 日志；分类支持 domain 与正式类名模糊匹配 |
 | 推荐数少于 `num_items` | 硬约束/时间冲突过滤后候选不足，见 `requested_count_shortage` |
-| embedding 维度错误 | `ECOM_EMBEDDING_DIMENSION` 与 Milvus collection 须一致（当前 1152） |
+| embedding 维度错误 | `ECOM_EMBEDDING_DIMENSION` 与 Milvus collection 须一致（当前 1024） |
 | MySQL 连不上 | 宿主机用 **3307**，勿改成 3306 |
 
 排查：`docker compose ... logs --tail=80 python-api mysql`；应用层在 Repository / Recall / Supervisor 有结构化日志。
