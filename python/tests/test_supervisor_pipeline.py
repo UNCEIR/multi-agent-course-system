@@ -26,7 +26,7 @@ class _AgentStub:
 
 @pytest.mark.agent
 @pytest.mark.asyncio
-async def test_supervisor_filters_time_conflict_and_returns_course_reasons():
+async def test_supervisor_filters_time_conflict_and_returns_course_reasons(monkeypatch):
     req = RecommendationRequest(
         user_id="S10001",
         num_items=2,
@@ -90,6 +90,11 @@ async def test_supervisor_filters_time_conflict_and_returns_course_reasons():
         recommendation_reason_agent=_AgentStub(reason_result),
     )
 
+    monkeypatch.setattr(
+        orchestrator.ab_engine, "assign",
+        lambda user_id, experiment_id: {"group": "pipeline", "config": {}},
+    )
+
     response = await orchestrator.recommend(req)
 
     assert [course.course_id for course in response.courses] == ["GXK001"]
@@ -101,7 +106,7 @@ async def test_supervisor_filters_time_conflict_and_returns_course_reasons():
 
 @pytest.mark.agent
 @pytest.mark.asyncio
-async def test_supervisor_pipeline_uses_cached_recall_candidates():
+async def test_supervisor_pipeline_uses_cached_recall_candidates(monkeypatch):
     req = RecommendationRequest(
         user_id="S10002",
         num_items=2,
@@ -161,6 +166,11 @@ async def test_supervisor_pipeline_uses_cached_recall_candidates():
         recommendation_reason_agent=_AgentStub(reason_result),
     )
 
+    monkeypatch.setattr(
+        orchestrator.ab_engine, "assign",
+        lambda user_id, experiment_id: {"group": "pipeline", "config": {}},
+    )
+
     response = await orchestrator.recommend(req)
 
     assert [course.course_id for course in response.courses] == ["GXK010"]
@@ -170,7 +180,7 @@ async def test_supervisor_pipeline_uses_cached_recall_candidates():
 
 @pytest.mark.agent
 @pytest.mark.asyncio
-async def test_supervisor_hard_constraint_filter_blocks_non_west_campus_courses():
+async def test_supervisor_hard_constraint_filter_blocks_non_west_campus_courses(monkeypatch):
     req = RecommendationRequest(
         user_id="S10003",
         num_items=3,
@@ -226,6 +236,11 @@ async def test_supervisor_hard_constraint_filter_blocks_non_west_campus_courses(
         course_rerank_agent=_AgentStub(rerank_result),
         course_feasibility_agent=_AgentStub(feasibility_result),
         recommendation_reason_agent=_AgentStub(reason_result),
+    )
+
+    monkeypatch.setattr(
+        orchestrator.ab_engine, "assign",
+        lambda user_id, experiment_id: {"group": "pipeline", "config": {}},
     )
 
     response = await orchestrator.recommend(req)

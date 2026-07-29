@@ -38,11 +38,12 @@
 
 ## Phase 概要
 
-### Phase 0：deepagents POC（go/no-go 门）
+### Phase 0：deepagents POC（go/no-go 门）—— ✅ GO（2026-07-29）
 - **目标**：验证 deepagents + 中转站（`one.zhique.cn` ChatOpenAI）+ Docker 兼容
 - **交付**：POC 脚本（最小 main agent + 1 tool，经中转站调用）在 Docker 内跑通
 - **门控**：失败 → 回退决策 2 备选（LangGraph 混合 / OpenAI Agents SDK）
-- **详细 plan**：`plans/phase-0-deepagents-poc.md`（待生成）
+- **结果**：三轴全绿（deepagents 0.6.12 可用 / 中转站 tool-calling 双向兼容 / Docker 构建运行通过）；v1 回归 44 通过 3 预存失败（A/B 路由问题，非依赖升级回归，见详细计划 §4.1）。**GO，进入 Phase 1**
+- **详细 plan**：`notes/2026-07-29-phase-0-deepagents-poc详细计划.md`（已生成并执行）
 
 ### Phase 1：平台基座
 - **目标**：搭建 deepagents 主 agent + tool 注册框架 + v1 包装 + MinIO + 文档流水线 + Skills 注册
@@ -69,7 +70,7 @@
 - **交付**：
   - 二次开发 FastGPT `mcp_server`，Python MCP client 接入
   - `/chat` 主 agent 路由 [推荐 tool | 报告 | 评价寄语 | query_knowledge]
-  - 主 agent 通用知识 Q&A（`query_knowledge` tool）
+  - 主 agent 通用知识 Q&A（`query_knowledge` tool）+网页搜搜mcp工具搜索能力+fastgpt的mcp
   - 可靠性加固（compaction、subagent 隔离、circuit breaker、checkpointing）
 - **验证**：`/chat` 路由正确；MCP 调通 FastGPT app；compaction/circuit breaker 生效
 - **详细 plan**：`plans/phase-3-extensions.md`（待生成）
