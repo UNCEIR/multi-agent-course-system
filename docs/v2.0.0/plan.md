@@ -65,15 +65,29 @@
 - **验证**：`/report` 返回每学生 PDF 链接、加权正确；`/evaluation` 返回 comment、数值引用正确；两 agent 独立对话不共享
 - **详细 plan**：`plans/phase-2-report-evaluation.md`（待生成）
 
-### Phase 3：扩展
-- **目标**：TS MCP 桥接 + `/chat` 统一入口 + 通用知识 Q&A + 可靠性加固
+### Phase 3：扩展 + PPT 场景
+- **目标**：TS MCP 桥接 + `/chat` 统一入口 + 通用知识 Q&A + 可靠性加固 + PPT 生成系统
 - **交付**：
   - 二次开发 FastGPT `mcp_server`，Python MCP client 接入
-  - `/chat` 主 agent 路由 [推荐 tool | 报告 | 评价寄语 | query_knowledge]
-  - 主 agent 通用知识 Q&A（`query_knowledge` tool）+网页搜搜mcp工具搜索能力+fastgpt的mcp
+  - `/chat` 主 agent 路由 [推荐 tool | 报告 | 评价寄语 | query_knowledge | ppt_generate]
+  - 主 agent 通用知识 Q&A（`query_knowledge` tool，学生手册 PDF 种子数据源）+ 网页搜索 MCP 工具（tavily）+ FastGPT MCP
   - 可靠性加固（compaction、subagent 隔离、circuit breaker、checkpointing）
-- **验证**：`/chat` 路由正确；MCP 调通 FastGPT app；compaction/circuit breaker 生效
+  - **PPT 生成系统**（参考 OpenMAIC）：大学生课程小组 PPT 汇报场景，AI 生成 PPT 微课件自动生成系统（多 agent 协作，支持画布/动画/PPT，用户输入提示词选择类型如期末 PPT 课设/小组汇报）；`ppt_generate` tool/subagent，DSL→PPTX 渲染（参考 OpenMAIC `pptxgenjs` + `lib/export/use-export-pptx.ts`）
+- **验证**：`/chat` 路由正确；MCP 调通 FastGPT app；compaction/circuit breaker 生效；PPT 生成可用
 - **详细 plan**：`plans/phase-3-extensions.md`（待生成）
+
+### Phase 4：深度增强（体现工程深度）
+- **目标**：端到端评测 + monitor 在线表现 + 检索指标驱动调优 + 多模态 + agent harness 深化 + 兜底演示
+- **交付**：
+  - **端到端 agent 评测**：意图识别准确率、工具调用成功率、检索召回率/精度/F1/NDCG、幻觉率、端到端延迟；评测测试集 + 指标看板（复用 v1 `/metrics` + `prometheus-client`）
+  - **monitor agent 在线表现**：`/metrics` 监控退化/异常 → 指标驱动检索策略调优（top_k/语义缓存阈值/分块策略/rerank 权重）
+  - **多模态 LLM 接入**：通用 agent 加入图谱识别/图片识别（如课程图谱可视化、成绩趋势图识别）
+  - **插件市场**：用户在 FastGPT 侧自建 agent/KB/插件，Python 主 agent 经 MCP 动态发现调用
+  - **agent harness 深化**：think→act→observe 循环可视化、工具调用链路追踪（OpenTelemetry）、subagent 委派树可视化、checkpointing 恢复演示
+  - **工具链路断裂兜底演示**：故意断工具（FastGPT KB 不可用）→ circuit breaker 熔断 → Python 兜底脚本 → 部分结果保留 → checkpointing 恢复 → 降级运行
+  - **幻觉兜底演示**：LLM 试图自算统计 → schema 约束拦截 → 引用文件数值 → compaction 摘要落盘 → subagent 隔离
+- **验证**：评测指标可观测；多模态可用；插件动态发现；harness 可视化；断裂/幻觉兜底演示通过
+- **详细 plan**：`plans/phase-4-depth-enhancement.md`（待生成）
 
 ## 待决开放项
 
@@ -85,6 +99,8 @@
 
 1. ✅ 总 plan 完成（本文件）
 2. ✅ 决策笔记同步（07-27/07-28）
-3. ⏭ **按每个 Phase 单独生成详细 plan.md**（`plans/phase-N-*.md`，含具体文件、函数、步骤）
-4. ⏭ 据详细 plan **分阶段编码**，每阶段验证闭环跑通后再进下一阶段
+3. ✅ CLAUDE.md 深度要求 + plan 模式自动参考规则
+4. ⏭ **按每个 Phase 单独生成详细 plan.md**（`plans/phase-N-*.md`，含具体文件、函数、步骤）
+5. ⏭ 据详细 plan **分阶段编码**，每阶段验证闭环跑通后再进下一阶段
+6. Phase 0 POC 优先（go/no-go 门）——deepagents 兼容性是最大未验证风险
 5. Phase 0 POC 优先（go/no-go 门）——deepagents 兼容性是最大未验证风险

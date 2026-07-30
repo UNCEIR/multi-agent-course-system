@@ -133,8 +133,44 @@ LLM 与 Embedding 均通过公司内部中转站（`one.zhique.cn`）暴露为 O
 ## 文档与工作流
 
 - **`docs/INDEX.md` 是文档总索引**。架构细节查 `docs/architecture.md`、`docs/code-walkthrough.md`、`docs/supervisor-main-orchestration.md`；本文件不重复这些深度内容。`docs/notes/` 是历轮任务复盘笔记（证据来源），`docs/llm-intern/` 是项目包装/真值边界层，`docs/interview-*.md` 是面试材料。
+- **`docs/v2.0.0/` 是 v2.0.0 升级的工作区**。`plan.md` 是总计划（Phase 0-3 概要），`notes/2026-07-27-设计决策问答记录.md` + `notes/2026-07-28-设计决策补充说明.md` 是 15 个设计决策的问答记录与详细论证。**每次进入 plan 模式生成具体 Phase 阶段的 plan 时，必须先读 `docs/v2.0.0/plan.md` + `notes/` 对应决策，确保与已定决策一致**。
 - **`openspec/` 是 spec-driven 变更工作流**。`openspec/specs/` 存当前规范，`openspec/changes/` 存变更提案（已合并的归档在 `changes/archive/`，如 `2026-05-28-fix-category-fuzzy-match`）。配套 Cursor 命令 `opsx-propose` / `opsx-apply` / `opsx-explore` / `opsx-archive`。改 spec 级行为前先看现有 spec。
 - **`tasks/` 有 `todo.md`（待办）与 `lessons.md`（经验）**。`.cursor/rules/write-notes-for-project.mdc`（Cursor `alwaysApply`）要求每次对话读 `todo.md` 并把复盘写入 `docs/notes/` —— 这是 Cursor 端规则，Claude Code 默认不自动执行；需要同等行为时请明示。
+
+## v2.0.0 工程深度要求（必须体现）
+
+> 以下要求源自 `docs/v2.0.0/需求.md` 第 47-57 行，是 v2.0.0 区别于 v1.0.0 的核心深度指标。每个 Phase 的详细 plan 和实现都必须对照这些要求，确保项目能考察开发者的 agent 应用落地能力。
+
+### Agent 端到端能力（所有涉及的 agent 都要体现）
+1. **意图识别**：agent如何识别用户意图（推荐/报告/评价寄语/通用知识 Q&A/PPT 生成），路由到对应 tool/subagent。参考 claude-code `assembleToolPool` + LLM 推理路由。
+2. **MCP 集成**：如何经 MCP 调用外部 TS 服务（FastGPT mcp_server）+ MCP 工具动态发现（`tools/list` + JSON Schema）。参考决策 8 补充。
+3. **多轮对话记忆管理**：compaction（阈值 `contextWindow-13000`，保留 `keepRecentTokens=20000`）+ 结构化摘要（Goal/Progress/Key Decisions/Next Steps/Critical Context）+ checkpointing（Redis 后端，`thread_id` 恢复）。参考决策 11 补充。
+4. **端到端 agent 评测**：如何评测 agent 端到端表现（意图识别准确率、工具调用成功率、检索召回率/精度、幻觉率、端到端延迟）。需设计评测指标与测试集。
+5. **多 agent routing**：主 agent 如何在多 subagent/tool 间路由（`/chat` LLM 推理 + TodoWrite 规划）。参考决策 10 补充。
+6. **monitor agent 在线表现利用**：如何利用 `/metrics`（v1 已有 Agent/业务指标）监控 agent 在线表现，发现退化/异常。参考 v1 `prometheus-client` + structlog。
+
+### RAG 检索策略与数据指标
+7. **检索策略细节体现具体数据指标**：召回率、精度、F1、语义缓存命中率、硬约束过滤率、rerank 排序质量（NDCG）、Milvus COSINE 融合权重效果。v1 已有部分（`_score_candidates` 广度 vs `_compute_score` 精度），v2 需扩展到 FastGPT KB Q&A 场景。
+8. **工具调用出错优化**：检索不全/召回不好时如何优化（调整 top_k、语义缓存阈值、分块策略、embedding 模型、rerank 权重）。需有可观测的指标驱动调优，不是盲调。
+
+### Agent Harness 与 Loop 思想
+9. **agent harness 包括 loop 一系列思想**：think→act→observe 循环、TodoWrite 规划、工具调用链路、subagent 委派/隔离、文件系统上下文卸载。参考 deepagents + claude-code/pi 源码（决策 3/4/7/11 补充）。
+10. **工具调用链路断掉时的处理**：工具 try/catch→isError result → circuit breaker（3 次熔断）→ 部分结果保留（extractPartialResult）→ checkpointing 恢复 → 降级（如 KB 不可用走 Python 兜底脚本）。参考决策 12 补充。
+11. **模型幻觉导致错误行动时的兜底**：确定性计算（统计/加权）用 Python 不用 LLM；LLM 只产文本段，数值引用文件不记忆；compaction 摘要落盘；subagent 上下文隔离。参考决策 5/11 补充。
+
+### 多模态与插件扩展
+12. **通用 agent 可加入图谱识别等多模态 LLM**：v2.0.0 通用知识 agent 可接入多模态 LLM（如图谱/图片识别），接入定制开发的插件（FastGPT 自定义 agent/KB）。
+13. **PPT 生成系统（新增点）**：参考 OpenMAIC，围绕大学生课程小组 PPT 汇报场景，搭建 AI 生成 PPT 功能微课件自动生成系统（多 agent 协作，支持画布/动画/PPT，用户输入提示词选择类型如期末 PPT 课设/小组汇报）。参考 `E:\Agent\OpenMAIC` 的 `pptxgenjs` + DSL→PPTX 渲染管线。
+
+### 数据源
+14. **通用知识 agent 数据源**：`E:\Agent\multi-agent-course-system\广东工业大学2025年学生手册.pdf` 作为通用知识 Q&A 的种子数据源（经文档流水线摄入 FastGPT KB）。
+15. **网页搜索 MCP 工具**：通用 agent 具有网页搜索这类 MCP 工具功能（`tavily-python`，已加 requirements）。
+
+### 参考项目（E:\Agent\ 下）
+- `E:\Agent\pi` —— agent harness/compaction/skills（TS，原生工具，无 MCP）
+- `E:\Agent\claude-code` —— AgentTool/subagent/autoCompact/circuit breaker/MCPTool（TS，原生+MCP 混合）
+- `E:\Agent\OpenMAIC` —— call_agent 委派/allowlist gate/PPTX 渲染（TS，Vercel AI SDK + pi-agent-core）
+- `E:\Agent\FastGPT` —— mcp_server/KB/工作流编排/Code 节点（TS，MCP server+client）
 
 ## 常见陷阱
 
