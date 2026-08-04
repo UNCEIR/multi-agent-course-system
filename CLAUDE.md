@@ -142,12 +142,18 @@ LLM 与 Embedding 均通过公司内部中转站（`one.zhique.cn`）暴露为 O
 | LLM 工厂 | `python/services/llm_client.py` | 所有 LLM 调用走 `build_chat_openai` / `build_tool_calling_llm` → `ChatOpenAI` → 自动 trace |
 | Embedding 工厂 | `python/services/embedding_client.py` | 底层委托 `langchain_openai.OpenAIEmbeddings` + `@traceable` 装饰 → 自动 trace |
 
-**关键约束**：
+**Trace 命名规范**：所有 LLM 和 Embedding 调用必须在工厂层注入 `task_name` 参数，使用 `LLMTaskName` 枚举值（`python/services/llm_task_name.py`）：
+- LLM：`build_chat_openai(temperature=0.2, max_tokens=2048, task_name=LLMTaskName.STUDENT_PROFILE)`
+- Embedding：`build_embedding_client(task_name=LLMTaskName.COURSE_RECALL)`
+- 新增 LLM 功能时，必须走工厂并传入 `task_name`，禁止直接 `ChatOpenAI(...)` 或裸 `httpx` 调 LLM/Embedding API。
 
-- `configure_langsmith_tracing()` 在 `main.py` **模块最顶部**调用（在 `import orchestrator.supervisor` 之前），原因是 `langsmith.utils.get_env_var` 有 `lru_cache`，若在 env 就位前被读取，返回值会被永久冻结。`services/__init__.py` 顶层无 eager import langchain，此 import 链安全。
-- 所有新增 LLM 功能**必须走工厂**，禁止直接 `ChatOpenAI(...)` 或裸 `httpx` 调 LLM/Embedding API。
+**关键约束**：
+- `configure_langsmith_tracing()` 在 `main.py` **模块最顶部**调用（在 `import orchestrator.supervisor` 之前），原因是 `langsmith.utils.get_env_var` 有 `lru_cache`，若在 env 就位前被读取，返回值会被永久冻结。
 - `get_settings()` 有 `lru_cache`，测试时直接 `monkeypatch.setenv` 不生效，需 mock `get_settings` 返回 fake settings（见 `tests/test_tracing.py`）。
 - `/health` 暴露 `langsmith` 字段（`get_tracing_status()` 诊断是否激活），便于排查"为什么没有 trace"。
+- **Docker `--build` 陷阱**：改 `tracing.py`、`embedding_client.py` 或 `main.py` 后必须重建镜像，否则容器跑旧代码，tracing 不会生效。
+
+**v2.0.0 兼容**：deepagents 和 FastGPT MCP 接入后自动覆盖——deepagents 接受外部 `BaseChatModel` 实例走 callback，MCP 工具转 `StructuredTool` 走 `Runnable` callback。
 
 **v2.0.0 兼容**：deepagents 和 FastGPT MCP 接入后自动覆盖——
 - deepagents（决策 3）：`create_deep_agent(model=工厂创建的 ChatOpenAI)` → 内部 LLM 调用走 `BaseChatModel` callback → 自动 trace。`create_agent` 还额外用 `@traceable` 装饰 middleware 钩子。
@@ -237,6 +243,7 @@ LLM 与 Embedding 均通过公司内部中转站（`one.zhique.cn`）暴露为 O
 | `python/services/ab_test.py` | A/B 分桶 + Thompson Sampling |
 | `python/services/llm_client.py` | LLM 工厂 `build_chat_openai` / `build_tool_calling_llm` —— 所有 LLM 调用唯一入口，LangSmith tracing 覆盖基座 |
 | `python/services/tracing.py` | LangSmith 配置激活层 —— 启动时把 `settings.langchain_*` 映射为 `LANGCHAIN_*` + `LANGSMITH_*` 双命名空间 |
+| `python/services/llm_task_name.py` | LLM/Embedding 调用场景名称枚举，统一注入 LangSmith trace 的业务标识 |
 | `python/services/embedding_client.py` | Embedding 工厂 —— 底层委托 `OpenAIEmbeddings` + `@traceable`，自动被 LangSmith trace |
 | `python/services/stream_token_markup_parser.py` | SSE token 级 `[COURSE:id:name]` 标记解析器 |
 | `python/scripts/ingest_course_dataset.py` | CSV → MySQL + Milvus 数据导入流水线 |
