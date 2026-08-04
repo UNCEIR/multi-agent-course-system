@@ -29,7 +29,7 @@ async def test_openai_compatible_llm_smoke_when_e2e_enabled():
             "默认跳过以避免计费；设置 ECOM_E2E_LLM=1 且配置 ECOM_LLM_* 后运行本测试。"
         )
 
-    from services.llm_client import build_chat_openai
+    from ai.llm_client import build_chat_openai
 
     llm = build_chat_openai(temperature=0.0, max_tokens=16)
     response = await llm.ainvoke(

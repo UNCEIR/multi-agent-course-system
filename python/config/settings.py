@@ -73,17 +73,10 @@ class Settings(BaseSettings):
     ab_test_default_bucket_count: int = 100
 
     agent_timeout_user_profile: float = 5.0
-    agent_timeout_intent_recognition: float = 4.0
     agent_timeout_product_recall: float = 6.0
-    agent_timeout_semantic_search: float = 6.0
     agent_timeout_product_rerank: float = 8.0
     agent_timeout_marketing_copy: float = 10.0
-    agent_timeout_review_summary: float = 8.0
-    agent_timeout_image_score: float = 5.0
     agent_timeout_inventory: float = 5.0
-    agent_timeout_price_optimization: float = 6.0
-    agent_timeout_fraud_detection: float = 5.0
-    agent_timeout_customer_service: float = 5.0
 
     supervisor_max_retries: int = 2
     supervisor_global_timeout: float = 30.0

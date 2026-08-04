@@ -10,8 +10,8 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from repositories import CourseRepository, CourseVectorRepository
-from services import LLMTaskName, build_embedding_client
+from storage import CourseRepository, CourseVectorRepository
+from ai import LLMTaskName, build_embedding_client
 
 
 DEFAULT_CSV = Path(__file__).resolve().parents[2] / "course_dataset_tools" / "output" / "public_elective_courses.csv"

@@ -1,0 +1,88 @@
+"""
+学校公选课 Multi-Agent 推荐系统 — FastAPI Entry Point
+
+Endpoints:
+  POST /api/v1/recommend          - 获取公选课个性化推荐
+  POST /api/v1/recommend/stream   - SSE 流式公选课推荐
+  POST /api/v1/recommend/graph    - 通过LangGraph pipeline推荐公选课
+  GET  /api/v1/experiments        - 查看A/B实验状态
+  GET  /api/v1/metrics            - 查看系统监控指标
+  GET  /api/v1/health             - 健康检查（与前端 /api 前缀一致）
+  GET  /health                    - 健康检查（运维探活常用路径）
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+
+from ai.tracing import configure_langsmith_tracing
+
+configure_langsmith_tracing()
+
+from contextlib import asynccontextmanager
+from urllib.parse import urlparse
+
+import structlog
+import uvicorn
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app import runtime
+from app.api import recommend, health
+from config import get_settings
+
+logger = structlog.get_logger()
+settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _assert_llm_config()
+    runtime.init()
+    llm_parsed = urlparse(settings.llm_base_url)
+    logger.info(
+        "app.startup",
+        model=settings.llm_model,
+        llm_api_host=llm_parsed.netloc or llm_parsed.path,
+    )
+    yield
+    runtime.shutdown()
+    logger.info("app.shutdown")
+
+
+app = FastAPI(
+    title="Public Elective Course Multi-Agent Recommendation System",
+    description="学生画像Agent + 课程召回Agent + 课程重排Agent + 选课可行性Agent + 推荐理由Agent",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 注册路由
+app.include_router(health.router)
+app.include_router(recommend.router)
+
+
+def _assert_llm_config() -> None:
+    required = {
+        "ECOM_LLM_API_KEY": settings.llm_api_key,
+        "ECOM_LLM_BASE_URL": settings.llm_base_url,
+        "ECOM_LLM_MODEL": settings.llm_model,
+    }
+    missing = [name for name, value in required.items() if not str(value).strip()]
+    if missing:
+        raise RuntimeError(f"Missing required LLM env vars: {', '.join(missing)}")
+
+
+if __name__ == "__main__":
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

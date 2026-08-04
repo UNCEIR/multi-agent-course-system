@@ -15,13 +15,13 @@ python -m venv .venv
 # Linux/macOS: source .venv/bin/activate
 python -m pip install -r python/requirements.txt
 
-# Docker 服务（必须使用 --profile python）
-docker compose -f docker-compose.python.yml --profile python up -d
-docker compose -f docker-compose.python.yml --profile python ps
-docker compose -f docker-compose.python.yml --profile python logs --tail=80 python-api
+# Docker 服务
+docker compose up -d
+docker compose ps
+docker compose logs --tail=80 python-api
 
 # Python 代码修改后重建镜像（Docker 会缓存构建层）
-docker compose -f docker-compose.python.yml --profile python up -d --build python-api
+docker compose up -d --build python-api
 
 # 导入课程数据
 cd python
@@ -75,9 +75,9 @@ POST /api/v1/recommend
 
 > ⚠️ `rec_strategy` 实验仍在 `ab_test.py` 注册（分组 `control` / `treatment_llm`），但其 config（rerank: rule_based vs llm）**未被 pipeline 消费** —— 只作为 response 字段透传，不影响实际重排，是未来切换重排策略的占位实验。要真正切换重排方式，应在 RerankAgent 读取该 group 的 config。
 
-ReAct 模式使用 7 个工具（`orchestrator/react_tools.py`）：`extract_profile`、`search_courses`、`filter_hard_constraints`（已锁定 —— 如 LLM 跳过，循环结束时会强制执行）、`semantic_filter_courses`、`rerank_courses`、`check_feasibility`、`generate_reasons`。最多 `max_rounds = 20` 轮 LLM 工具调用（同步与流式两条 `_react_recommend` 路径一致）。
+ReAct 模式使用 7 个工具（`python/app/recommend/react_tools.py`）：`extract_profile`、`search_courses`、`filter_hard_constraints`（已锁定 —— 如 LLM 跳过，循环结束时会强制执行）、`semantic_filter_courses`、`rerank_courses`、`check_feasibility`、`generate_reasons`。最多 `max_rounds = 20` 轮 LLM 工具调用（同步与流式两条 `_react_recommend` 路径一致）。
 
-### API 端点（`python/main.py`）
+### API 端点（`python/app/main.py` → `python/app/api/`）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -138,11 +138,11 @@ LLM 与 Embedding 均通过公司内部中转站（`one.zhique.cn`）暴露为 O
 
 | AOP 单点 | 文件 | 覆盖范围 |
 |---------|------|---------|
-| 配置激活层 | `python/services/tracing.py` | 启动时一次性把 `settings.langchain_*` 写入 `LANGCHAIN_*` + `LANGSMITH_*` 双命名空间 |
-| LLM 工厂 | `python/services/llm_client.py` | 所有 LLM 调用走 `build_chat_openai` / `build_tool_calling_llm` → `ChatOpenAI` → 自动 trace |
-| Embedding 工厂 | `python/services/embedding_client.py` | 底层委托 `langchain_openai.OpenAIEmbeddings` + `@traceable` 装饰 → 自动 trace |
+| 配置激活层 | `python/ai/tracing.py` | 启动时一次性把 `settings.langchain_*` 写入 `LANGCHAIN_*` + `LANGSMITH_*` 双命名空间 |
+| LLM 工厂 | `python/ai/llm_client.py` | 所有 LLM 调用走 `build_chat_openai` / `build_tool_calling_llm` → `ChatOpenAI` → 自动 trace |
+| Embedding 工厂 | `python/ai/embedding_client.py` | 底层委托 `langchain_openai.OpenAIEmbeddings` + `@traceable` 装饰 → 自动 trace |
 
-**Trace 命名规范**：所有 LLM 和 Embedding 调用必须在工厂层注入 `task_name` 参数，使用 `LLMTaskName` 枚举值（`python/services/llm_task_name.py`）：
+**Trace 命名规范**：所有 LLM 和 Embedding 调用必须在工厂层注入 `task_name` 参数，使用 `LLMTaskName` 枚举值（`python/ai/llm_task_name.py`）：
 - LLM：`build_chat_openai(temperature=0.2, max_tokens=2048, task_name=LLMTaskName.STUDENT_PROFILE)`
 - Embedding：`build_embedding_client(task_name=LLMTaskName.COURSE_RECALL)`
 - 新增 LLM 功能时，必须走工厂并传入 `task_name`，禁止直接 `ChatOpenAI(...)` 或裸 `httpx` 调 LLM/Embedding API。
@@ -217,35 +217,40 @@ LLM 与 Embedding 均通过公司内部中转站（`one.zhique.cn`）暴露为 O
 - **前端无 lint/test/format 脚本** —— `npm run lint`、`npm test`、`npm run format` 都不存在。
 - **`_score_candidates` 接受但不使用 `profile` 参数是有意为之**，不是 bug。
 - **`pytest.ini` 启用了 `--strict-markers`** —— 使用未注册的 marker 会导致测试失败。注册的 marker：`unit`、`integration`、`slow`、`agent`、`api`；`asyncio_mode = auto`。
-- **仓库根目录的旧 `docker-compose.yml` 是电商系统前身用的** —— 公选课系统请使用 `docker-compose.python.yml --profile python`。
+- **仓库根目录的旧 `docker-compose.yml` 是电商系统前身用的** —— 公选课系统请使用 `docker-compose.yml`（已重构，`docker compose up -d` 一键启动，无需 `--profile python`）。
 - **`AGENTS.md` 已删除**（与 CLAUDE.md 内容重复，统一以 CLAUDE.md 为准）。
 
 ## 核心文件
 
 | 文件 | 职责 |
 |------|------|
-| `python/main.py` | FastAPI 入口 —— 薄层，委托给 Supervisor |
+| `python/app/main.py` | FastAPI 入口 —— 薄层，委托给 Supervisor；路由拆分到 `app/api/` |
+| `python/app/runtime.py` | 运行时单例容器（supervisor/repos/ab_engine/metrics） |
+| `python/app/api/recommend.py` | `/api/v1/recommend*` 路由 |
+| `python/app/api/health.py` | `/health` `/metrics` `/experiments` 路由 |
 | `python/config/settings.py` | 所有配置，`ECOM_` 前缀，先加载仓库根 `.env` 再加载 `python/.env` |
 | `python/models/schemas.py` | Pydantic 模型：请求、响应、Course、StudentProfile、AgentResult |
-| `python/orchestrator/supervisor.py` | 核心编排（约 940 行）—— Pipeline + ReAct 双模式 |
-| `python/orchestrator/hard_constraint_filter.py` | 确定性硬约束过滤 |
-| `python/orchestrator/react_tools.py` | 7 个 ReAct 工具定义 + `ReactToolExecutor` |
-| `python/orchestrator/graph.py` | LangGraph 演示链路（`/api/v1/recommend/graph`），独立 StateGraph，不复用 Supervisor 主链路 |
-| `python/agents/base_agent.py` | Agent 基类，含重试/兜底/耗时统计 |
-| `python/agents/student_profile_agent.py` | 从自然语言中提取结构化画像 + 硬约束 |
-| `python/agents/course_recall_agent.py` | 多源召回（Redis→MySQL→Milvus→mock 兜底） |
-| `python/agents/course_rerank_agent.py` | 规则预打分 + LLM 候选内重排 |
-| `python/agents/course_feasibility_agent.py` | 容量/风险检查 + LLM 抢课建议（最多 12 门） |
-| `python/agents/recommendation_reason_agent.py` | 生成每门课的推荐理由 |
-| `python/repositories/course_repository.py` | MySQL 课程 CRUD |
-| `python/repositories/course_vector_repository.py` | Milvus 向量检索 |
-| `python/repositories/course_recall_cache_repository.py` | Redis 精确 + 语义召回缓存 |
-| `python/services/ab_test.py` | A/B 分桶 + Thompson Sampling |
-| `python/services/llm_client.py` | LLM 工厂 `build_chat_openai` / `build_tool_calling_llm` —— 所有 LLM 调用唯一入口，LangSmith tracing 覆盖基座 |
-| `python/services/tracing.py` | LangSmith 配置激活层 —— 启动时把 `settings.langchain_*` 映射为 `LANGCHAIN_*` + `LANGSMITH_*` 双命名空间 |
-| `python/services/llm_task_name.py` | LLM/Embedding 调用场景名称枚举，统一注入 LangSmith trace 的业务标识 |
-| `python/services/embedding_client.py` | Embedding 工厂 —— 底层委托 `OpenAIEmbeddings` + `@traceable`，自动被 LangSmith trace |
-| `python/services/stream_token_markup_parser.py` | SSE token 级 `[COURSE:id:name]` 标记解析器 |
+| `python/app/recommend/supervisor.py` | 核心编排（约 940 行）—— Pipeline + ReAct 双模式 |
+| `python/app/recommend/hard_constraint_filter.py` | 确定性硬约束过滤 |
+| `python/app/recommend/react_tools.py` | 7 个 ReAct 工具定义 + `ReactToolExecutor` |
+| `python/app/recommend/graph.py` | LangGraph 演示链路（`/api/v1/recommend/graph`），独立 StateGraph，不复用 Supervisor 主链路 |
+| `python/app/recommend/agents/base_agent.py` | Agent 基类，含重试/兜底/耗时统计 |
+| `python/app/recommend/agents/student_profile_agent.py` | 从自然语言中提取结构化画像 + 硬约束 |
+| `python/app/recommend/agents/course_recall_agent.py` | 多源召回（Redis→MySQL→Milvus→mock 兜底） |
+| `python/app/recommend/agents/course_rerank_agent.py` | 规则预打分 + LLM 候选内重排 |
+| `python/app/recommend/agents/course_feasibility_agent.py` | 容量/风险检查 + LLM 抢课建议（最多 12 门） |
+| `python/app/recommend/agents/recommendation_reason_agent.py` | 生成每门课的推荐理由 |
+| `python/app/recommend/stream_token_markup_parser.py` | SSE token 级 `[COURSE:id:name]` 标记解析器 |
+| `python/storage/mysql/course_repo.py` | MySQL 课程 CRUD |
+| `python/storage/mysql/base.py` | MySQL 基础连接池/ping |
+| `python/storage/milvus/course_vector_repo.py` | Milvus 向量检索 |
+| `python/storage/redis/recall_cache_repo.py` | Redis 精确 + 语义召回缓存 |
+| `python/experiment/ab_test.py` | A/B 分桶 + Thompson Sampling |
+| `python/ai/llm_client.py` | LLM 工厂 `build_chat_openai` / `build_tool_calling_llm` —— 所有 LLM 调用唯一入口，LangSmith tracing 覆盖基座 |
+| `python/ai/tracing.py` | LangSmith 配置激活层 —— 启动时把 `settings.langchain_*` 映射为 `LANGCHAIN_*` + `LANGSMITH_*` 双命名空间 |
+| `python/ai/llm_task_name.py` | LLM/Embedding 调用场景名称枚举，统一注入 LangSmith trace 的业务标识 |
+| `python/ai/embedding_client.py` | Embedding 工厂 —— 底层委托 `OpenAIEmbeddings` + `@traceable`，自动被 LangSmith trace |
+| `python/observability/metrics.py` | Agent 调用成功率/延迟监控 |
 | `python/scripts/ingest_course_dataset.py` | CSV → MySQL + Milvus 数据导入流水线 |
 | `frontend/src/pages/RecommendPage.tsx` | 推荐主界面 |
 | `frontend/src/pages/MonitorPage.tsx` | 实验/指标仪表盘 |

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from agents.student_profile_agent import StudentProfileAgent
+from app.recommend.agents.student_profile_agent import StudentProfileAgent
 from models.schemas import Course, HardConstraints
-from orchestrator.hard_constraint_filter import HardConstraintFilter
+from app.recommend.hard_constraint_filter import HardConstraintFilter
 
 
 def _parse_categories_from_prompt(prompt: str) -> list[str]:

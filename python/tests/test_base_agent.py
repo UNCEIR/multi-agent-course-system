@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agents.base_agent import BaseAgent
+from app.recommend.agents.base_agent import BaseAgent
 from models.schemas import AgentResult
 
 

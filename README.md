@@ -4,7 +4,7 @@
 
 ## 快速启动
 
-默认在仓库根目录操作，Compose 文件为 `docker-compose.python.yml`。
+默认在仓库根目录操作，Compose 文件为 `docker-compose.yml`。
 
 ### 1. Python 环境
 
@@ -65,32 +65,32 @@ MySQL / Redis / Milvus 在 Compose 内已配好，一般无需写入 `.env`。
 
 ### 3. Docker
 
-默认在仓库根目录操作，Compose 文件为 `docker-compose.python.yml`，须加 `--profile python`。
+默认在仓库根目录操作，Compose 文件为 `docker-compose.yml`，已移除 profile 约束，`docker compose up -d` 一键启动。
 
 MySQL 宿主机端口为 **3307→3306**（避免占用本机 3306）；容器内应用仍连 `3306`。
 
 **日常启动**
 
 ```bash
-docker compose -f docker-compose.python.yml --profile python up -d
-docker compose -f docker-compose.python.yml --profile python ps
-docker compose -f docker-compose.python.yml --profile python logs --tail=80 python-api
-docker compose -f docker-compose.python.yml --profile python logs --tail=80 mysql
-docker compose -f docker-compose.python.yml --profile python logs --tail=80 redis
-docker compose -f docker-compose.python.yml --profile python logs --tail=80 milvus
+docker compose up -d
+docker compose ps
+docker compose logs --tail=80 python-api
+docker compose logs --tail=80 mysql
+docker compose logs --tail=80 redis
+docker compose logs --tail=80 milvus
 ```
 
 **首次部署（拉镜像 + 构建 + 启动）**
 
 ```bash
-docker compose -f docker-compose.python.yml --profile python pull
-docker compose -f docker-compose.python.yml --profile python up -d --build
+docker compose pull
+docker compose up -d --build
 ```
 
 **修改后重建**
 
 ```bash
-docker compose -f docker-compose.python.yml --profile python up -d --build 容器名
+docker compose up -d --build 容器名
 ```
 
 ### 4. 导入数据
@@ -134,39 +134,126 @@ cd python
 python -m pytest tests/ -m "not slow" -v
 ```
 
-## 架构概览
+## 模块目录结构
 
-| 阶段 | 内容 |
-| --- | --- |
-| Phase 1 | 学生画像 ∥ 宽召回；画像成功后按结构化字段精召回 |
-| **Phase 1.5** | **硬约束确定性过滤**（校区、分类/领域、时间、老师、不考试等） |
-| Phase 2 | 重排 ∥ 可行性（容量/时间等风险，软偏好降级为提示） |
-| Phase 3 | 推荐理由（串行，依赖最终课程与风险） |
-
-```mermaid
-flowchart TD
-    prompt["自然语言需求"] --> api["POST /api/v1/recommend"]
-    api --> sup["SupervisorOrchestrator"]
-    sup --> p1["Phase 1: 画像 ∥ 召回"]
-    p1 --> cache["Redis 精确/语义缓存"]
-    p1 --> mysql["MySQL 结构化"]
-    p1 --> milvus["Milvus 语义"]
-    p1 --> p15["Phase 1.5: HardConstraintFilter"]
-    p15 --> p2["Phase 2: 重排 ∥ 可行性"]
-    p2 --> p3["Phase 3: 推荐理由"]
-    p3 --> out["课程 + 理由 + 风险 + Agent 轨迹"]
+```
+python/
+├─ ai/                              # LLM/Embedding 基础设施
+│  ├─ __init__.py
+│  ├─ llm_client.py                 # ChatOpenAI 工厂
+│  ├─ embedding_client.py           # Embedding 工厂
+│  ├─ llm_task_name.py              # LLM 调用场景枚举
+│  └─ tracing.py                    # LangSmith 配置激活
+│
+├─ agent/                           # v2 deepagents harness 预留
+│  └─ __init__.py
+│
+├─ app/                             # 应用层
+│  ├─ __init__.py
+│  ├─ main.py                       # FastAPI 入口（薄层装配）
+│  ├─ runtime.py                    # 运行时单例容器
+│  ├─ api/                          # 路由层
+│  │  ├─ __init__.py
+│  │  ├─ recommend.py               # /api/v1/recommend*
+│  │  ├─ health.py                  # /health /metrics /experiments
+│  │  ├─ report.py                  # v2 预留
+│  │  ├─ evaluation.py              # v2 预留
+│  │  ├─ chat.py                    # v2 预留
+│  │  └─ documents.py               # v2 预留
+│  ├─ recommend/                    # v1 推荐业务
+│  │  ├─ __init__.py
+│  │  ├─ supervisor.py              # 核心编排器
+│  │  ├─ graph.py                   # LangGraph 演示链路
+│  │  ├─ hard_constraint_filter.py  # 确定性硬约束过滤
+│  │  ├─ react_tools.py             # 7 个 ReAct 工具
+│  │  ├─ stream_token_markup_parser.py  # SSE token 标记解析
+│  │  └─ agents/                    # v1 的 5 个 Agent
+│  │     ├─ __init__.py
+│  │     ├─ base_agent.py
+│  │     ├─ student_profile_agent.py
+│  │     ├─ course_recall_agent.py
+│  │     ├─ course_rerank_agent.py
+│  │     ├─ course_feasibility_agent.py
+│  │     └─ recommendation_reason_agent.py
+│  ├─ report/                       # v2 预留
+│  ├─ evaluation/                   # v2 预留
+│  ├─ chat/                         # v2 预留
+│  └─ documents/                    # v2 预留
+│
+├─ tools/                           # v2 工具实现预留
+│  └─ __init__.py
+│
+├─ skills/                          # v2 Skills 注册预留
+│  └─ __init__.py
+│
+├─ storage/                         # 数据存储层
+│  ├─ __init__.py
+│  ├─ mysql/
+│  │  ├─ __init__.py
+│  │  ├─ base.py                    # MySQL 连接池 / ping
+│  │  └─ course_repo.py             # 课程 CRUD
+│  ├─ milvus/
+│  │  ├─ __init__.py
+│  │  └─ course_vector_repo.py      # Milvus 向量检索
+│  └─ redis/
+│     ├─ __init__.py
+│     ├─ feature_repo.py            # Redis 特征存储
+│     └─ recall_cache_repo.py       # 召回缓存
+│
+├─ experiment/                      # A/B 实验
+│  ├─ __init__.py
+│  └─ ab_test.py                    # 分桶 + Thompson Sampling
+│
+├─ observability/                   # 监控指标
+│  ├─ __init__.py
+│  └─ metrics.py                    # Agent 调用成功率/延迟
+│
+├─ models/                          # 全局数据契约
+│  ├─ __init__.py
+│  └─ schemas.py
+│
+├─ config/                          # 全局配置
+│  ├─ __init__.py
+│  └─ settings.py
+│
+├─ scripts/                         # 运维/数据导入工具
+│  ├─ ingest_course_dataset.py
+│  ├─ backfill_milvus_vectors.py
+│  ├─ bench_fetch_courses.py
+│  ├─ bench_stream_recommend.py
+│  ├─ post_recommend_local.py
+│  └─ poc_deepagents.py
+│
+├─ tests/                           # 测试
+│  ├─ conftest.py
+│  ├─ test_base_agent.py
+│  ├─ test_ab_test.py
+│  ├─ test_tracing.py
+│  ├─ test_stream_recommend.py
+│  ├─ test_supervisor_pipeline.py
+│  ├─ test_course_recall_cache.py
+│  ├─ test_hard_constraint_prompt_fallback.py
+│  ├─ test_stream_token_markup_parser.py
+│  └─ test_llm_integration_smoke.py
+│
+├─ Dockerfile                       # CMD: uvicorn app.main:app
+├─ pytest.ini
+└─ requirements.txt
 ```
 
+### 依赖方向
 
-## 核心模块
+```
+app/（应用层） →  ai/ + storage/ + experiment/ + observability/（基础设施层） →  config/ + models/（全局契约）
+```
 
 | 能力 | 位置 |
 | --- | --- |
-| 画像 + 硬约束提取 | `python/agents/student_profile_agent.py` |
-| 召回（缓存/MySQL/Milvus） | `python/agents/course_recall_agent.py` |
-| 硬约束过滤 | `python/orchestrator/hard_constraint_filter.py` |
-| 编排 / SSE | `python/orchestrator/supervisor.py` |
-| 重排 / 可行性 / 理由 | `python/agents/course_*_agent.py` |
+| 画像 + 硬约束提取 | `python/app/recommend/agents/student_profile_agent.py` |
+| 召回（缓存/MySQL/Milvus） | `python/app/recommend/agents/course_recall_agent.py` |
+| 硬约束过滤 | `python/app/recommend/hard_constraint_filter.py` |
+| 编排 / SSE | `python/app/recommend/supervisor.py` |
+| 重排 / 可行性 / 理由 | `python/app/recommend/agents/course_*_agent.py` |
 
 ## 数据与分块
 

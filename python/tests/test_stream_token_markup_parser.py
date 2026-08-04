@@ -4,7 +4,7 @@ from typing import AsyncGenerator
 
 import pytest
 
-from services.stream_token_markup_parser import StreamTokenMarkupParser
+from app.recommend.stream_token_markup_parser import StreamTokenMarkupParser
 
 
 async def _token_stream(*chunks: str) -> AsyncGenerator[str, None]:

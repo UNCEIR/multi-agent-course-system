@@ -5,7 +5,7 @@ import statistics
 import time
 
 from config.settings import get_settings
-from repositories.course_repository import CourseRepository
+from storage.mysql.course_repo import CourseRepository
 
 
 def get_repo():

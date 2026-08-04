@@ -11,9 +11,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import httpx
 from sqlalchemy import text
 
-from repositories import CourseRepository, CourseVectorRepository
-from services.embedding_client import build_embedding_client
-from services.llm_task_name import LLMTaskName
+from storage import CourseRepository, CourseVectorRepository
+from ai.embedding_client import build_embedding_client
+from ai.llm_task_name import LLMTaskName
 
 
 MAX_RETRIES = 5

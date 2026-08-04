@@ -1,8 +1,8 @@
 {
   "user_id": "curl_test_user",
   "scene": "course_selection",
-  "num_items": 5,
-  "prompt": "想找不考试、作业少的人文艺术公选课，东校区优先",
+  "num_items": 6,
+  "prompt": "我想上找得分高、是属于自然学科类的，偏人工智能的选修课，西校区优先",
   "context": {
     "avoid_time_slots": ["周三第9-10节"]
   }

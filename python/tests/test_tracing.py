@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from services.tracing import configure_langsmith_tracing, get_tracing_status
+from ai.tracing import configure_langsmith_tracing, get_tracing_status
 
 
 @dataclass
@@ -45,7 +45,7 @@ def test_configure_langsmith_tracing_maps_settings_to_both_namespaces():
         langchain_tracing_v2=True,
     )
 
-    with patch("services.tracing.get_settings", return_value=fake_settings):
+    with patch("ai.tracing.get_settings", return_value=fake_settings):
         configured = configure_langsmith_tracing()
 
     # 双命名空间都写入
@@ -68,7 +68,7 @@ def test_configure_langsmith_tracing_respects_existing_env():
     )
     os.environ["LANGCHAIN_API_KEY"] = "sk-from-host"
 
-    with patch("services.tracing.get_settings", return_value=fake_settings):
+    with patch("ai.tracing.get_settings", return_value=fake_settings):
         configured = configure_langsmith_tracing()
 
     assert configured["LANGCHAIN_API_KEY"] == "sk-from-env-file"
@@ -84,7 +84,7 @@ def test_configure_langsmith_tracing_disabled_without_api_key():
         langchain_tracing_v2=True,
     )
 
-    with patch("services.tracing.get_settings", return_value=fake_settings):
+    with patch("ai.tracing.get_settings", return_value=fake_settings):
         configured = configure_langsmith_tracing()
 
     assert "LANGCHAIN_API_KEY" not in configured

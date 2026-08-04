@@ -11,7 +11,7 @@ from models.schemas import (
     StudentProfile,
     StudentProfileResult,
 )
-from orchestrator.supervisor import SupervisorOrchestrator
+from app.recommend.supervisor import SupervisorOrchestrator
 
 
 class _AgentStub:

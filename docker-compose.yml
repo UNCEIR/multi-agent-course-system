@@ -27,7 +27,6 @@ services:
         condition: service_healthy
       milvus:
         condition: service_started
-    profiles: ["python"]
 
   mysql:
     image: mysql:8.0
@@ -44,7 +43,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-    profiles: ["python"]
 
   redis:
     image: redis:7-alpine
@@ -58,7 +56,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-    profiles: ["python"]
 
   etcd:
     image: quay.io/coreos/etcd:v3.5.14
@@ -70,7 +67,6 @@ services:
     command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls=http://0.0.0.0:2379 --data-dir /etcd
     volumes:
       - etcd_data:/etcd
-    profiles: ["python"]
 
   minio:
     image: minio/minio:RELEASE.2024-05-10T01-41-38Z
@@ -80,7 +76,6 @@ services:
       - MINIO_SECRET_KEY=minioadmin
     volumes:
       - minio_data:/minio_data
-    profiles: ["python"]
 
   milvus:
     image: milvusdb/milvus:v2.4.6
@@ -96,7 +91,6 @@ services:
       - minio
     volumes:
       - milvus_data:/var/lib/milvus
-    profiles: ["python"]
 
 volumes:
   mysql_python_data:
