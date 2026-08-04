@@ -13,6 +13,7 @@ from sqlalchemy import text
 
 from repositories import CourseRepository, CourseVectorRepository
 from services.embedding_client import build_embedding_client
+from services.llm_task_name import LLMTaskName
 
 
 MAX_RETRIES = 5
@@ -83,7 +84,7 @@ def main() -> None:
     course_repo = CourseRepository()
     course_repo.ensure_schema()
 
-    client = build_embedding_client()
+    client = build_embedding_client(task_name=LLMTaskName.BACKFILL)
     vector_repo = CourseVectorRepository(client)
     vector_repo.connect()
 

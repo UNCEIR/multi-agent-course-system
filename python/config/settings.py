@@ -4,7 +4,6 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # .env 默认可在「仓库根」或「python/」下；仅依赖 cwd 的 ".env" 会导致在 python/ 里起服务时读不到根目录配置，
-# 从而回落到默认 MiniMax 地址，灵积控制台无调用记录。
 _PYTHON_ROOT = Path(__file__).resolve().parent.parent
 _REPO_ROOT = _PYTHON_ROOT.parent
 
@@ -20,12 +19,11 @@ def _env_file_candidates() -> tuple[str, ...] | str:
 
 
 class Settings(BaseSettings):
-    app_name: str = "Public Elective Course Multi-Agent System"
+    app_name: str = "multi-agent-course-system"
     debug: bool = False
-
     llm_api_key: str = ""
     llm_base_url: str = "https://one.zhique.cn/v1"
-    llm_model: str = "deepseek-v4-pro"
+    llm_model: str = "deepseek-v4-flash"
     llm_temperature: float = 0.7
     llm_max_tokens: int = 4096
     llm_enable_thinking: bool = True
@@ -61,11 +59,10 @@ class Settings(BaseSettings):
     milvus_metric_type: str = "COSINE"
     milvus_index_type: str = "AUTOINDEX"
 
-    # Embedding 走公司内部中转站的 OpenAI /embeddings 协议；
-    # 保留 dashscope_multimodal 作为旧 DashScope 原生协议的兼容 provider。
+  
     embedding_provider: str = "openai"
     embedding_dimension: int = 1024
-    embedding_base_url: str = "https://one.zhique.cn/v1"
+    embedding_base_url: str = ""
     embedding_api_key: str = ""
     embedding_model: str = "text-embedding-v4"
     embedding_batch_size: int = 8
@@ -91,6 +88,12 @@ class Settings(BaseSettings):
     supervisor_max_retries: int = 2
     supervisor_global_timeout: float = 30.0
     stream_timeout_seconds: float = 60.0
+
+    langchain_api_key: str = ""
+
+    langchain_endpoint: str = "https://api.smith.langchain.com"
+    langchain_tracing_v2: bool = True
+    langchain_project: str = "multi-agent-course-system"
 
     # 兼容约束：保留 ECOM_ 历史前缀，避免破坏现有 .env / 容器配置 / 测试环境。
     # env_file 先仓库根再 python/，后者同名变量覆盖前者。

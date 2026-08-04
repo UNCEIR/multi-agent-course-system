@@ -7,7 +7,7 @@ import structlog
 
 from models.schemas import Course, CourseRecallResult, StudentProfile
 from repositories import CourseRecallCacheRepository, CourseRepository, CourseVectorRepository, RecallCacheKeyBuilder
-from services import build_embedding_client
+from services import LLMTaskName, build_embedding_client
 
 from .base_agent import BaseAgent
 
@@ -24,7 +24,7 @@ class CourseRecallAgent(BaseAgent):
             timeout=settings.agent_timeout_product_recall,
         )
         self.course_repo = CourseRepository()
-        self.vector_repo = CourseVectorRepository(build_embedding_client())
+        self.vector_repo = CourseVectorRepository(build_embedding_client(task_name=LLMTaskName.COURSE_RECALL))
         self.cache_key_builder = RecallCacheKeyBuilder()
         self.recall_cache = CourseRecallCacheRepository()
     async def _execute(self, **kwargs: Any) -> CourseRecallResult:

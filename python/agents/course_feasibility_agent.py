@@ -7,7 +7,7 @@ import structlog
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from models.schemas import Course, CourseFeasibilityResult, PriorityAdvice, StudentProfile
-from services import build_chat_openai
+from services import LLMTaskName, build_chat_openai
 
 from .base_agent import BaseAgent
 
@@ -44,7 +44,7 @@ class CourseFeasibilityAgent(BaseAgent):
             name="course_feasibility",
             timeout=settings.agent_timeout_inventory,
         )
-        self.llm = build_chat_openai(temperature=0.3, max_tokens=4096)
+        self.llm = build_chat_openai(temperature=0.3, max_tokens=4096, task_name=LLMTaskName.COURSE_FEASIBILITY)
 
     async def _execute(self, **kwargs: Any) -> CourseFeasibilityResult:
         courses: list[Course] = kwargs.get("courses", [])

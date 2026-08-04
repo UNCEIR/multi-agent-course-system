@@ -7,7 +7,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from config import get_settings
 from models.schemas import HardConstraints, StudentProfile, StudentProfileResult
-from services import build_chat_openai
+from services import LLMTaskName, build_chat_openai
 
 from .base_agent import BaseAgent
 
@@ -70,7 +70,7 @@ class StudentProfileAgent(BaseAgent):
             name="student_profile",
             timeout=settings.agent_timeout_user_profile,
         )
-        self.llm = build_chat_openai(temperature=0.2, max_tokens=2048)
+        self.llm = build_chat_openai(temperature=0.2, max_tokens=2048, task_name=LLMTaskName.STUDENT_PROFILE)
 
     async def _execute(self, **kwargs: Any) -> StudentProfileResult:
         student_id: str = kwargs["user_id"]

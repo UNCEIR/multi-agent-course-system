@@ -8,7 +8,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from config import get_settings
 from models.schemas import Course, RecommendationReasonResult, StudentProfile
-from services import build_chat_openai
+from services import LLMTaskName, build_chat_openai
 from services.stream_token_markup_parser import StreamTokenMarkupParser
 
 from .base_agent import BaseAgent
@@ -62,7 +62,7 @@ class RecommendationReasonAgent(BaseAgent):
             timeout=settings.agent_timeout_marketing_copy,
         )
         self.llm = build_chat_openai(
-            temperature=0.55, max_tokens=3072, streaming=True
+            temperature=0.55, max_tokens=3072, streaming=True, task_name=LLMTaskName.RECOMMENDATION_REASON
         )
     async def _execute(self, **kwargs: Any) -> RecommendationReasonResult:
         profile: StudentProfile | None = kwargs.get("student_profile")

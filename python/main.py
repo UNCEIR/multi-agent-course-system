@@ -14,10 +14,15 @@ Endpoints:
 from __future__ import annotations
 
 import json
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
+
+
+from services.tracing import configure_langsmith_tracing, get_tracing_status
+
+configure_langsmith_tracing()
 
 from contextlib import asynccontextmanager
 from typing import Any
@@ -36,6 +41,7 @@ from orchestrator.graph import build_recommendation_graph
 from repositories import CourseVectorRepository, MySQLRepository, RedisFeatureRepository
 from services.ab_test import ABTestEngine
 from services.embedding_client import build_embedding_client
+from services.llm_task_name import LLMTaskName
 from services.metrics import MetricsCollector
 
 logger = structlog.get_logger()
@@ -48,7 +54,7 @@ supervisor = SupervisorOrchestrator(ab_engine=ab_engine)
 rec_graph = None
 mysql_repo = MySQLRepository()
 redis_repo = RedisFeatureRepository()
-course_vector_repo = CourseVectorRepository(build_embedding_client())
+course_vector_repo = CourseVectorRepository(build_embedding_client(task_name=LLMTaskName.COURSE_RECALL))
 
 
 @asynccontextmanager
@@ -99,6 +105,7 @@ async def _health_payload() -> dict[str, Any]:
         "model": settings.llm_model,
         "llm": _llm_runtime_summary(),
         "embedding_provider": settings.embedding_provider,
+        "langsmith": get_tracing_status(),
         "deps": {
             "mysql": mysql_repo.ping(),
             "redis": redis_ok,

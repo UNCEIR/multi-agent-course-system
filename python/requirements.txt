@@ -17,6 +17,7 @@ python-dotenv>=1.0.0
 tenacity>=9.0.0
 structlog>=24.4.0
 prometheus-client>=0.21.0
+langsmith>=0.1.0
 
 # v2.0.0 — deepagents 框架 + 平台基座（对应 docs/v2.0.0/notes 决策 3/6/7/8）
 deepagents>=0.1.0  # 决策3: deep-agent 框架（建在 LangGraph 之上，文件系统+TodoWrite+subagents）
@@ -34,3 +35,5 @@ pytest-asyncio>=0.24.0
 pytest-mock>=3.14.0
 pytest-cov>=6.0.0
 httpx>=0.28.0
+
+

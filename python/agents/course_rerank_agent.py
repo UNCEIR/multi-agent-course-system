@@ -7,7 +7,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from config import get_settings
 from models.schemas import Course, CourseRerankResult, StudentProfile
-from services import build_chat_openai
+from services import LLMTaskName, build_chat_openai
 
 from .base_agent import BaseAgent
 
@@ -43,7 +43,7 @@ class CourseRerankAgent(BaseAgent):
             name="course_rerank",
             timeout=settings.agent_timeout_product_rerank,
         )
-        self.llm = build_chat_openai(temperature=0.25, max_tokens=4096)
+        self.llm = build_chat_openai(temperature=0.25, max_tokens=4096, task_name=LLMTaskName.COURSE_RERANK)
     async def _execute(self, **kwargs: Any) -> CourseRerankResult:
         profile: StudentProfile | None = kwargs.get("student_profile")
         candidates: list[Course] = kwargs.get("candidates", [])

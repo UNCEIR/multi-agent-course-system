@@ -29,7 +29,7 @@ from agents import (
     StudentProfileAgent,
 )
 from models.schemas import Course, StudentProfile
-from services import build_chat_openai
+from services import LLMTaskName, build_chat_openai
 from services.ab_test import ABTestEngine
 
 
@@ -200,7 +200,7 @@ async def semantic_filter_node(state: PipelineState) -> PipelineState:
     )
     user_prompt = json.dumps({"student": profile_data, "candidates": course_data}, ensure_ascii=False)
     try:
-        llm = build_chat_openai(temperature=0, max_tokens=2048)
+        llm = build_chat_openai(temperature=0, max_tokens=2048, task_name=LLMTaskName.GRAPH_SEMANTIC_FILTER)
         response = await llm.ainvoke([
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_prompt),

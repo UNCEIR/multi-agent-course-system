@@ -22,7 +22,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 
 from models.schemas import Course, RecommendationRequest, RecommendationResponse, StudentProfile
 from orchestrator.hard_constraint_filter import HardConstraintFilter, has_active_constraints
-from services import build_chat_openai
+from services import LLMTaskName, build_chat_openai
 from services.ab_test import ABTestEngine
 from config import get_settings
 
@@ -633,7 +633,7 @@ class SupervisorOrchestrator:
             "candidates": course_data,
         }, ensure_ascii=False)
         try:
-            llm = build_chat_openai(temperature=0, max_tokens=2048)
+            llm = build_chat_openai(temperature=0, max_tokens=2048, task_name=LLMTaskName.SEMANTIC_FILTER)
             response = await llm.ainvoke([
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt),
@@ -682,7 +682,7 @@ class SupervisorOrchestrator:
             "当所有必需工具调用完成后，输出 FINISH。"
         )
 
-        llm = build_tool_calling_llm(REACT_TOOLS)
+        llm = build_tool_calling_llm(REACT_TOOLS, task_name=LLMTaskName.REACT_ORCHESTRATOR)
         executor = ReactToolExecutor(self, prompt, request.context, request.num_items, request.user_id)
 
         messages = [
@@ -846,7 +846,7 @@ class SupervisorOrchestrator:
             "当所有必需工具调用完成后，输出 FINISH。"
         )
 
-        llm = build_tool_calling_llm(REACT_TOOLS)
+        llm = build_tool_calling_llm(REACT_TOOLS, task_name=LLMTaskName.REACT_ORCHESTRATOR)
         executor = ReactToolExecutor(self, prompt, request.context, request.num_items, request.user_id)
 
         messages = [

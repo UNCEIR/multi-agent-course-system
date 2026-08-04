@@ -6,6 +6,7 @@ __all__ = [
     "ABTestEngine",
     "EmbeddingClient",
     "FeatureStore",
+    "LLMTaskName",
     "MetricsCollector",
     "StreamTokenMarkupParser",
     "build_chat_openai",
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
     from .embedding_client import EmbeddingClient, build_embedding_client
     from .feature_store import FeatureStore
     from .llm_client import build_chat_openai
+    from .llm_task_name import LLMTaskName
     from .metrics import MetricsCollector
 
 
@@ -54,4 +56,8 @@ def __getattr__(name: str):
         from .stream_token_markup_parser import StreamTokenMarkupParser
 
         return StreamTokenMarkupParser
+    if name == "LLMTaskName":
+        from .llm_task_name import LLMTaskName
+
+        return LLMTaskName
     raise AttributeError(f"module 'services' has no attribute {name!r}")

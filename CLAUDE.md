@@ -126,9 +126,33 @@ LLM 与 Embedding 均通过公司内部中转站（`one.zhique.cn`）暴露为 O
 | 客户端 | `ChatOpenAI` | `OpenAIEmbeddingClient`（`embedding_client.py`） |
 | 模型 | `deepseek-v4-flash`（可配置） | `text-embedding-v4`（可配置，维度 1024） |
 
+> 注：`settings.py` 中 `llm_model` 默认值为 `deepseek-v4-pro`，但 `python/.env` 实际配置为 `deepseek-v4-flash`；`embedding_base_url` 默认空字符串，实际值由 `.env` 的 `ECOM_EMBEDDING_BASE_URL` 提供（与 LLM 共用 `https://one.zhique.cn/v1`）。
+
 - `ECOM_EMBEDDING_PROVIDER=openai` 走 `OpenAIEmbeddingClient`（默认）；`dashscope_multimodal` 仍保留为旧 DashScope 原生协议的兼容 provider，仅在直连灵积 MaaS 时使用。
 - 中转站证书 SAN 不匹配时需 `ECOM_HTTPX_VERIFY_SSL=false`。
 - 旧 MaaS 直连配置（`/compatible-mode/v1` + DashScope `/api/v1`）已废弃，不要再切回。
+
+### LangSmith Tracing —— 三个 AOP 单点，零侵入全覆盖
+
+**设计原则**：不侵入任何 Agent / Supervisor / Graph 代码，在工厂层和配置层实现 AOP 全覆盖。
+
+| AOP 单点 | 文件 | 覆盖范围 |
+|---------|------|---------|
+| 配置激活层 | `python/services/tracing.py` | 启动时一次性把 `settings.langchain_*` 写入 `LANGCHAIN_*` + `LANGSMITH_*` 双命名空间 |
+| LLM 工厂 | `python/services/llm_client.py` | 所有 LLM 调用走 `build_chat_openai` / `build_tool_calling_llm` → `ChatOpenAI` → 自动 trace |
+| Embedding 工厂 | `python/services/embedding_client.py` | 底层委托 `langchain_openai.OpenAIEmbeddings` + `@traceable` 装饰 → 自动 trace |
+
+**关键约束**：
+
+- `configure_langsmith_tracing()` 在 `main.py` **模块最顶部**调用（在 `import orchestrator.supervisor` 之前），原因是 `langsmith.utils.get_env_var` 有 `lru_cache`，若在 env 就位前被读取，返回值会被永久冻结。`services/__init__.py` 顶层无 eager import langchain，此 import 链安全。
+- 所有新增 LLM 功能**必须走工厂**，禁止直接 `ChatOpenAI(...)` 或裸 `httpx` 调 LLM/Embedding API。
+- `get_settings()` 有 `lru_cache`，测试时直接 `monkeypatch.setenv` 不生效，需 mock `get_settings` 返回 fake settings（见 `tests/test_tracing.py`）。
+- `/health` 暴露 `langsmith` 字段（`get_tracing_status()` 诊断是否激活），便于排查"为什么没有 trace"。
+
+**v2.0.0 兼容**：deepagents 和 FastGPT MCP 接入后自动覆盖——
+- deepagents（决策 3）：`create_deep_agent(model=工厂创建的 ChatOpenAI)` → 内部 LLM 调用走 `BaseChatModel` callback → 自动 trace。`create_agent` 还额外用 `@traceable` 装饰 middleware 钩子。
+- FastGPT MCP（决策 8）：`langchain-mcp-adapters` 的 `load_mcp_tools` 把 MCP 工具转成 `StructuredTool` → `ToolNode` → 工具调用边界自动 trace。MCP 工具内部（FastGPT workflow 执行）是 TS 侧黑盒，已知边界。
+- **Docker `--build` 陷阱**：改 `tracing.py`、`embedding_client.py` 或 `main.py` 后必须重建镜像，否则容器跑旧代码，tracing 不会生效。
 
 ## 文档与工作流
 
@@ -152,19 +176,20 @@ LLM 与 Embedding 均通过公司内部中转站（`one.zhique.cn`）暴露为 O
 ### RAG 检索策略与数据指标
 7. **检索策略细节体现具体数据指标**：召回率、精度、F1、语义缓存命中率、硬约束过滤率、rerank 排序质量（NDCG）、Milvus COSINE 融合权重效果。v1 已有部分（`_score_candidates` 广度 vs `_compute_score` 精度），v2 需扩展到 FastGPT KB Q&A 场景。
 8. **工具调用出错优化**：检索不全/召回不好时如何优化（调整 top_k、语义缓存阈值、分块策略、embedding 模型、rerank 权重）。需有可观测的指标驱动调优，不是盲调。
+9. **RAG 端到端质量维度与 phase 指标**：每个涉及 RAG 的 phase 必须围绕以下 6 个质量点建立可观测指标、声明问题并提供优化策略：① PDF 解析干净度（表格/公式/版式还原率、解析失败率）；② chunk 切分合理性（块大小分布、边界截断率、语义完整性，对比 v1 的 4 块策略 basic/schedule_capacity/learning_profile/audience_tags）；③ 检索能否找到关键内容（召回率/精度/Hit@k，对照 `_score_candidates` 广度 vs `_compute_score` 精度）；④ Rerank 延迟（P95 排序耗时 vs NDCG 增益，避免过高延迟拖垮流式输出）；⑤ Prompt 稳定输出（JSON 解析成功率、字段缺失率、重试次数，对照 FeasibilityAgent `_parse_advice_json` 静默兜底）；⑥ 答案证据可追踪（引用 chunk_id/来源页码回链、幻觉率）。指标驱动调优，不是盲调。
 
 ### Agent Harness 与 Loop 思想
-9. **agent harness 包括 loop 一系列思想**：think→act→observe 循环、TodoWrite 规划、工具调用链路、subagent 委派/隔离、文件系统上下文卸载。参考 deepagents + claude-code/pi 源码（决策 3/4/7/11 补充）。
-10. **工具调用链路断掉时的处理**：工具 try/catch→isError result → circuit breaker（3 次熔断）→ 部分结果保留（extractPartialResult）→ checkpointing 恢复 → 降级（如 KB 不可用走 Python 兜底脚本）。参考决策 12 补充。
-11. **模型幻觉导致错误行动时的兜底**：确定性计算（统计/加权）用 Python 不用 LLM；LLM 只产文本段，数值引用文件不记忆；compaction 摘要落盘；subagent 上下文隔离。参考决策 5/11 补充。
+10. **agent harness 包括 loop 一系列思想**：think→act→observe 循环、TodoWrite 规划、工具调用链路、subagent 委派/隔离、文件系统上下文卸载。参考 deepagents + claude-code/pi 源码（决策 3/4/7/11 补充）。
+11. **工具调用链路断掉时的处理**：工具 try/catch→isError result → circuit breaker（3 次熔断）→ 部分结果保留（extractPartialResult）→ checkpointing 恢复 → 降级（如 KB 不可用走 Python 兜底脚本）。参考决策 12 补充。
+12. **模型幻觉导致错误行动时的兜底**：确定性计算（统计/加权）用 Python 不用 LLM；LLM 只产文本段，数值引用文件不记忆；compaction 摘要落盘；subagent 上下文隔离。参考决策 5/11 补充。
 
 ### 多模态与插件扩展
-12. **通用 agent 可加入图谱识别等多模态 LLM**：v2.0.0 通用知识 agent 可接入多模态 LLM（如图谱/图片识别），接入定制开发的插件（FastGPT 自定义 agent/KB）。
-13. **PPT 生成系统（新增点）**：参考 OpenMAIC，围绕大学生课程小组 PPT 汇报场景，搭建 AI 生成 PPT 功能微课件自动生成系统（多 agent 协作，支持画布/动画/PPT，用户输入提示词选择类型如期末 PPT 课设/小组汇报）。参考 `E:\Agent\OpenMAIC` 的 `pptxgenjs` + DSL→PPTX 渲染管线。
+13. **通用 agent 可加入图谱识别等多模态 LLM**：v2.0.0 通用知识 agent 可接入多模态 LLM（如图谱/图片识别），接入定制开发的插件（FastGPT 自定义 agent/KB）。
+14. **PPT 生成系统（新增点）**：参考 OpenMAIC，围绕大学生课程小组 PPT 汇报场景，搭建 AI 生成 PPT 功能微课件自动生成系统（多 agent 协作，支持画布/动画/PPT，用户输入提示词选择类型如期末 PPT 课设/小组汇报）。参考 `E:\Agent\OpenMAIC` 的 `pptxgenjs` + DSL→PPTX 渲染管线。
 
 ### 数据源
-14. **通用知识 agent 数据源**：`E:\Agent\multi-agent-course-system\广东工业大学2025年学生手册.pdf` 作为通用知识 Q&A 的种子数据源（经文档流水线摄入 FastGPT KB）。
-15. **网页搜索 MCP 工具**：通用 agent 具有网页搜索这类 MCP 工具功能（`tavily-python`，已加 requirements）。
+15. **通用知识 agent 数据源**：`E:\Agent\multi-agent-course-system\广东工业大学2025年学生手册.pdf` 作为通用知识 Q&A 的种子数据源（经文档流水线摄入 FastGPT KB）。
+16. **网页搜索 MCP 工具**：通用 agent 具有网页搜索这类 MCP 工具功能（`tavily-python`，已加 requirements）。
 
 ### 参考项目（E:\Agent\ 下）
 - `E:\Agent\pi` —— agent harness/compaction/skills（TS，原生工具，无 MCP）
@@ -185,8 +210,9 @@ LLM 与 Embedding 均通过公司内部中转站（`one.zhique.cn`）暴露为 O
 - **无 CI/CD** —— 没有 `.github/workflows`。不要尝试 CI 命令。
 - **前端无 lint/test/format 脚本** —— `npm run lint`、`npm test`、`npm run format` 都不存在。
 - **`_score_candidates` 接受但不使用 `profile` 参数是有意为之**，不是 bug。
-- **`pytest.ini` 启用了 `--strict-markers`** —— 使用未注册的 marker 会导致测试失败。
+- **`pytest.ini` 启用了 `--strict-markers`** —— 使用未注册的 marker 会导致测试失败。注册的 marker：`unit`、`integration`、`slow`、`agent`、`api`；`asyncio_mode = auto`。
 - **仓库根目录的旧 `docker-compose.yml` 是电商系统前身用的** —— 公选课系统请使用 `docker-compose.python.yml --profile python`。
+- **`AGENTS.md` 已删除**（与 CLAUDE.md 内容重复，统一以 CLAUDE.md 为准）。
 
 ## 核心文件
 
@@ -209,7 +235,9 @@ LLM 与 Embedding 均通过公司内部中转站（`one.zhique.cn`）暴露为 O
 | `python/repositories/course_vector_repository.py` | Milvus 向量检索 |
 | `python/repositories/course_recall_cache_repository.py` | Redis 精确 + 语义召回缓存 |
 | `python/services/ab_test.py` | A/B 分桶 + Thompson Sampling |
-| `python/services/embedding_client.py` | OpenAI 协议 Embedding 客户端（默认），兼容 DashScope 原生与本地确定性 |
+| `python/services/llm_client.py` | LLM 工厂 `build_chat_openai` / `build_tool_calling_llm` —— 所有 LLM 调用唯一入口，LangSmith tracing 覆盖基座 |
+| `python/services/tracing.py` | LangSmith 配置激活层 —— 启动时把 `settings.langchain_*` 映射为 `LANGCHAIN_*` + `LANGSMITH_*` 双命名空间 |
+| `python/services/embedding_client.py` | Embedding 工厂 —— 底层委托 `OpenAIEmbeddings` + `@traceable`，自动被 LangSmith trace |
 | `python/services/stream_token_markup_parser.py` | SSE token 级 `[COURSE:id:name]` 标记解析器 |
 | `python/scripts/ingest_course_dataset.py` | CSV → MySQL + Milvus 数据导入流水线 |
 | `frontend/src/pages/RecommendPage.tsx` | 推荐主界面 |

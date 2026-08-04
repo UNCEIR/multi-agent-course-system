@@ -11,7 +11,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from repositories import CourseRepository, CourseVectorRepository
-from services import build_embedding_client
+from services import LLMTaskName, build_embedding_client
 
 
 DEFAULT_CSV = Path(__file__).resolve().parents[2] / "course_dataset_tools" / "output" / "public_elective_courses.csv"
@@ -61,7 +61,7 @@ def main() -> None:
 
     course_repo = CourseRepository()
     course_repo.ensure_schema()
-    vector_repo = CourseVectorRepository(build_embedding_client())
+    vector_repo = CourseVectorRepository(build_embedding_client(task_name=LLMTaskName.BACKFILL))
 
     total_chunks = 0
     for row in rows:
