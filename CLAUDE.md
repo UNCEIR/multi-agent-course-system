@@ -93,6 +93,10 @@ ReAct 模式使用 7 个工具（`python/app/recommend/react_tools.py`）：`ext
 
 > `/recommend` 随 A/B 分流；`/recommend/react*` 直接走 ReAct，可用来与 Pipeline 路径对照；`/recommend/graph` 仅展示 LangGraph 能力。
 
+### v2 路由骨架（未注册，勿当活端点）
+
+`python/app/api/` 下还有 5 个 v2 路由文件 —— `chat.py`、`documents.py`、`evaluation.py`、`report.py`、`ppt.py` —— **都是空骨架**（`router = APIRouter()` 无路由，docstring 描述 Phase 1/2/3 实现目标），**未在 `main.py` `include_router` 注册**，curl 会 404。`python/app/ppt/` 同样是刚起步的空目录（`_init_.py` 文件名拼写有误、内容仅 `"""phase """`）。这些是 v2.0.0 各 Phase 的占位，实现时需：① 在对应 `app/<domain>/` 下写业务 agent；② 在路由文件里加 `@router.post(...)`；③ 在 `main.py` `include_router` 注册。`runtime.py` 注释已声明 v2 单例会统一进该模块。
+
 ### 关键设计决策
 
 1. **评分职责分离**：`CourseRecallAgent._score_candidates()` 负责广度（仅关键词匹配 + 热度 —— 接受 `profile` 参数但有意不使用）。`CourseRerankAgent._compute_score()` 负责精度（完整的 profile 偏好匹配 + Milvus COSINE 融合：`final = profile_score * (1.0 + milvus_sim * 0.5)`）。乘法公式确保规则分为 0 时，Milvus 语义相似度无法"拯救"该课程。
