@@ -3,7 +3,7 @@
 
 用法（在 python/ 目录下）:
   pip install -r requirements.txt  # 若尚未安装 httpx
-  # 先配置仓库根目录或 python/.env 中的 ECOM_LLM_*，再启动: uvicorn main:app --host 0.0.0.0 --port 8000
+  # 先配置仓库根目录或 python/.env 中的 ECOM_LLM_*，再启动: uvicorn agent.main:app --host 0.0.0.0 --port 8000
   python scripts/post_recommend_local.py
 
 环境变量:

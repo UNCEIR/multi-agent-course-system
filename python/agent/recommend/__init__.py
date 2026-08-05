@@ -27,4 +27,4 @@ def __getattr__(name: str):
         from .graph import build_recommendation_graph
 
         return build_recommendation_graph
-    raise AttributeError(f"module 'app.recommend' has no attribute {name!r}")
+    raise AttributeError(f"module 'agent.recommend' has no attribute {name!r}")

@@ -48,11 +48,11 @@
 ### Phase 1：平台基座
 - **目标**：搭建 deepagents 主 agent + tool 注册框架 + v1 包装 + MinIO + 文档流水线 + Skills 注册
 - **交付**：
-  - deepagents 主 agent + tool/subagent 注册表（Pydantic，MCP-ready），tools详情放在`tools/`。
+  - deepagents 主 agent + tool/subagent 注册表（Pydantic，MCP-ready），tools详情放在`python/tools/`。
   - v1 推荐链路包装为 `recommend_courses` tool（LangGraph subgraph）
   - MinIO 双角色（源文档 + 报告 artifact）
   - 文档流水线：走 FastGPT KB 二次开发（HTTP+MCP 调用）+ Python CSV/PDF/doc 解析兜底；用户疑问点计划：具体怎么一步步接入fastgpt？两个独立服务同时启动？拿到的只有E盘目前的源码。
-  - Skills 注册层（原生 tool + MCP-ready）,`skills/`已初始化完毕。
+  - Skills 注册层（原生 tool + MCP-ready）,`python/skills/`已初始化完毕。
 - **验证**：`/recommend` 仍工作；文档上传→MinIO+MySQL/Milvus 入库
 - deepagents框架进行升级： v1 的 5 个 Agent 编译成 LangGraph subgraph 作为「推荐 subagent」，放在`python\agent\recommend`
 - **详细 plan**：`plans/phase-1-platform-base.md`（待生成）

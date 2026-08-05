@@ -75,9 +75,11 @@ POST /api/v1/recommend
 
 > ⚠️ `rec_strategy` 实验仍在 `ab_test.py` 注册（分组 `control` / `treatment_llm`），但其 config（rerank: rule_based vs llm）**未被 pipeline 消费** —— 只作为 response 字段透传，不影响实际重排，是未来切换重排策略的占位实验。要真正切换重排方式，应在 RerankAgent 读取该 group 的 config。
 
-ReAct 模式使用 7 个工具（`python/app/recommend/react_tools.py`）：`extract_profile`、`search_courses`、`filter_hard_constraints`（已锁定 —— 如 LLM 跳过，循环结束时会强制执行）、`semantic_filter_courses`、`rerank_courses`、`check_feasibility`、`generate_reasons`。最多 `max_rounds = 20` 轮 LLM 工具调用（同步与流式两条 `_react_recommend` 路径一致）。
+ReAct 模式使用 7 个工具（`python/agent/recommend/react_tools.py`）：`extract_profile`、`search_courses`、`filter_hard_constraints`（已锁定 —— 如 LLM 跳过，循环结束时会强制执行）、`semantic_filter_courses`、`rerank_courses`、`check_feasibility`、`generate_reasons`。最多 `max_rounds = 20` 轮 LLM 工具调用（同步与流式两条 `_react_recommend` 路径一致）。
 
-### API 端点（`python/app/main.py` → `python/app/api/`）
+### API 端点（`python/agent/main.py` → `python/api/`）
+
+> ⚠️ `main.py` 仅 `include_router(health.router)` 和 `include_router(recommend.router)`。`api/` 下的 `chat.py`/`documents.py`/`evaluation.py`/`report.py`/`ppt.py` 是 v2 空骨架，**未注册**，curl 会 404（详见「v2 路由骨架」段）。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -95,7 +97,7 @@ ReAct 模式使用 7 个工具（`python/app/recommend/react_tools.py`）：`ext
 
 ### v2 路由骨架（未注册，勿当活端点）
 
-`python/app/api/` 下还有 5 个 v2 路由文件 —— `chat.py`、`documents.py`、`evaluation.py`、`report.py`、`ppt.py` —— **都是空骨架**（`router = APIRouter()` 无路由，docstring 描述 Phase 1/2/3 实现目标），**未在 `main.py` `include_router` 注册**，curl 会 404。`python/app/ppt/` 同样是刚起步的空目录（`_init_.py` 文件名拼写有误、内容仅 `"""phase """`）。这些是 v2.0.0 各 Phase 的占位，实现时需：① 在对应 `app/<domain>/` 下写业务 agent；② 在路由文件里加 `@router.post(...)`；③ 在 `main.py` `include_router` 注册。`runtime.py` 注释已声明 v2 单例会统一进该模块。
+`python/api/` 下还有 5 个 v2 路由文件 —— `chat.py`、`documents.py`、`evaluation.py`、`report.py`、`ppt.py` —— **都是空骨架**（`router = APIRouter()` 无路由，docstring 描述 Phase 1/2/3 实现目标），**未在 `main.py` `include_router` 注册**，curl 会 404。`python/agent/{chat,documents,evaluation,report,ppt}/` 同样是 v2 预留空包（`__init__.py` 是 Phase 目标 docstring，无业务实现）。这些是 v2.0.0 各 Phase 的占位，实现时需：① 在对应 `agent/<domain>/` 下写业务 agent；② 在路由文件里加 `@router.post(...)`；③ 在 `main.py` `include_router` 注册。`runtime.py` 注释已声明 v2 单例会统一进该模块。
 
 ### 关键设计决策
 
@@ -130,7 +132,7 @@ LLM 与 Embedding 均通过公司内部中转站（`one.zhique.cn`）暴露为 O
 | 客户端 | `ChatOpenAI` | `OpenAIEmbeddingClient`（`embedding_client.py`） |
 | 模型 | `deepseek-v4-flash`（可配置） | `text-embedding-v4`（可配置，维度 1024） |
 
-> 注：`settings.py` 中 `llm_model` 默认值为 `deepseek-v4-pro`，但 `python/.env` 实际配置为 `deepseek-v4-flash`；`embedding_base_url` 默认空字符串，实际值由 `.env` 的 `ECOM_EMBEDDING_BASE_URL` 提供（与 LLM 共用 `https://one.zhique.cn/v1`）。
+> 注：`settings.py` 中 `llm_model` 默认值为 `deepseek-v4-flash`（与 `python/.env` 一致）；`embedding_base_url` 默认空字符串，实际值由 `.env` 的 `ECOM_EMBEDDING_BASE_URL` 提供（与 LLM 共用 `https://one.zhique.cn/v1`）。`httpx_verify_ssl` 默认 `True`，中转站证书 SAN 不匹配时必须 `.env` 设 `ECOM_HTTPX_VERIFY_SSL=false`。
 
 - `ECOM_EMBEDDING_PROVIDER=openai` 走 `OpenAIEmbeddingClient`（默认）；`dashscope_multimodal` 仍保留为旧 DashScope 原生协议的兼容 provider，仅在直连灵积 MaaS 时使用。
 - 中转站证书 SAN 不匹配时需 `ECOM_HTTPX_VERIFY_SSL=false`。
@@ -152,7 +154,7 @@ LLM 与 Embedding 均通过公司内部中转站（`one.zhique.cn`）暴露为 O
 - 新增 LLM 功能时，必须走工厂并传入 `task_name`，禁止直接 `ChatOpenAI(...)` 或裸 `httpx` 调 LLM/Embedding API。
 
 **关键约束**：
-- `configure_langsmith_tracing()` 在 `main.py` **模块最顶部**调用（在 `import orchestrator.supervisor` 之前），原因是 `langsmith.utils.get_env_var` 有 `lru_cache`，若在 env 就位前被读取，返回值会被永久冻结。
+- `configure_langsmith_tracing()` 在 `main.py` **模块最顶部**调用（在任何业务 import 之前），原因是 `langsmith.utils.get_env_var` 有 `lru_cache`，若在 env 就位前被读取，返回值会被永久冻结。
 - `get_settings()` 有 `lru_cache`，测试时直接 `monkeypatch.setenv` 不生效，需 mock `get_settings` 返回 fake settings（见 `tests/test_tracing.py`）。
 - `/health` 暴露 `langsmith` 字段（`get_tracing_status()` 诊断是否激活），便于排查"为什么没有 trace"。
 - **Docker `--build` 陷阱**：改 `tracing.py`、`embedding_client.py` 或 `main.py` 后必须重建镜像，否则容器跑旧代码，tracing 不会生效。
@@ -168,9 +170,7 @@ LLM 与 Embedding 均通过公司内部中转站（`one.zhique.cn`）暴露为 O
 
 - **`docs/INDEX.md` 是文档总索引**。架构细节查 `docs/architecture.md`、`docs/code-walkthrough.md`、`docs/supervisor-main-orchestration.md`；本文件不重复这些深度内容。`docs/notes/` 是历轮任务复盘笔记（证据来源），`docs/llm-intern/` 是项目包装/真值边界层，`docs/interview-*.md` 是面试材料。
 - **`docs/v2.0.0/` 是 v2.0.0 升级的工作区**。`plan.md` 是总计划（Phase 0-3 概要），`notes/2026-07-27-设计决策问答记录.md` + `notes/2026-07-28-设计决策补充说明.md` 是 15 个设计决策的问答记录与详细论证。**每次进入 plan 模式生成具体 Phase 阶段的 plan 时，必须先读 `docs/v2.0.0/plan.md` + `notes/` 对应决策，确保与已定决策一致**。
-- **`openspec/` 是 spec-driven 变更工作流**。`openspec/specs/` 存当前规范，`openspec/changes/` 存变更提案（已合并的归档在 `changes/archive/`，如 `2026-05-28-fix-category-fuzzy-match`）。配套 Cursor 命令 `opsx-propose` / `opsx-apply` / `opsx-explore` / `opsx-archive`。改 spec 级行为前先看现有 spec。
-- **`tasks/` 有 `todo.md`（待办）与 `lessons.md`（经验）**。`.cursor/rules/write-notes-for-project.mdc`（Cursor `alwaysApply`）要求每次对话读 `todo.md` 并把复盘写入 `docs/notes/` —— 这是 Cursor 端规则，Claude Code 默认不自动执行；需要同等行为时请明示。
-- **`python/agent/`**放置的是后续所有的智能体；待后续phase具体实现编排都放在这。
+- **`python/agent/`** 放置后续所有智能体与编排；v1 的推荐链路在 `agent/recommend/`，v2 各域（`agent/chat|documents|evaluation|ppt|report/`）目前是空包预留。`python/skills/`、`python/tools/` 同为 v2 预留空包。`python/api/` 是路由层（`recommend.py`/`health.py` 已注册，其余 5 个 v2 路由空骨架未注册）。
 
 ## v2.0.0 工程深度要求（必须体现）
 
@@ -224,31 +224,33 @@ LLM 与 Embedding 均通过公司内部中转站（`one.zhique.cn`）暴露为 O
 - **`pytest.ini` 启用了 `--strict-markers`** —— 使用未注册的 marker 会导致测试失败。注册的 marker：`unit`、`integration`、`slow`、`agent`、`api`；`asyncio_mode = auto`。
 - **仓库根目录的旧 `docker-compose.yml` 是电商系统前身用的** —— 公选课系统请使用 `docker-compose.yml`（已重构，`docker compose up -d` 一键启动，无需 `--profile python`）。
 - **`AGENTS.md` 已删除**（与 CLAUDE.md 内容重复，统一以 CLAUDE.md 为准）。
+- **包名 `app` vs `agent` 已统一（2026-08-05 收尾）**：二次重构（commit `28c0778` 把 `python/app/` 重命名为 `python/agent/`）当时只改了目录名没改 import 语句，导致 `from app...` 与目录 `agent/` 不一致、本地裸跑 `No module named 'app'`。现已把所有 `from app...` 统一为 `from agent...`，`api/` 路由层保持顶层包（`from api import recommend, health`、`from agent import runtime`），Dockerfile `CMD` 改为 `uvicorn agent.main:app`，并删除空残留目录 `python/orchestrator/`。**新增 LLM 功能或新文件时，import 前缀一律用 `agent.` / `api.` / `ai.` / `config.` / `models.` / `storage.` / `experiment.` / `observability.`，不要再写 `from app...`。**
 
 ## 核心文件
 
 | 文件 | 职责 |
 |------|------|
-| `python/app/main.py` | FastAPI 入口 —— 薄层，委托给 Supervisor；路由拆分到 `app/api/` |
-| `python/app/runtime.py` | 运行时单例容器（supervisor/repos/ab_engine/metrics） |
-| `python/app/api/recommend.py` | `/api/v1/recommend*` 路由 |
-| `python/app/api/health.py` | `/health` `/metrics` `/experiments` 路由 |
+| `python/agent/main.py` | FastAPI 入口 —— 薄层，委托给 Supervisor；路由拆分到 `api/`（`from api import recommend, health`） |
+| `python/agent/runtime.py` | 运行时单例容器（supervisor/repos/ab_engine/metrics） |
+| `python/api/recommend.py` | `/api/v1/recommend*` 路由（`from agent import runtime`） |
+| `python/api/health.py` | `/health` `/metrics` `/experiments` 路由（`from agent import runtime`） |
 | `python/config/settings.py` | 所有配置，`ECOM_` 前缀，先加载仓库根 `.env` 再加载 `python/.env` |
 | `python/models/schemas.py` | Pydantic 模型：请求、响应、Course、StudentProfile、AgentResult |
-| `python/app/recommend/supervisor.py` | 核心编排（约 940 行）—— Pipeline + ReAct 双模式 |
-| `python/app/recommend/hard_constraint_filter.py` | 确定性硬约束过滤 |
-| `python/app/recommend/react_tools.py` | 7 个 ReAct 工具定义 + `ReactToolExecutor` |
-| `python/app/recommend/graph.py` | LangGraph 演示链路（`/api/v1/recommend/graph`），独立 StateGraph，不复用 Supervisor 主链路 |
-| `python/app/recommend/agents/base_agent.py` | Agent 基类，含重试/兜底/耗时统计 |
-| `python/app/recommend/agents/student_profile_agent.py` | 从自然语言中提取结构化画像 + 硬约束 |
-| `python/app/recommend/agents/course_recall_agent.py` | 多源召回（Redis→MySQL→Milvus→mock 兜底） |
-| `python/app/recommend/agents/course_rerank_agent.py` | 规则预打分 + LLM 候选内重排 |
-| `python/app/recommend/agents/course_feasibility_agent.py` | 容量/风险检查 + LLM 抢课建议（最多 12 门） |
-| `python/app/recommend/agents/recommendation_reason_agent.py` | 生成每门课的推荐理由 |
-| `python/app/recommend/stream_token_markup_parser.py` | SSE token 级 `[COURSE:id:name]` 标记解析器 |
+| `python/agent/recommend/supervisor.py` | 核心编排（约 940 行）—— Pipeline + ReAct 双模式 |
+| `python/agent/recommend/hard_constraint_filter.py` | 确定性硬约束过滤 |
+| `python/agent/recommend/react_tools.py` | 7 个 ReAct 工具定义 + `ReactToolExecutor` |
+| `python/agent/recommend/graph.py` | LangGraph 演示链路（`/api/v1/recommend/graph`），独立 StateGraph，不复用 Supervisor 主链路 |
+| `python/agent/recommend/agents/base_agent.py` | Agent 基类，含重试/兜底/耗时统计 |
+| `python/agent/recommend/agents/student_profile_agent.py` | 从自然语言中提取结构化画像 + 硬约束 |
+| `python/agent/recommend/agents/course_recall_agent.py` | 多源召回（Redis→MySQL→Milvus→mock 兜底） |
+| `python/agent/recommend/agents/course_rerank_agent.py` | 规则预打分 + LLM 候选内重排 |
+| `python/agent/recommend/agents/course_feasibility_agent.py` | 容量/风险检查 + LLM 抢课建议（最多 12 门） |
+| `python/agent/recommend/agents/recommendation_reason_agent.py` | 生成每门课的推荐理由 |
+| `python/agent/recommend/stream_token_markup_parser.py` | SSE token 级 `[COURSE:id:name]` 标记解析器 |
 | `python/storage/mysql/course_repo.py` | MySQL 课程 CRUD |
 | `python/storage/mysql/base.py` | MySQL 基础连接池/ping |
 | `python/storage/milvus/course_vector_repo.py` | Milvus 向量检索 |
+| `python/storage/redis/feature_repo.py` | Redis 特征存储（`RedisFeatureRepository`） |
 | `python/storage/redis/recall_cache_repo.py` | Redis 精确 + 语义召回缓存 |
 | `python/experiment/ab_test.py` | A/B 分桶 + Thompson Sampling |
 | `python/ai/llm_client.py` | LLM 工厂 `build_chat_openai` / `build_tool_calling_llm` —— 所有 LLM 调用唯一入口，LangSmith tracing 覆盖基座 |

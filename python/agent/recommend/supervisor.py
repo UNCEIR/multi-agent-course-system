@@ -21,7 +21,7 @@ import structlog
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from models.schemas import Course, RecommendationRequest, RecommendationResponse, StudentProfile
-from app.recommend.hard_constraint_filter import HardConstraintFilter, has_active_constraints
+from agent.recommend.hard_constraint_filter import HardConstraintFilter, has_active_constraints
 from ai import LLMTaskName, build_chat_openai
 from experiment.ab_test import ABTestEngine
 from config import get_settings
@@ -29,7 +29,7 @@ from config import get_settings
 logger = structlog.get_logger()
 
 if TYPE_CHECKING:
-    from app.recommend.agents import (
+    from agent.recommend.agents import (
         CourseFeasibilityAgent,
         CourseRecallAgent,
         CourseRerankAgent,
@@ -51,23 +51,23 @@ class SupervisorOrchestrator:
         recommendation_reason_agent: RecommendationReasonAgent | None = None,
     ):
         if student_profile_agent is None:
-            from app.recommend.agents import StudentProfileAgent
+            from agent.recommend.agents import StudentProfileAgent
 
             student_profile_agent = StudentProfileAgent()
         if course_recall_agent is None:
-            from app.recommend.agents import CourseRecallAgent
+            from agent.recommend.agents import CourseRecallAgent
 
             course_recall_agent = CourseRecallAgent()
         if course_rerank_agent is None:
-            from app.recommend.agents import CourseRerankAgent
+            from agent.recommend.agents import CourseRerankAgent
 
             course_rerank_agent = CourseRerankAgent()
         if course_feasibility_agent is None:
-            from app.recommend.agents import CourseFeasibilityAgent
+            from agent.recommend.agents import CourseFeasibilityAgent
 
             course_feasibility_agent = CourseFeasibilityAgent()
         if recommendation_reason_agent is None:
-            from app.recommend.agents import RecommendationReasonAgent
+            from agent.recommend.agents import RecommendationReasonAgent
 
             recommendation_reason_agent = RecommendationReasonAgent()
 
@@ -665,7 +665,7 @@ class SupervisorOrchestrator:
     ) -> "AsyncGenerator[dict[str, Any], None]":
         """SSE streaming React-mode recommendation with tool-call phase events."""
         from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
-        from app.recommend.react_tools import REACT_TOOLS, ReactToolExecutor
+        from agent.recommend.react_tools import REACT_TOOLS, ReactToolExecutor
         from ai import build_tool_calling_llm
 
         settings = get_settings()
@@ -832,7 +832,7 @@ class SupervisorOrchestrator:
     async def _react_recommend(
         self, request: RecommendationRequest, request_id: str, start: float
     ) -> RecommendationResponse:
-        from app.recommend.react_tools import REACT_TOOLS, ReactToolExecutor
+        from agent.recommend.react_tools import REACT_TOOLS, ReactToolExecutor
         from ai import build_tool_calling_llm
 
         prompt = self._request_prompt(request)

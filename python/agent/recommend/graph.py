@@ -21,7 +21,7 @@ from typing import Any, TypedDict
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
 
-from app.recommend.agents import (
+from agent.recommend.agents import (
     CourseFeasibilityAgent,
     CourseRecallAgent,
     CourseRerankAgent,

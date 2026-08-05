@@ -15,8 +15,8 @@ from models.schemas import (
     StudentProfile,
     StudentProfileResult,
 )
-from app.recommend.agents.course_recall_agent import CourseRecallAgent
-from app.recommend.supervisor import SupervisorOrchestrator
+from agent.recommend.agents.course_recall_agent import CourseRecallAgent
+from agent.recommend.supervisor import SupervisorOrchestrator
 
 
 class _AgentStub:

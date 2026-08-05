@@ -219,7 +219,7 @@ class ReactToolExecutor:
     async def _tool_filter_hard_constraints(self) -> str:
         if not self.state.profile or not self.state.courses:
             return "No profile or courses to filter."
-        from app.recommend.hard_constraint_filter import has_active_constraints
+        from agent.recommend.hard_constraint_filter import has_active_constraints
 
         if not has_active_constraints(self.state.profile.hard_constraints):
             self.state.hard_filtered = True

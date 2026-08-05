@@ -9,7 +9,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from config import get_settings
 from models.schemas import Course, RecommendationReasonResult, StudentProfile
 from ai import LLMTaskName, build_chat_openai
-from app.recommend.stream_token_markup_parser import StreamTokenMarkupParser
+from agent.recommend.stream_token_markup_parser import StreamTokenMarkupParser
 
 from .base_agent import BaseAgent
 

@@ -31,8 +31,8 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app import runtime
-from app.api import recommend, health
+from agent import runtime
+from api import recommend, health
 from config import get_settings
 
 logger = structlog.get_logger()
@@ -85,4 +85,4 @@ def _assert_llm_config() -> None:
 
 
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("agent.main:app", host="0.0.0.0", port=8000, reload=True)

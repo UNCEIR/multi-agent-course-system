@@ -148,18 +148,10 @@ python/
 ├─ agent/                           # v2 deepagents harness 预留
 │  └─ __init__.py
 │
-├─ app/                             # 应用层
+├─ agent/                             # 应用层（智能体与编排）
 │  ├─ __init__.py
 │  ├─ main.py                       # FastAPI 入口（薄层装配）
 │  ├─ runtime.py                    # 运行时单例容器
-│  ├─ api/                          # 路由层
-│  │  ├─ __init__.py
-│  │  ├─ recommend.py               # /api/v1/recommend*
-│  │  ├─ health.py                  # /health /metrics /experiments
-│  │  ├─ report.py                  # v2 预留
-│  │  ├─ evaluation.py              # v2 预留
-│  │  ├─ chat.py                    # v2 预留
-│  │  └─ documents.py               # v2 预留
 │  ├─ recommend/                    # v1 推荐业务
 │  │  ├─ __init__.py
 │  │  ├─ supervisor.py              # 核心编排器
@@ -178,7 +170,18 @@ python/
 │  ├─ report/                       # v2 预留
 │  ├─ evaluation/                   # v2 预留
 │  ├─ chat/                         # v2 预留
-│  └─ documents/                    # v2 预留
+│  ├─ documents/                    # v2 预留
+│  └─ ppt/                          # v2 预留
+│
+├─ api/                            # 路由层
+│  ├─ __init__.py
+│  ├─ recommend.py               # /api/v1/recommend*
+│  ├─ health.py                  # /health /metrics /experiments
+│  ├─ report.py                  # v2 预留
+│  ├─ evaluation.py              # v2 预留
+│  ├─ chat.py                    # v2 预留
+│  ├─ documents.py               # v2 预留
+│  └─ ppt.py                     # v2 预留
 │
 ├─ tools/                           # v2 工具实现预留
 │  └─ __init__.py
@@ -236,7 +239,7 @@ python/
 │  ├─ test_stream_token_markup_parser.py
 │  └─ test_llm_integration_smoke.py
 │
-├─ Dockerfile                       # CMD: uvicorn app.main:app
+├─ Dockerfile                       # CMD: uvicorn agent.main:app
 ├─ pytest.ini
 └─ requirements.txt
 ```
@@ -244,16 +247,16 @@ python/
 ### 依赖方向
 
 ```
-app/（应用层） →  ai/ + storage/ + experiment/ + observability/（基础设施层） →  config/ + models/（全局契约）
+agent/（应用层） →  ai/ + storage/ + experiment/ + observability/（基础设施层） →  config/ + models/（全局契约）
 ```
 
 | 能力 | 位置 |
 | --- | --- |
-| 画像 + 硬约束提取 | `python/app/recommend/agents/student_profile_agent.py` |
-| 召回（缓存/MySQL/Milvus） | `python/app/recommend/agents/course_recall_agent.py` |
-| 硬约束过滤 | `python/app/recommend/hard_constraint_filter.py` |
-| 编排 / SSE | `python/app/recommend/supervisor.py` |
-| 重排 / 可行性 / 理由 | `python/app/recommend/agents/course_*_agent.py` |
+| 画像 + 硬约束提取 | `python/agent/recommend/agents/student_profile_agent.py` |
+| 召回（缓存/MySQL/Milvus） | `python/agent/recommend/agents/course_recall_agent.py` |
+| 硬约束过滤 | `python/agent/recommend/hard_constraint_filter.py` |
+| 编排 / SSE | `python/agent/recommend/supervisor.py` |
+| 重排 / 可行性 / 理由 | `python/agent/recommend/agents/course_*_agent.py` |
 
 ## 数据与分块
 

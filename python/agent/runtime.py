@@ -10,7 +10,7 @@ from typing import Any
 
 import structlog
 
-from app.recommend.supervisor import SupervisorOrchestrator
+from agent.recommend.supervisor import SupervisorOrchestrator
 from experiment.ab_test import ABTestEngine
 from observability.metrics import MetricsCollector
 
@@ -33,7 +33,7 @@ def init() -> None:
 
     from ai.embedding_client import build_embedding_client
     from ai.llm_task_name import LLMTaskName
-    from app.recommend.graph import build_recommendation_graph
+    from agent.recommend.graph import build_recommendation_graph
     from storage.milvus.course_vector_repo import CourseVectorRepository
     from storage.mysql.base import MySQLRepository
     from storage.redis.feature_repo import RedisFeatureRepository

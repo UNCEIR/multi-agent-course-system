@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter
 
-from app import runtime
+from agent import runtime
 from config import get_settings
 from ai.tracing import get_tracing_status
 

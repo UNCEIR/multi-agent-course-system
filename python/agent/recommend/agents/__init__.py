@@ -46,4 +46,4 @@ def __getattr__(name: str):
         from .recommendation_reason_agent import RecommendationReasonAgent
 
         return RecommendationReasonAgent
-    raise AttributeError(f"module 'app.recommend.agents' has no attribute {name!r}")
+    raise AttributeError(f"module 'agent.recommend.agents' has no attribute {name!r}")
