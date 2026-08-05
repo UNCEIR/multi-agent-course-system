@@ -7,7 +7,7 @@ import json
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
-from app import runtime
+from agent import runtime
 from models.schemas import RecommendationRequest, RecommendationResponse
 
 router = APIRouter()

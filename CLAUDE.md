@@ -170,6 +170,7 @@ LLM 与 Embedding 均通过公司内部中转站（`one.zhique.cn`）暴露为 O
 - **`docs/v2.0.0/` 是 v2.0.0 升级的工作区**。`plan.md` 是总计划（Phase 0-3 概要），`notes/2026-07-27-设计决策问答记录.md` + `notes/2026-07-28-设计决策补充说明.md` 是 15 个设计决策的问答记录与详细论证。**每次进入 plan 模式生成具体 Phase 阶段的 plan 时，必须先读 `docs/v2.0.0/plan.md` + `notes/` 对应决策，确保与已定决策一致**。
 - **`openspec/` 是 spec-driven 变更工作流**。`openspec/specs/` 存当前规范，`openspec/changes/` 存变更提案（已合并的归档在 `changes/archive/`，如 `2026-05-28-fix-category-fuzzy-match`）。配套 Cursor 命令 `opsx-propose` / `opsx-apply` / `opsx-explore` / `opsx-archive`。改 spec 级行为前先看现有 spec。
 - **`tasks/` 有 `todo.md`（待办）与 `lessons.md`（经验）**。`.cursor/rules/write-notes-for-project.mdc`（Cursor `alwaysApply`）要求每次对话读 `todo.md` 并把复盘写入 `docs/notes/` —— 这是 Cursor 端规则，Claude Code 默认不自动执行；需要同等行为时请明示。
+- **`python/agent/`**放置的是后续所有的智能体；待后续phase具体实现编排都放在这。
 
 ## v2.0.0 工程深度要求（必须体现）
 
