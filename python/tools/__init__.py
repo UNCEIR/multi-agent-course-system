@@ -1,36 +1,65 @@
-"""
-v2 工具实现预留包 — Phase 1 实现
+# -*- coding: utf-8 -*-
+"""v2 工具实现包 — 原子能力目录。
 
-当前状态：空包（骨架预留）。
+tools/ 放原子能力（解析、分块、向量化、渲染、搜索、插件），
+以 @tool 装饰器 + Pydantic args_schema 暴露，通过 ToolRegistry 统一注册。
 
-Phase 1 目标：
-  在此目录下实现 v2 的各工具（tool），用 Pydantic schema 定义输入输出，
-  通过 ToolRegistry 统一注册。工具分为两类：
+分层（按功能域子包组织）：
+  - tools/           — 注册层（ToolRegistry/CircuitBreaker/MCPClient）
+  - tools/system/    — 系统级工具（get_current_time, list_available_skills）
+  - tools/chat/      — 对话工具（writing_assistant, web_search）
+  - tools/documents/ — 文档解析 + 分块
+  - tools/recommend/ — 推荐工具
+  - tools/image/     — 图片生成
+  - tools/code/      — 代码执行
+  - tools/mindmap/   — 脑图生成
+  - tools/report/    — 报告统计
 
-  1. 确定性工具（Python 逻辑，不走 LLM）：
-     - compute_weighted_grade：加权复合统计（展示性评价×30% + 考试性评价×70%）
-     - transcript_parser：Excel 成绩单解析（openpyxl / LLM 提炼）
-     - report_renderer：Jinja2 HTML → WeasyPrint PDF 渲染
-
-  2. LLM 增强工具（调用 LLM 但数值引文件）：
-     - evaluation_generator：按 comment_type 生成评语
-     - query_knowledge：FastGPT KB Q&A 检索（经 MCP 调用）
-
-注册模式：
-  from langchain_core.tools import tool
-  from pydantic import BaseModel, Field
-
-  class WeightedGradeInput(BaseModel):
-      display_eval: float = Field(description="展示性评价分数")
-      exam_eval: float = Field(description="考试性评价分数")
-
-  @tool(args_schema=WeightedGradeInput)
-  def compute_weighted_grade(display_eval: float, exam_eval: float) -> float:
-      \"\"\"计算加权期末总评。\"\"\"
-      return display_eval * 0.3 + exam_eval * 0.7
+与 skills/ 的区别：
+  - tools/ = Python @tool 代码，原子能力，ToolRegistry 注册
+  - skills/ = SKILL.md 文档，技能说明，SkillsMiddleware 注入 system prompt
 
 架构决策：
-  - 每个工具一个文件，通过 tools/__init__.py 统一导出
+  - 每个工具一个文件，通过子包 __init__.py 逐级导出，最终统一到 tools/__init__.py
   - 工具用 @tool 装饰器 + Pydantic args_schema，LangChain 自动生成 JSON Schema
-  - 与 v1 agent（app/recommend/agents/）无关，v1 的 agent 是编排层，工具是原子能力
+  - 注册走 ToolRegistry（tools/registry.py），不直接 import
 """
+
+from __future__ import annotations
+
+# ── 工具注册层 ────────────────────────────────────────────────────────
+from .circuit_breaker import CircuitBreaker
+from .mcp_client import MultiServerMCPClient, get_mcp_client
+from .registry import ToolRegistry, get_registry
+
+# ── 功能域子包（工具逐级导出） ─────────────────────────────────────────
+from .system import get_current_time, list_available_skills
+from .chat import web_search, writing_assistant
+from .documents import chunk_document, parse_document
+from .recommend import recommend_courses
+from .image import image_generate
+from .code import code_interpreter
+from .mindmap import mindmap_generator
+from .report import compute_weighted_grade
+
+# ── 公开 API ──────────────────────────────────────────────────────────
+__all__ = [
+    # 注册层
+    "ToolRegistry",
+    "get_registry",
+    "CircuitBreaker",
+    "MultiServerMCPClient",
+    "get_mcp_client",
+    # 工具
+    "get_current_time",
+    "list_available_skills",
+    "writing_assistant",
+    "web_search",
+    "parse_document",
+    "chunk_document",
+    "recommend_courses",
+    "image_generate",
+    "code_interpreter",
+    "mindmap_generator",
+    "compute_weighted_grade",
+]

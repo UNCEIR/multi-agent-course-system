@@ -82,7 +82,6 @@ def load_milvus_chunk_ids(vector_repo: CourseVectorRepository) -> set[str]:
 
 def main() -> None:
     course_repo = CourseRepository()
-    course_repo.ensure_schema()
 
     client = build_embedding_client(task_name=LLMTaskName.BACKFILL)
     vector_repo = CourseVectorRepository(client)

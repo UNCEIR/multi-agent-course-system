@@ -12,8 +12,7 @@ def get_repo():
     s = get_settings()
     repo = CourseRepository()
     repo.connect()
-    # Ensure schema & indexes exist (idempotent)
-    repo.ensure_schema()
+    # 表结构由 sql/init-db.sql 建（唯一 source of truth），代码层不建表
     return repo
 
 

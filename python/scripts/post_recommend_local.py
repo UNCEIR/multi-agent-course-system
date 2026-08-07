@@ -3,7 +3,7 @@
 
 用法（在 python/ 目录下）:
   pip install -r requirements.txt  # 若尚未安装 httpx
-  # 先配置仓库根目录或 python/.env 中的 ECOM_LLM_*，再启动: uvicorn agent.main:app --host 0.0.0.0 --port 8000
+  # 先配置仓库根目录或 python/.env 中的 LLM_*，再启动: uvicorn agent.app:app --host 0.0.0.0 --port 8000
   python scripts/post_recommend_local.py
 
 环境变量:
@@ -41,7 +41,7 @@ def _print_llm_diagnostics(client: httpx.Client, health_url: str) -> None:
         if llm and not llm.get("looks_like_dashscope"):
             print(
                 "[诊断] base_url_host 不是灵积域名时，阿里云 DashScope 控制台不会产生 token 记录；"
-                "请检查 ECOM_LLM_BASE_URL（或 .env 是否在仓库根 / python/ 被加载）。",
+                "请检查 LLM_BASE_URL（或 .env 是否在仓库根 / python/ 被加载）。",
                 file=sys.stderr,
             )
     except Exception as e:

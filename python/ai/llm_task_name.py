@@ -19,6 +19,10 @@ class LLMTaskName(str, Enum):
     REACT_ORCHESTRATOR = "react_orchestrator"
     GRAPH_SEMANTIC_FILTER = "graph_semantic_filter"
 
+    # ── v2.0.0 主 Agent 场景 ──────────────────────────────────────────
+    MAIN_AGENT_ROUTER = "main_agent_router"  # 主 agent 意图识别 + 路由
+    CHAT_SUMMARY = "chat_summary"  # 对话摘要（compaction 用）
+
     # ── Embedding 场景 ──────────────────────────────────────────────
     COURSE_RECALL = "course_recall"  # 在线召回/搜索（course_recall_agent + main.py 探活）
     BACKFILL = "backfill"  # 离线批量回填（backfill_milvus_vectors.py）

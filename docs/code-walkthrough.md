@@ -56,14 +56,14 @@
 
 `Settings` 统一读取 LLM、Embedding、MySQL、Redis、Milvus、Agent 超时和缓存配置。当前要特别记住：
 
-- 环境变量前缀仍是 `ECOM_`。
+- 环境变量无前缀，字段名即变量名。
 - Milvus 课程 collection 为 `course_chunks_real`。
 - embedding 维度按配置为 1024。
 - Redis 召回缓存有 TTL、短锁 TTL、等待重试等配置。
 
 ### 支撑的面试故事
 
-支撑"历史兼容不是业务主线"。保留 `ECOM_` 是为了不破坏现有 `.env` 和容器配置，不是项目仍然属于电商场景。
+支撑"历史兼容不是业务主线"。去 `ECOM_` 前缀是为了让变量名与项目语义一致，不再背负电商历史包袱。
 
 ### 面试讲法
 

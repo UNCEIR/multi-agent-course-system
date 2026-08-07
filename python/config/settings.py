@@ -43,8 +43,8 @@ class Settings(BaseSettings):
     mysql_host: str = "localhost"
     mysql_port: int = 3306
     mysql_user: str = "root"
-    mysql_password: str = "ecommerce123"
-    mysql_database: str = "ecommerce_ai"
+    mysql_password: str = "123456"
+    mysql_database: str = "course_system"
     mysql_pool_size: int = 10
     mysql_max_overflow: int = 20
 
@@ -78,6 +78,16 @@ class Settings(BaseSettings):
     agent_timeout_marketing_copy: float = 10.0
     agent_timeout_inventory: float = 5.0
 
+    # ── v2.0.0 主 Agent 记忆 / skill / checkpoint 配置 ─────────────────
+    memory_dir: str = ""  # 长期记忆目录（AGENTS.md 所在目录，默认 <repo_root>/python/memories）
+    skills_dir: str = ""  # skill 技能文档目录（默认 <repo_root>/python/skills）
+    checkpoint_sqlite_path: str = ""  # SqliteSaver 持久路径（默认 <repo_root>/python/.checkpoint.db）
+
+    agent_context_window_tokens: int = 128000  # 模型上下文窗口（deepseek-v4-flash ≈ 128K）
+    agent_compaction_trigger_tokens: int | None = None  # None 时用 context_window-13000
+    agent_compaction_keep_tokens: int = 20000  # 决策 11: keepRecentTokens=20000
+    agent_compaction_trigger_messages: int | None = 8  # demo 用 messages 触发（生产置 None 走 token 阈值）
+
     supervisor_max_retries: int = 2
     supervisor_global_timeout: float = 30.0
     stream_timeout_seconds: float = 60.0
@@ -88,11 +98,9 @@ class Settings(BaseSettings):
     langchain_tracing_v2: bool = True
     langchain_project: str = "multi-agent-course-system"
 
-    # 兼容约束：保留 ECOM_ 历史前缀，避免破坏现有 .env / 容器配置 / 测试环境。
-    # env_file 先仓库根再 python/，后者同名变量覆盖前者。
+  
     model_config = SettingsConfigDict(
         env_file=_env_file_candidates(),
-        env_prefix="ECOM_",
         extra="ignore",
     )
 

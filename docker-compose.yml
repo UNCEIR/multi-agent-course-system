@@ -10,14 +10,14 @@ services:
     environment:
       # 仅覆盖「容器网络相关」变量；LLM / Embedding / Milvus collection 等业务参数一律由 python/.env 决定，
       # 避免出现「容器静悄悄走回默认 collection / 默认 provider」的现象。
-      - ECOM_MYSQL_HOST=mysql
-      - ECOM_MYSQL_PORT=3306
-      - ECOM_MYSQL_USER=root
-      - ECOM_MYSQL_PASSWORD=ecommerce123
-      - ECOM_MYSQL_DATABASE=ecommerce_ai
-      - ECOM_REDIS_URL=redis://redis:6379/0
-      - ECOM_MILVUS_HOST=milvus
-      - ECOM_MILVUS_PORT=19530
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=123456
+      - MYSQL_DATABASE=course_system
+      - REDIS_URL=redis://redis:6379/0
+      - MILVUS_HOST=milvus
+      - MILVUS_PORT=19530
     ports:
       - "8000:8000"
     depends_on:
@@ -31,15 +31,15 @@ services:
   mysql:
     image: mysql:8.0
     environment:
-      - MYSQL_ROOT_PASSWORD=ecommerce123
-      - MYSQL_DATABASE=ecommerce_ai
+      - MYSQL_ROOT_PASSWORD=123456
+      - MYSQL_DATABASE=course_system
     ports:
       - "3307:3306"
     volumes:
       - mysql_python_data:/var/lib/mysql
       - ./sql/init-db.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pecommerce123"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p123456"]
       interval: 10s
       timeout: 5s
       retries: 10

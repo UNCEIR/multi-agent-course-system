@@ -48,14 +48,14 @@ POC 的工具用一个**确定性、无外部依赖**的 toy tool（如 `add(a, 
 |------|------|-------------|-----------|
 | deepagents 是实验性包，API 可能与文档/记忆不符 | POC 无法启动 | 第 0 步 API 核对 + 第 1 步导入 | 若 API 完全不可用且无替代入口 → 回退 |
 | 中转站 `one.zhique.cn` 对 OpenAI `tools`/`tool_choice` 协议支持不完整 | tool-calling 单向（只发不收）或报 400 | 第 3 步带 tool 的循环 | 是（决策 2 备选） |
-| 中转站证书 SAN 不匹配 | `httpx` SSL 报错 | 第 2 步纯 LLM 调用 | 否（已知坑，`ECOM_HTTPX_VERIFY_SSL=false` 解） |
+| 中转站证书 SAN 不匹配 | `httpx` SSL 报错 | 第 2 步纯 LLM 调用 | 否（已知坑，`HTTPX_VERIFY_SSL=false` 解） |
 | `enable_thinking=true`（`extra_body`）与 tool-calling 冲突 | 带工具时报错或不返回 tool call | 第 3 步 + 第 4 步对照 | 视情况：可关 thinking 规避则不算回退 |
 | Docker 构建层装不上 `deepagents`/`langchain-mcp-adapters`（网络/依赖冲突） | 容器起不来 | 第 5 步 Docker 构建 | 否（调 requirements / 镜像源，见 §5） |
 | deepagents 依赖的 LangGraph 版本与 v1 现有 `langgraph>=0.4.0` 冲突 | v1 链路被破坏 | 第 6 步回归 | 是（需锁定兼容版本范围） |
 
 ### 2.2 假设
 
-- `python/.env` 已有可用 `ECOM_LLM_API_KEY`（v1 已验证可调中转站，前提成立）
+- `python/.env` 已有可用 `LLM_API_KEY`（v1 已验证可调中转站，前提成立）
 - 中转站对 `deepseek-v4-flash` 暴露 OpenAI 兼容 `/v1/chat/completions`（v1 已用 `ChatOpenAI` 验证）
 - deepagents 建在 LangGraph `create_react_agent` 之上（决策 3 源码调研结论，POC 第 0 步核对）
 
@@ -148,9 +148,9 @@ if __name__ == "__main__":
 先不挂 tool，直接用 `build_poc_llm()` 发一条 `invoke("说一句你好")`，确认：
 
 - 中转站能回（轴 B 基线）—— v1 已验证，此处复测确认 POC 脚本环境变量加载正确
-- 无 SSL 报错（`ECOM_HTTPX_VERIFY_SSL=false` 生效）
+- 无 SSL 报错（`HTTPX_VERIFY_SSL=false` 生效）
 
-失败排查路径：`python/.env` 是否被加载（`get_settings()` 读的是 `ECOM_` 前缀，仓库根 `.env` → `python/.env`，后者覆盖前者，见 CLAUDE.md 陷阱）。
+失败排查路径：`python/.env` 是否被加载（`get_settings()` 读的是环境变量，仓库根 `.env` → `python/.env`，后者覆盖前者，见 CLAUDE.md 陷阱）。
 
 ### 第 3 步：带 tool 的 ReAct 循环（验证轴 B tool-calling 双向兼容）
 
@@ -266,11 +266,11 @@ POC 脚本经 `from config import get_settings` 复用 v1 全部中转站配置�
 
 | 变量 | 值（python/.env） | 用途 |
 |------|------------------|------|
-| `ECOM_LLM_API_KEY` | `sk-***` | 中转站鉴权 |
-| `ECOM_LLM_BASE_URL` | `https://one.zhique.cn/v1` | OpenAI 兼容端点 |
-| `ECOM_LLM_MODEL` | `deepseek-v4-flash` | 主模型 |
-| `ECOM_LLM_ENABLE_THINKING` | `true` | `extra_body`，第 4 步对照关掉 |
-| `ECOM_HTTPX_VERIFY_SSL` | `false` | 中转站证书 SAN 不匹配，必须关 |
+| `LLM_API_KEY` | `sk-***` | 中转站鉴权 |
+| `LLM_BASE_URL` | `https://one.zhique.cn/v1` | OpenAI 兼容端点 |
+| `LLM_MODEL` | `deepseek-v4-flash` | 主模型 |
+| `LLM_ENABLE_THINKING` | `true` | `extra_body`，第 4 步对照关掉 |
+| `HTTPX_VERIFY_SSL` | `false` | 中转站证书 SAN 不匹配，必须关 |
 
 > ⚠️ `.env.example` 仍是旧 MaaS 配置（`...maas.aliyuncs.com/compatible-mode/v1`），与实际 `python/.env`（`one.zhique.cn`）不一致。POC 以 `python/.env` 为准——Docker 也只注入 `python/.env`（CLAUDE.md 陷阱）。此偏差不在 Phase 0 范围，建议 Phase 1 顺手修 `.env.example`。
 

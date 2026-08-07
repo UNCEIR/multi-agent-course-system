@@ -60,7 +60,6 @@ def main() -> None:
     # endregion
 
     course_repo = CourseRepository()
-    course_repo.ensure_schema()
     vector_repo = CourseVectorRepository(build_embedding_client(task_name=LLMTaskName.BACKFILL))
 
     total_chunks = 0

@@ -29,6 +29,10 @@ python-docx>=1.1.0  # 决策6b: doc 文件解析兜底（报告输出已改 PDF�
 pypdf>=4.0.0  # 决策6b: PDF 文件解析兜底（FastGPT KB 不可用/特定格式时）
 tavily-python>=0.3.0  # 决策7: 网页搜索 skill
 
+# 决策12: checkpointing（SqliteSaver 本地持久，RedisSaver Phase 3 切）
+langgraph-checkpoint-sqlite>=3.1.0  # SqliteSaver（thread_id 跨会话恢复）
+langgraph-checkpoint-redis>=2.0.0  # RedisSaver 备用（Phase 3 切）
+
 # Testing
 pytest>=8.0.0
 pytest-asyncio>=0.24.0

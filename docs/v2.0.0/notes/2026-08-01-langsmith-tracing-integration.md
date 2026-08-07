@@ -3,7 +3,7 @@
 ## 背景与问题
 
 - **用户诉求**：在 LangSmith 平台看不到任何 trace，需要把 tracing 集成到整个系统，让所有涉及 LLM 的接口都能在 LangSmith 监控到链路。要求 AOP 思想，不要每个 Agent 类配置，抽取出来便于以后开发新 LLM 功能直接监控。
-- **直接原因**：Docker 镜像没有 `--build`，容器里跑的是旧代码——`tracing.py` 不存在、`main.py` 没调 `configure_langsmith_tracing()`、`settings.py` 没 `langchain_*` 字段。`ECOM_LANGCHAIN_*` 虽然被 docker-compose 的 `env_file` 注入到容器，但没有任何代码把它们映射为标准 `LANGCHAIN_*` 环境变量，langchain 完全看不到。
+- **直接原因**：Docker 镜像没有 `--build`，容器里跑的是旧代码——`tracing.py` 不存在、`main.py` 没调 `configure_langsmith_tracing()`、`settings.py` 没 `langchain_*` 字段。`LANGCHAIN_*` 虽然被 docker-compose 的 `env_file` 注入到容器，但没有任何代码把它们映射为标准 `LANGCHAIN_*` 环境变量，langchain 完全看不到。
 - **系统性问题**：即便修复上述问题，Embedding 调用走裸 `httpx`（`OpenAIEmbeddingClient`），是 LangSmith 盲区；且 `langsmith.utils.get_env_var` 有 `lru_cache`，若未来某模块在 import 阶段触发 tracing 读取，env 会被永久冻结为"未设置"，之后 `setdefault` 也无法改变。
 - **影响范围**：所有 LLM 调用（5 个 Agent + Supervisor + Graph）均无法在 LangSmith 追踪；Embedding 调用（每次推荐 1 次 `embed_text`）也是盲区。
 
@@ -96,7 +96,7 @@ fixture 更新：清理范围从 `LANGCHAIN_*` 扩展到 `LANGCHAIN_*` + `LANGSM
   - `docker exec ... grep configure_langsmith_tracing /app/main.py` → 无匹配
   - `docker exec ... grep langchain_ /app/config/settings.py` → 无匹配
   - 容器日志无 `langsmith.tracing_configured`
-  - 但 `ECOM_LANGCHAIN_*` 环境变量存在（被 `env_file` 注入）
+  - 但 `LANGCHAIN_*` 环境变量存在（被 `env_file` 注入）
 - **解决方式**：`docker compose -f docker-compose.python.yml --profile python up -d --build python-api` 重建镜像。
 
 ## 测试与验证

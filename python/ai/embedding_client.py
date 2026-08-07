@@ -60,9 +60,9 @@ class OpenAIEmbeddingClient(EmbeddingClient):
         task_name: str = "openai.embed_query",
     ):
         if not api_key.strip():
-            raise ValueError("ECOM_EMBEDDING_API_KEY is required for openai provider")
+            raise ValueError("EMBEDDING_API_KEY is required for openai provider")
         if not model.strip():
-            raise ValueError("ECOM_EMBEDDING_MODEL is required for openai provider")
+            raise ValueError("EMBEDDING_MODEL is required for openai provider")
         self.dimension = max(0, dimension)
         self._lc = OpenAIEmbeddings(
             openai_api_key=api_key,
@@ -102,9 +102,9 @@ class DashScopeMultimodalEmbeddingClient(EmbeddingClient):
         verify_ssl: bool = True,
     ):
         if not api_key.strip():
-            raise ValueError("ECOM_EMBEDDING_API_KEY is required for dashscope_multimodal")
+            raise ValueError("EMBEDDING_API_KEY is required for dashscope_multimodal")
         if not model.strip():
-            raise ValueError("ECOM_EMBEDDING_MODEL is required for dashscope_multimodal")
+            raise ValueError("EMBEDDING_MODEL is required for dashscope_multimodal")
         self.api_key = api_key
         self.model = model
         self.dimension = dimension
@@ -192,4 +192,4 @@ def build_embedding_client(task_name: str | None = None) -> EmbeddingClient:
             timeout_seconds=settings.embedding_timeout_seconds,
             verify_ssl=settings.httpx_verify_ssl,
         )
-    raise ValueError(f"Unsupported ECOM_EMBEDDING_PROVIDER: {settings.embedding_provider}")
+    raise ValueError(f"Unsupported EMBEDDING_PROVIDER: {settings.embedding_provider}")

@@ -2,6 +2,7 @@
 学校公选课 Multi-Agent 推荐系统 — FastAPI Entry Point
 
 Endpoints:
+  POST /api/v1/chat               - 主 agent 统一会话（多轮对话 + 记忆管理 + 意图识别）
   POST /api/v1/recommend          - 获取公选课个性化推荐
   POST /api/v1/recommend/stream   - SSE 流式公选课推荐
   POST /api/v1/recommend/graph    - 通过LangGraph pipeline推荐公选课
@@ -32,7 +33,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent import runtime
-from api import recommend, health
+from api import recommend, health, chat
 from config import get_settings
 
 logger = structlog.get_logger()
@@ -71,13 +72,14 @@ app.add_middleware(
 # 注册路由
 app.include_router(health.router)
 app.include_router(recommend.router)
+app.include_router(chat.router)
 
 
 def _assert_llm_config() -> None:
     required = {
-        "ECOM_LLM_API_KEY": settings.llm_api_key,
-        "ECOM_LLM_BASE_URL": settings.llm_base_url,
-        "ECOM_LLM_MODEL": settings.llm_model,
+        "LLM_API_KEY": settings.llm_api_key,
+        "LLM_BASE_URL": settings.llm_base_url,
+        "LLM_MODEL": settings.llm_model,
     }
     missing = [name for name, value in required.items() if not str(value).strip()]
     if missing:
@@ -85,4 +87,4 @@ def _assert_llm_config() -> None:
 
 
 if __name__ == "__main__":
-    uvicorn.run("agent.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("agent.app:app", host="0.0.0.0", port=8000, reload=True)

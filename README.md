@@ -42,21 +42,21 @@ python -m pip install -r ./python/requirements.txt
 在 `python/.env` 中配置 LLM / Embedding，这边示例是走第三方的阿里云百炼平台：
 
 ```env
-ECOM_LLM_API_KEY=sk-xxxxxxxxxxxxxxxxxxx
-ECOM_LLM_BASE_URL=https://llm-oe8ejw5pgtze0knw.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
-ECOM_LLM_MODEL=your-model-name
-ECOM_LLM_ENABLE_THINKING=true
+LLM_API_KEY=sk-xxxxxxxxxxxxxxxxxxx
+LLM_BASE_URL=https://llm-oe8ejw5pgtze0knw.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+LLM_MODEL=your-model-name
+LLM_ENABLE_THINKING=true
 
-ECOM_EMBEDDING_PROVIDER=dashscope_multimodal
-ECOM_EMBEDDING_BASE_URL=https://llm-oe8ejw5pgtze0knw.cn-beijing.maas.aliyuncs.com/api/v1
-ECOM_EMBEDDING_API_KEY=sk-xxxxxxxxxxxxxxxxxxx
-ECOM_EMBEDDING_MODEL=your-embedding-model-name
-ECOM_EMBEDDING_DIMENSION=xxxx
-ECOM_MILVUS_DIMENSION=xxxx
-ECOM_COURSE_MILVUS_COLLECTION=your-collection-name
+EMBEDDING_PROVIDER=dashscope_multimodal
+EMBEDDING_BASE_URL=https://llm-oe8ejw5pgtze0knw.cn-beijing.maas.aliyuncs.com/api/v1
+EMBEDDING_API_KEY=sk-xxxxxxxxxxxxxxxxxxx
+EMBEDDING_MODEL=your-embedding-model-name
+EMBEDDING_DIMENSION=xxxx
+MILVUS_DIMENSION=xxxx
+COURSE_MILVUS_COLLECTION=your-collection-name
 
 # 若MaaS 自定义域名证书 SAN 不匹配，本地/Docker 均需关闭 SSL 校验
-ECOM_HTTPX_VERIFY_SSL=false
+HTTPX_VERIFY_SSL=false
 ```
 
 **协议注意**：LLM 走 OpenAI 兼容 `/compatible-mode/v1`；Embedding 走 DashScope 原生 `/api/v1`（`tongyi-embedding-vision-plus` 不支持 OpenAI `/embeddings`）。
@@ -239,7 +239,7 @@ python/
 │  ├─ test_stream_token_markup_parser.py
 │  └─ test_llm_integration_smoke.py
 │
-├─ Dockerfile                       # CMD: uvicorn agent.main:app
+├─ Dockerfile                       # CMD: uvicorn agent.app:app
 ├─ pytest.ini
 └─ requirements.txt
 ```
@@ -297,11 +297,11 @@ Chunk 类型：`basic`、`schedule_capacity`、`learning_profile`、`audience_ta
 
 | 现象 | 处理 |
 | --- | --- |
-| LLM/Embedding 证书错误 | 设 `ECOM_HTTPX_VERIFY_SSL=false` 并重建容器 |
+| LLM/Embedding 证书错误 | 设 `HTTPX_VERIFY_SSL=false` 并重建容器 |
 | 同 prompt 一直很快、无 embedding | Redis 缓存命中，换 prompt 或等 TTL |
 | 指定校区/分类仍不对 | 查 `hard_constraints` 与 Phase 1.5 日志；分类支持 domain 与正式类名模糊匹配 |
 | 推荐数少于 `num_items` | 硬约束/时间冲突过滤后候选不足，见 `requested_count_shortage` |
-| embedding 维度错误 | `ECOM_EMBEDDING_DIMENSION` 与 Milvus collection 须一致（当前 1024） |
+| embedding 维度错误 | `EMBEDDING_DIMENSION` 与 Milvus collection 须一致（当前 1024） |
 | MySQL 连不上 | 宿主机用 **3307**，勿改成 3306 |
 
 排查：`docker compose ... logs --tail=80 python-api mysql`；应用层在 Repository / Recall / Supervisor 有结构化日志。
