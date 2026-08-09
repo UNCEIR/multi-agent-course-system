@@ -270,10 +270,7 @@ Redis 缓存的是候选 `course_id` 列表，不是完整 `Course` 对象。
 | 接口 | 说明 |
 | --- | --- |
 | `GET /health` | 检查 MySQL、Redis、Milvus |
-| `POST /api/v1/recommend` | 同步推荐主链路 |
-| `POST /api/v1/recommend/stream` | SSE 流式推荐主路径 |
-| `POST /api/v1/stream_recommend` | 流式推荐别名，兼容脚本和文档 |
-| `POST /api/v1/recommend/graph` | LangGraph 展示链路 |
+| `POST /api/v1/recommend/stream` | 统一流式推荐入口（默认并行 Pipeline 最快；mode=react 可选） |
 | `GET /api/v1/metrics` | 进程内指标，不是 Prometheus 生产指标 |
 
 SSE 事件覆盖全链路可见性：`start` → `phase1_complete` → `phase15_complete` → `semantic_filter_complete` / `semantic_filter_skipped` → `phase2_complete` → `phase3_start` → token 文本 → `phase3_complete` → `done`。

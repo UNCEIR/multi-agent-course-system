@@ -1,12 +1,12 @@
 # chunk_document
 
-**状态**: `stub` — `NotImplementedError`
+**状态**: `implemented` — 确定性本地分块
 **Phase**: 1
 **类别**: `documents/*`
 
 ## 功能描述
 
-将文档文本分块，支持多种分块策略（按段落/按 token 数/语义分块）。对比 v1 的 4 块策略（basic/schedule_capacity/learning_profile/audience_tags）。
+将文档文本按段落或固定字符窗口分块，支持 overlap；不依赖外部服务。
 
 ## 输入参数
 

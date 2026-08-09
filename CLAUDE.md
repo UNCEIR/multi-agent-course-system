@@ -71,17 +71,21 @@ POST /api/v1/recommend
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `POST` | `/api/v1/chat` | ✅ 主 agent 统一会话（多轮对话 + 记忆管理 + 意图识别） |
-| `POST` | `/api/v1/recommend` | ✅ 推荐主链路（A/B 分流 Pipeline / ReAct） |
-| `POST` | `/api/v1/recommend/stream` | ✅ SSE 流式推荐 |
-| `POST` | `/api/v1/recommend/react*` | ✅ 强制 ReAct 模式 |
-| `POST` | `/api/v1/recommend/graph` | ✅ LangGraph 演示链路 |
+| `POST` | `/api/v1/chat/stream` | ✅ SSE 流式主 agent 会话（text/tool/done/error 事件） |
+| `POST` | `/api/v1/recommend/stream` | ✅ 统一流式推荐入口（默认并行 Pipeline 最快；mode=react 走 ReAct 可选） |
+| `POST` | `/api/v1/documents/upload` | ✅ 文档摄入（知识库，本地解析/分块/向量化入库） |
 | `GET` | `/health`、`/api/v1/health` | ✅ 健康检查 |
 | `GET` | `/api/v1/experiments` | ✅ A/B 实验状态 |
 | `GET` | `/api/v1/metrics` | ✅ Agent / 业务指标 |
-| `POST /api/v1/documents/upload` | ⏳ 未注册（空骨架） |
 | `POST /api/v1/evaluation` | ⏳ 未注册（Phase 2） |
 | `POST /api/v1/report` | ⏳ 未注册（Phase 2） |
 | `POST /api/v1/ppt` | ⏳ 未注册（Phase 3） |
+
+> v1 遗留端点（同步 `/api/v1/recommend`、`/react`、`/react/stream`、`/graph`）已删除，统一收敛到 `/api/v1/recommend/stream`。
+
+### 涉及LLM输出的端点：
+
+- 一律采取流式stream的方式输出token回答。
 
 ### 关键设计决策
 
@@ -148,8 +152,6 @@ POST /api/v1/recommend
 - **`.env` 加载顺序**：仓库根 `.env` → `python/.env`（后者覆盖前者）。Docker 仅注入 `python/.env`。
 - **MySQL 宿主机端口**：`localhost:3307` → 容器内 `mysql:3306`。
 - **`HTTPX_VERIFY_SSL=false`**：中转站证书 SAN 不匹配时必须在 `.env` 设置。
-- **`agent.app` vs `agent.main`**：`agent/app.py` 是 FastAPI 入口（`uvicorn agent.app:app`），`agent/main/` 是主 agent 子包（`from agent.main import build_main_agent`）。`agent.main` 解析为子包，无 `app` 属性。
-- **Import 前缀**：新增文件时一律用 `agent.` / `api.` / `ai.` / `config.` / `models.` / `storage.` / `experiment.` / `observability.`，不要写 `from app...`。
 - **HardConstraintFilter 类别匹配是纯子串**：`"理工"` 不匹配 `"自然科学与工程技术"`，需在 `student_profile_agent.py:190` 和 `hard_constraint_filter.py:201` 加别名映射。
 - **FeasibilityAgent LLM 失败是静默的**：`_parse_advice_json()` 返回空 dict → 规则兜底，不抛异常。排查搜索 `llm_advice_parse_empty` 或 `llm_advice_failed`。
 - **FeasibilityAgent 最多送 12 门课给 LLM**（`max_tokens=4096`），超 12 门仅走规则兜底。

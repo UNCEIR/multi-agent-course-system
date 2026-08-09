@@ -1,4 +1,8 @@
-"""推荐路由 — /api/v1/recommend* 端点。"""
+"""推荐路由 — 统一流式入口 POST /api/v1/recommend/stream。
+
+默认走 ReAct 流式，流式中失败自动兜底 Pipeline 流式（experiment_group=pipeline_fallback）。
+所有前端推荐一律走本端点，满足 AGENTS.md 前端 API 流式契约。
+"""
 
 from __future__ import annotations
 
@@ -8,48 +12,20 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from agent import runtime
-from models.schemas import RecommendationRequest, RecommendationResponse
+from models.schemas import RecommendationRequest
 
 router = APIRouter()
 
 
-@router.post("/api/v1/recommend", response_model=RecommendationResponse)
-async def recommend(request: RecommendationRequest):
-    """使用 Supervisor 编排器进行公选课推荐 (生产推荐用法)"""
-    response = await runtime.supervisor.recommend(request)
-    _collect_metrics(response)
-    return response
-
-
-def _recommend_stream_response(request: RecommendationRequest) -> StreamingResponse:
-    return StreamingResponse(
-        _sse_wrapper(runtime.supervisor.stream_recommend(request)),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
 @router.post("/api/v1/recommend/stream")
 async def recommend_stream(request: RecommendationRequest):
-    """SSE 流式公选课推荐 (前端打字效果 + 阶段进度推送)"""
-    return _recommend_stream_response(request)
+    """SSE 流式公选课推荐（默认 ReAct → 兜底 Pipeline）。
 
-
-@router.post("/api/v1/recommend/react")
-async def recommend_react(request: RecommendationRequest):
-    """ReAct 推荐"""
-    return await runtime.supervisor.react_recommend(request)
-
-
-@router.post("/api/v1/recommend/react/stream")
-async def recommend_react_stream(request: RecommendationRequest):
-    """SSE 流式 ReAct 推荐"""
+    事件：phase / course_start / text / course_end / done / error。
+    前端消费本流实现打字机效果 + 阶段进度。
+    """
     return StreamingResponse(
-        _sse_wrapper(runtime.supervisor.react_stream_recommend(request)),
+        _sse_wrapper(runtime.supervisor.stream_recommend_unified(request)),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -57,40 +33,6 @@ async def recommend_react_stream(request: RecommendationRequest):
             "X-Accel-Buffering": "no",
         },
     )
-
-
-@router.post("/api/v1/recommend/graph")
-async def recommend_via_graph(request: RecommendationRequest):
-    """使用 LangGraph 状态图进行公选课推荐 (展示 LangGraph 能力)"""
-    if not runtime.rec_graph:
-        return {"error": "Graph not initialized"}
-    state = {
-        "user_id": request.user_id,
-        "scene": request.scene,
-        "num_items": request.num_items,
-        "prompt": request.prompt or request.query or request.context.get("query", ""),
-        "context": request.context,
-    }
-    result = await runtime.rec_graph.ainvoke(state)
-    return {
-        "request_id": result.get("request_id"),
-        "user_id": result.get("user_id"),
-        "courses": [course.model_dump() for course in result.get("final_courses", [])],
-        "recommendation_reasons": result.get("recommendation_reasons", []),
-        "selection_warnings": result.get("selection_warnings", []),
-        "priority_advice": result.get("priority_advice", {}),
-        "experiment_group": result.get("experiment_group", "control"),
-        "total_latency_ms": round(result.get("total_latency_ms", 0), 1),
-    }
-
-
-def _collect_metrics(response: RecommendationResponse):
-    for name, result in response.agent_results.items():
-        runtime.metrics_collector.record_agent_call(
-            agent_name=name,
-            success=result.success,
-            latency_ms=result.latency_ms,
-        )
 
 
 async def _sse_wrapper(generator):
@@ -103,5 +45,11 @@ async def _sse_wrapper(generator):
                     success=result.get("success", False),
                     latency_ms=result.get("latency_ms", 0),
                 )
+        elif event["event"] == "error":
+            runtime.metrics_collector.record_business_event(
+                "recommend_stream_error",
+                code=event.get("data", {}).get("code", ""),
+                phase=event.get("data", {}).get("phase", ""),
+            )
         payload = json.dumps(event["data"], ensure_ascii=False)
         yield f"event: {event['event']}\ndata: {payload}\n\n"

@@ -36,7 +36,17 @@ from .registry import ToolRegistry, get_registry
 from .system import get_current_time, list_available_skills
 from .chat import web_search, writing_assistant
 from .documents import chunk_document, parse_document
-from .recommend import recommend_courses
+from .knowledge import query_knowledge
+from .recommend import (
+    check_feasibility,
+    extract_profile,
+    filter_hard_constraints,
+    generate_reasons,
+    recommend_courses,
+    rerank_courses,
+    search_courses,
+    semantic_filter_courses,
+)
 from .image import image_generate
 from .code import code_interpreter
 from .mindmap import mindmap_generator
@@ -57,7 +67,15 @@ __all__ = [
     "web_search",
     "parse_document",
     "chunk_document",
+    "query_knowledge",
     "recommend_courses",
+    "extract_profile",
+    "search_courses",
+    "filter_hard_constraints",
+    "semantic_filter_courses",
+    "rerank_courses",
+    "check_feasibility",
+    "generate_reasons",
     "image_generate",
     "code_interpreter",
     "mindmap_generator",

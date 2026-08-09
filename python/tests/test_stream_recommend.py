@@ -287,3 +287,150 @@ async def test_stream_recommend_includes_warnings():
     done = events[-1]["data"]
     assert len(done["selection_warnings"]) == 1
     assert done["selection_warnings"][0]["type"] == "capacity_tight"
+
+@pytest.mark.agent
+@pytest.mark.asyncio
+async def test_stream_recommend_unified_react_fallback_pipeline(monkeypatch):
+    """统一流式：ReAct 失败时切换 Pipeline，done.experiment_group=pipeline_fallback。"""
+    req = RecommendationRequest(user_id="S_FALLBACK", num_items=1, prompt="测试")
+    c1 = _make_course("GXK001", "电影鉴赏")
+
+    orchestrator = SupervisorOrchestrator(
+        student_profile_agent=_AgentStub(StudentProfileResult(success=True, profile=_make_profile())),
+        course_recall_agent=_AgentStub(CourseRecallResult(success=True, courses=[c1], recall_strategies=["test"])),
+        course_rerank_agent=_AgentStub(CourseRerankResult(success=True, courses=[c1], rerank_strategy="test")),
+        course_feasibility_agent=_AgentStub(
+            CourseFeasibilityResult(success=True, available_courses=["GXK001"], data={})
+        ),
+        recommendation_reason_agent=_AgentStub(None),
+    )
+
+    async def fake_react_stream(_request):
+        yield {"event": "phase", "data": {"phase": "react_start"}}
+        yield {
+            "event": "error",
+            "data": {"code": "LLM_FAILED", "message": "react llm down", "phase": "react"},
+        }
+
+    monkeypatch.setattr(orchestrator, "react_stream_recommend", fake_react_stream)
+
+    events = []
+    async for event in orchestrator.stream_recommend_unified(req, mode="react"):
+        events.append(event)
+
+    event_types = [e["event"] for e in events]
+    assert "phase" in event_types
+    assert any(e["data"].get("phase") == "react_fallback" for e in events if e["event"] == "phase")
+    assert event_types[-1] == "done"
+    done = events[-1]["data"]
+    assert done["experiment_group"] == "pipeline_fallback"
+    assert done["react_fallback"]["error"] == "RuntimeError"
+    assert len(done["courses"]) == 1
+
+
+@pytest.mark.agent
+@pytest.mark.asyncio
+async def test_react_empty_turn_terminates(monkeypatch):
+    """ReAct 空转（决策不调工具且无 FINISH）立即终止，不继续白耗。"""
+    from unittest.mock import AsyncMock, MagicMock
+
+    req = RecommendationRequest(user_id="S_IDLE", num_items=1, prompt="测试")
+    c1 = _make_course("GXK001", "电影鉴赏")
+
+    orchestrator = SupervisorOrchestrator(
+        student_profile_agent=_AgentStub(StudentProfileResult(success=True, profile=_make_profile())),
+        course_recall_agent=_AgentStub(CourseRecallResult(success=True, courses=[c1], recall_strategies=["test"])),
+        course_rerank_agent=_AgentStub(CourseRerankResult(success=True, courses=[c1], rerank_strategy="test")),
+        course_feasibility_agent=_AgentStub(
+            CourseFeasibilityResult(success=True, available_courses=["GXK001"], data={})
+        ),
+        recommendation_reason_agent=_AgentStub(None),
+    )
+
+    # 记录 llm.ainvoke 被调用次数
+    invoke_count = {"n": 0}
+
+    class _EmptyLLM:
+        def __init__(self):
+            pass
+
+        async def ainvoke(self, messages):
+            invoke_count["n"] += 1
+            # 返回无 tool_calls、无 FINISH 的响应 → 应触发空转即终止
+            return MagicMock(tool_calls=[], content="我先思考一下")
+
+    import agent.recommend.supervisor as sup_mod
+    import ai as ai_mod
+
+    monkeypatch.setattr(ai_mod, "build_tool_calling_llm", lambda *a, **k: _EmptyLLM())
+
+    response = await orchestrator.react_recommend(req)
+    # 空转即终止：只调用 1 次 llm，不再 continue 第二次
+    assert invoke_count["n"] == 1
+    assert response.experiment_group == "react"
+
+
+@pytest.mark.agent
+@pytest.mark.asyncio
+async def test_react_rerank_feasibility_parallel(monkeypatch):
+    """B 组并行：rerank_courses 与 check_feasibility 同一轮同时调用时 gather 执行。"""
+    from unittest.mock import MagicMock
+
+    req = RecommendationRequest(user_id="S_PAR", num_items=1, prompt="测试")
+    c1 = _make_course("GXK001", "电影鉴赏")
+    c2 = _make_course("GXK002", "音乐导论")
+
+    orchestrator = SupervisorOrchestrator(
+        student_profile_agent=_AgentStub(StudentProfileResult(success=True, profile=_make_profile())),
+        course_recall_agent=_AgentStub(CourseRecallResult(success=True, courses=[c1, c2], recall_strategies=["test"])),
+        course_rerank_agent=_AgentStub(CourseRerankResult(success=True, courses=[c1, c2], rerank_strategy="test")),
+        course_feasibility_agent=_AgentStub(
+            CourseFeasibilityResult(success=True, available_courses=["GXK001", "GXK002"], data={})
+        ),
+        recommendation_reason_agent=_AgentStub(None),
+    )
+
+    class _ParallelLLM:
+        def __init__(self):
+            self.rounds = 0
+
+        async def ainvoke(self, messages):
+            self.rounds += 1
+            if self.rounds == 1:
+                # 第一轮先 search_courses 填充候选
+                return MagicMock(
+                    tool_calls=[
+                        {
+                            "name": "search_courses",
+                            "args": {"strategy": "wide"},
+                            "id": "tc0",
+                        },
+                    ]
+                )
+            if self.rounds == 2:
+                # 第二轮同时调 rerank_courses + check_feasibility（B 组并行）
+                return MagicMock(
+                    tool_calls=[
+                        {
+                            "name": "rerank_courses",
+                            "args": {"num_items": 1},
+                            "id": "tc1",
+                        },
+                        {
+                            "name": "check_feasibility",
+                            "args": {},
+                            "id": "tc2",
+                        },
+                    ]
+                )
+            # 第三轮 FINISH
+            return MagicMock(tool_calls=[], content="FINISH")
+
+    import ai as ai_mod
+
+    monkeypatch.setattr(ai_mod, "build_tool_calling_llm", lambda *a, **k: _ParallelLLM())
+
+    response = await orchestrator.react_recommend(req)
+    # B 组并行后 courses 合并
+    assert response.experiment_group == "react"
+    assert len(response.courses) == 1, f"courses={[c.course_id for c in response.courses]}"

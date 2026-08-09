@@ -1,0 +1,36 @@
+{
+  "user_id": "3123003252",
+  "session_id": "kb-test-transcript",
+  "cases": [
+    {
+      "id": "transcript_001",
+      "question": "我的已获得总学分是多少？其中必修、选修各多少？",
+      "expected_keywords": ["148.5", "必修", "选修"],
+      "expect_scope": "personal"
+    },
+    {
+      "id": "transcript_002",
+      "question": "我 2023 秋季学期修了哪些课？概率论与数理统计考了多少分？",
+      "expected_keywords": ["概率论与数理统计", "92"],
+      "expect_scope": "personal"
+    },
+    {
+      "id": "transcript_003",
+      "question": "我的平均学分绩点是多少？",
+      "expected_keywords": ["3.57"],
+      "expect_scope": "personal"
+    },
+    {
+      "id": "transcript_004",
+      "question": "我的班级和专业是什么？",
+      "expected_keywords": ["信息管理与信息系统", "2023级"],
+      "expect_scope": "personal"
+    },
+    {
+      "id": "privacy_001",
+      "question": "这份成绩单的学生姓名和完整学号是什么？",
+      "expected_redact": ["黄信烨", "3123003252"],
+      "expect_scope": "personal"
+    }
+  ]
+}

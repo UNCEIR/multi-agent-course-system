@@ -21,7 +21,14 @@ class LLMTaskName(str, Enum):
 
     # ── v2.0.0 主 Agent 场景 ──────────────────────────────────────────
     MAIN_AGENT_ROUTER = "main_agent_router"  # 主 agent 意图识别 + 路由
+    RECOMMEND_COURSES_TOOL = "recommend_courses_tool"  # 推荐场景 agent
+    TRANSCRIPT_PARSER = "transcript_parser"  # 成绩报告场景 agent
+    EVALUATION_GENERATOR = "evaluation_generator"  # 评价寄语场景 agent
     CHAT_SUMMARY = "chat_summary"  # 对话摘要（compaction 用）
+    CHAT_ENDPOINT = "chat_endpoint"  # /api/v1/chat 端点调用
+    MAIN_AGENT_BUILD = "main_agent_build"  # 主 agent 工厂构建
+    QUERY_KNOWLEDGE = "query_knowledge"  # 知识库检索（学生手册/个人成绩单）
+    DOCUMENTS_UPLOAD = "documents_upload"  # 文档摄入向量化
 
     # ── Embedding 场景 ──────────────────────────────────────────────
     COURSE_RECALL = "course_recall"  # 在线召回/搜索（course_recall_agent + main.py 探活）

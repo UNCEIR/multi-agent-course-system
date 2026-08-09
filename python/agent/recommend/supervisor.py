@@ -80,7 +80,12 @@ class SupervisorOrchestrator:
         self.hard_constraint_filter = HardConstraintFilter()
         self._react_llm_cache: dict[str, Any] = {}
 
-    async def recommend(self, request: RecommendationRequest) -> RecommendationResponse:
+    async def recommend(
+        self,
+        request: RecommendationRequest,
+        *,
+        _allow_react: bool = True,
+    ) -> RecommendationResponse:
         request_id = str(uuid.uuid4())
         start = time.perf_counter()
         prompt = self._request_prompt(request)
@@ -98,10 +103,30 @@ class SupervisorOrchestrator:
         experiment = self.ab_engine.assign(request.user_id, "react_vs_pipeline")
 
         # A/B test routing: react group uses LLM-driven tool calling pipeline
-        if experiment.get("group") == "react":
-            response = await self._react_recommend(request, request_id, start)
-            response.experiment_group = "react"
-            return response
+        if experiment.get("group") == "react" and _allow_react:
+            try:
+                response = await self._react_recommend(request, request_id, start)
+                response.experiment_group = "react"
+                return response
+            except Exception as exc:
+                logger.exception(
+                    "course_supervisor.react_failed_fallback_pipeline",
+                    request_id=request_id,
+                    error=str(exc),
+                )
+                self.ab_engine.record_outcome("react_vs_pipeline", "react", success=False)
+                response = await self.recommend(request, _allow_react=False)
+                response.experiment_group = "pipeline_fallback"
+                response.selection_warnings.insert(
+                    0,
+                    {
+                        "type": "react_fallback",
+                        "level": "medium",
+                        "message": "ReAct 编排暂时不可用，已降级到确定性推荐流程。",
+                        "error": type(exc).__name__,
+                    },
+                )
+                return response
 
         # Phase 1: 学生画像与课程召回并行。召回先用原始 prompt 和 context 做宽召回。
         profile_result, recall_result = await asyncio.gather(
@@ -678,7 +703,9 @@ class SupervisorOrchestrator:
             "必须遵守的顺序：extract_profile → search_courses → filter_hard_constraints → "
             "semantic_filter_courses → rerank_courses → check_feasibility → generate_reasons。\n"
             "filter_hard_constraints 是强制的，不可跳过。\n"
-            "如果召回太少（<5门），尝试用不同策略再搜索。\n"
+            "每个工具只调用一次，不要重复搜索或重复重排；候选充足时直接进入重排，不重复召回。\n"
+            "extract_profile 与 search_courses(wide) 可同一轮并行；rerank_courses 与 check_feasibility 也可同一轮并行（互相独立）。\n"
+            "如果召回太少（<5门），再尝试一次不同策略的搜索。\n"
             "当所有必需工具调用完成后，输出 FINISH。"
         )
 
@@ -700,7 +727,7 @@ class SupervisorOrchestrator:
         }
 
         try:
-            max_rounds = 20
+            max_rounds = 10
             round_idx = 0
             for round_idx in range(max_rounds):
                 response = await llm.ainvoke(messages)
@@ -711,17 +738,97 @@ class SupervisorOrchestrator:
                     content = str(getattr(response, "content", ""))
                     if "FINISH" in content.upper():
                         break
+                    # 空转即终止：工具型 agent 每轮应调工具，不继续白耗一轮
+                    break
+
+                # 一轮内并行 + 顺序回填：A 组（extract_profile ∥ search_courses）写不同
+                # state 字段可安全并行；其余工具串行。ToolMessage 必须按 tool_calls
+                # 原始顺序回填，否则违反 OpenAI "tool 消息须跟在 tool_calls 之后"约束。
+                def _is_parallel_group(names: list[str]) -> bool:
+                    return "extract_profile" in names and any(
+                        n == "search_courses" for n in names
+                    )
+
+                tc_names = [t.get("name", "") for t in tool_calls]
+                if _is_parallel_group(tc_names) and len(tool_calls) == len(
+                    [n for n in tc_names if n in ("extract_profile", "search_courses")]
+                ):
+                    # 本轮全部是可并行工具：gather 执行，按原序回填
+                    for t in tool_calls:
+                        yield {
+                            "event": "phase",
+                            "data": {"phase": f"react_{t.get('name', '')}"},
+                        }
+                    results = await asyncio.gather(
+                        *[
+                            executor.execute_tool(t.get("name", ""), t.get("args", {}))
+                            for t in tool_calls
+                        ]
+                    )
+                    for t, r in zip(tool_calls, results):
+                        messages.append(
+                            ToolMessage(content=r, tool_call_id=t.get("id", ""))
+                        )
+                    continue
+
+                # B 组并行：rerank_courses ∥ check_feasibility（读同一快照，互不依赖）
+                if (
+                    "rerank_courses" in tc_names
+                    and "check_feasibility" in tc_names
+                    and len(tool_calls) == len(
+                        [n for n in tc_names if n in ("rerank_courses", "check_feasibility")]
+                    )
+                    and executor.state.courses
+                ):
+                    for t in tool_calls:
+                        yield {
+                            "event": "phase",
+                            "data": {"phase": f"react_{t.get('name', '')}"},
+                        }
+                    snapshot = list(executor.state.courses)
+                    rerank_args = next(
+                        (t.get("args", {}) for t in tool_calls if t.get("name") == "rerank_courses"),
+                        {},
+                    )
+                    num_items = rerank_args.get("num_items", 10)
+                    rerank_result, feas_result = await asyncio.gather(
+                        executor.execute_rerank_on_snapshot(snapshot, num_items=num_items),
+                        executor.execute_feasibility_on_snapshot(snapshot),
+                    )
+                    # 合并（对齐 Pipeline Phase2 语义）：
+                    # ranked 排序 → 仅保留 available → 记录 warnings/priority_advice
+                    ranked_ids = rerank_result["course_ids"]
+                    available_ids = set(feas_result["available_ids"])
+                    id_to_course = {c.course_id: c for c in snapshot}
+                    executor.state.warnings.extend(feas_result["warnings"])
+                    executor.state.priority_advice.update(feas_result["priority_advice"])
+                    final = [id_to_course[cid] for cid in ranked_ids if cid in available_ids]
+                    executor.state.courses = final
+                    executor.state.rerank_done = True
+                    executor.state.feasibility_done = True
+                    for t in tool_calls:
+                        name = t.get("name", "")
+                        if name == "rerank_courses":
+                            text = (
+                                f"Reranked {len(ranked_ids)} courses. "
+                                f"Top: {[id_to_course[cid].course_name for cid in ranked_ids[:5] if cid in id_to_course]}"
+                            )
+                        else:
+                            text = (
+                                f"Feasibility check: {len(available_ids)} available, "
+                                f"{len(final)} after filtering, "
+                                f"{len(feas_result['warnings'])} warnings."
+                            )
+                        messages.append(ToolMessage(content=text, tool_call_id=t.get("id", "")))
                     continue
 
                 for tc in tool_calls:
                     tool_name = tc.get("name", "")
                     tool_args = tc.get("args", {})
-
                     yield {
                         "event": "phase",
                         "data": {"phase": f"react_{tool_name}"},
                     }
-
                     observation = await executor.execute_tool(tool_name, tool_args)
                     messages.append(ToolMessage(content=observation, tool_call_id=tc.get("id", "")))
 
@@ -829,6 +936,75 @@ class SupervisorOrchestrator:
                 },
             }
 
+    async def stream_recommend_unified(
+        self,
+        request: RecommendationRequest,
+        *,
+        mode: str = "pipeline",
+    ) -> "AsyncGenerator[dict[str, Any], None]":
+        """统一流式推荐入口。
+
+        默认走并行 Pipeline（student_profile∥course_recall 并行、rerank∥feasibility 并行），
+        外部 LLM 调用数少、延迟低。mode="react" 时走 ReAct（多轮决策 LLM，较慢），
+        失败自动兜底 Pipeline。
+        """
+        request_id = str(uuid.uuid4())
+        logger.info(
+            "course_supervisor.unified_stream.start",
+            request_id=request_id,
+            user_id=request.user_id,
+            mode=mode,
+        )
+
+        if mode == "pipeline":
+            async for event in self.stream_recommend(request):
+                yield event
+            return
+
+        react_failed: Exception | None = None
+        try:
+            async for event in self.react_stream_recommend(request):
+                if event["event"] == "error":
+                    react_failed = RuntimeError(
+                        f"react stream failed: {event['data'].get('message', 'unknown')}"
+                    )
+                    break
+                yield event
+        except Exception as exc:
+            react_failed = exc
+            logger.warning(
+                "course_supervisor.unified_stream.react_error",
+                request_id=request_id,
+                error=str(exc),
+            )
+
+        if react_failed is None:
+            return
+
+        # 兜底：切到 Pipeline 流式
+        logger.info(
+            "course_supervisor.unified_stream.fallback_pipeline",
+            request_id=request_id,
+            reason=str(react_failed),
+        )
+        yield {
+            "event": "phase",
+            "data": {
+                "phase": "react_fallback",
+                "reason": type(react_failed).__name__,
+                "request_id": request_id,
+            },
+        }
+
+        async for event in self.stream_recommend(request):
+            if event["event"] == "done":
+                event["data"]["experiment_group"] = "pipeline_fallback"
+                event["data"]["react_fallback"] = {
+                    "error": type(react_failed).__name__,
+                    "message": str(react_failed),
+                }
+            yield event
+
     async def _react_recommend(
         self, request: RecommendationRequest, request_id: str, start: float
     ) -> RecommendationResponse:
@@ -842,7 +1018,9 @@ class SupervisorOrchestrator:
             "必须遵守的顺序：extract_profile → search_courses → filter_hard_constraints → "
             "semantic_filter_courses → rerank_courses → check_feasibility → generate_reasons。\n"
             "filter_hard_constraints 是强制的，不可跳过。\n"
-            "如果召回太少（<5门），尝试用不同策略再搜索。\n"
+            "每个工具只调用一次，不要重复搜索或重复重排；候选充足时直接进入重排，不重复召回。\n"
+            "extract_profile 与 search_courses(wide) 可同一轮并行；rerank_courses 与 check_feasibility 也可同一轮并行（互相独立）。\n"
+            "如果召回太少（<5门），再尝试一次不同策略的搜索。\n"
             "当所有必需工具调用完成后，输出 FINISH。"
         )
 
@@ -854,7 +1032,7 @@ class SupervisorOrchestrator:
             HumanMessage(content=f"学生需求: {prompt}\n需要推荐 {request.num_items} 门课。"),
         ]
 
-        max_rounds = 20
+        max_rounds = 10
         for round_idx in range(max_rounds):
             response = await llm.ainvoke(messages)
             messages.append(response)
@@ -864,6 +1042,81 @@ class SupervisorOrchestrator:
                 content = str(getattr(response, "content", ""))
                 if "FINISH" in content.upper():
                     break
+                # 空转即终止：工具型 agent 每轮应调工具，不继续白耗一轮
+                break
+
+            # 一轮内并行 + 顺序回填：A 组（extract_profile ∥ search_courses）写不同
+            # state 字段可安全并行；其余工具串行。ToolMessage 必须按 tool_calls
+            # 原始顺序回填，否则违反 OpenAI "tool 消息须跟在 tool_calls 之后"约束。
+            def _is_parallel_group(names: list[str]) -> bool:
+                return "extract_profile" in names and any(
+                    n == "search_courses" for n in names
+                )
+
+            tc_names = [t.get("name", "") for t in tool_calls]
+            if _is_parallel_group(tc_names) and len(tool_calls) == len(
+                [n for n in tc_names if n in ("extract_profile", "search_courses")]
+            ):
+                results = await asyncio.gather(
+                    *[
+                        executor.execute_tool(t.get("name", ""), t.get("args", {}))
+                        for t in tool_calls
+                    ]
+                )
+                for t, r in zip(tool_calls, results):
+                    messages.append(
+                        ToolMessage(content=r, tool_call_id=t.get("id", ""))
+                    )
+                continue
+
+            # B 组并行：rerank_courses ∥ check_feasibility（读同一快照，互不依赖）
+            if (
+                "rerank_courses" in tc_names
+                and "check_feasibility" in tc_names
+                and len(tool_calls) == len(
+                    [n for n in tc_names if n in ("rerank_courses", "check_feasibility")]
+                )
+                and executor.state.courses
+            ):
+                logger.info(
+                    "course_supervisor.react_b_group_parallel",
+                    request_id=request_id,
+                    candidate_count=len(executor.state.courses),
+                    round=round_idx + 1,
+                )
+                snapshot = list(executor.state.courses)
+                rerank_args = next(
+                    (t.get("args", {}) for t in tool_calls if t.get("name") == "rerank_courses"),
+                    {},
+                )
+                num_items = rerank_args.get("num_items", 10)
+                rerank_result, feas_result = await asyncio.gather(
+                    executor.execute_rerank_on_snapshot(snapshot, num_items=num_items),
+                    executor.execute_feasibility_on_snapshot(snapshot),
+                )
+                ranked_ids = rerank_result["course_ids"]
+                available_ids = set(feas_result["available_ids"])
+                id_to_course = {c.course_id: c for c in snapshot}
+                executor.state.warnings.extend(feas_result["warnings"])
+                executor.state.priority_advice.update(feas_result["priority_advice"])
+                final = [id_to_course[cid] for cid in ranked_ids if cid in available_ids]
+                executor.state.courses = final
+                executor.state.rerank_done = True
+                executor.state.feasibility_done = True
+                for t in tool_calls:
+                    name = t.get("name", "")
+                    if name == "rerank_courses":
+                        text = (
+                            f"Reranked {len(ranked_ids)} courses. "
+                            f"Top: {[id_to_course[cid].course_name for cid in ranked_ids[:5] if cid in id_to_course]}"
+                        )
+                    else:
+                        text = (
+                            f"Feasibility check: {len(available_ids)} available, "
+                            f"{len(final)} after filtering, "
+                            f"{len(feas_result['warnings'])} warnings."
+                        )
+                    messages.append(ToolMessage(content=text, tool_call_id=t.get("id", "")))
                 continue
 
             for tc in tool_calls:

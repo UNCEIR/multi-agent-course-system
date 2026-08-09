@@ -24,15 +24,7 @@
 | `docs/llm-intern/01_truth_boundary.md` | 逐条声明真值边界分类（可以写 / 谨慎写 / 补证据后写 / 不能写 / 无法判断） | 写简历/口播前逐条检查 |
 | `docs/llm-intern/02_evidence_contract.md` | 9 条核心声明的证据契约（代码:行号→测试→风险→安全措辞） | 被追问时找证据 |
 | `docs/llm-intern/03_fit_verdict.md` | 按 5 个 LLM 实习方向评估项目匹配度 + 描述切换建议 | 投不同方向时切换侧重点 |
-| `docs/llm-intern/04_upgrade_plan.md` | 16 项证据升级计划（半天→1天→3天→1周）+ 优先级矩阵 | 投递截止前快速补短板 |
-
-## 历史参考
-
-| 文档 | 定位 | 注意事项 |
-| --- | --- | --- |
-| `docs/plans/` | 方案和阶段计划 | 保留时间线，不替代当前面试主入口 |
-| `docs/notes/` | 每轮任务复盘笔记（26 篇，5/11-5/28） | 只作为证据来源，不搬空到面试材料 |
-
+| `docs/llm-intern/04_upgrade_plan.md` | 16 项证据升级计划（半天→1天→3天→1周）+ 优先级矩阵 | 投递截止前快速补短板。
 ## 推荐阅读路径
 
 ### 30 分钟速读
@@ -47,7 +39,7 @@
 2. 读 `docs/architecture.md`，画出 Phase 1→1.5→1.75→2→3 和 ReAct 分支。
 3. 读 `docs/code-walkthrough.md`，按请求链路找代码证据。
 4. 读 `docs/supervisor-main-orchestration.md`，理解召回打分和硬过滤规则。
-5. 对照 `docs/notes/` 中的验证记录，补充真实测试结果。
+5. 对照 `docs/v2.0.0/notes/` 中的验证记录，补充真实测试结果。
 
 ### 投递前检查（llm-intern 路径）
 

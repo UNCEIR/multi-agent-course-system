@@ -11,5 +11,19 @@
 from __future__ import annotations
 
 from .agent import build_main_agent
+from .factory import build_deep_agent
+from .subagents import (
+    build_evaluation_agent,
+    build_ppt_agent,
+    build_recommendation_agent,
+    build_report_agent,
+)
 
-__all__ = ["build_main_agent"]
+__all__ = [
+    "build_deep_agent",
+    "build_main_agent",
+    "build_recommendation_agent",
+    "build_report_agent",
+    "build_evaluation_agent",
+    "build_ppt_agent",
+]

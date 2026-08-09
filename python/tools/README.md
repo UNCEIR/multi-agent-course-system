@@ -7,7 +7,8 @@
 | 工具注册层 | `tools/` | ToolRegistry、CircuitBreaker、MCPClient |
 | 系统工具 | `tools/system/` | `get_current_time`、`list_available_skills` |
 | 对话工具 | `tools/chat/` | `writing_assistant`、`web_search` |
-| 文档工具 | `tools/documents/` | 文档解析 + 分块 |
+| 文档工具 | `tools/documents/` | 文档解析 + 分块 + 个人数据脱敏 |
+| 知识检索工具 | `tools/knowledge/` | `query_knowledge` 知识库 RAG 检索 |
 | 推荐工具 | `tools/recommend/` | 推荐课程 tool |
 | 图片工具 | `tools/image/` | 图片生成 |
 | 代码工具 | `tools/code/` | 代码执行 |
@@ -20,15 +21,17 @@
 |------|------|-------|------|------|
 | `list_available_skills` | `implemented` | 1 | `system/*` | `tools/system/list_available_skills.py` |
 | `get_current_time` | `implemented` | 1 | `system/*` | `tools/system/get_current_time.py` |
-| `recommend_courses` | `stub` | 1 (Step 3) | `recommend/*` | `tools/recommend/recommend_courses.py` |
+| `recommend_courses` | `implemented` | 1 | `recommend/*` | `tools/recommend/recommend_courses.py`（内部走统一流式，ReAct→Pipeline 兜底） |
 | `writing_assistant` | `stub` | 1 | `chat/*` | `tools/chat/writing_assistant.py` |
 | `web_search` | `stub` | 3 | `chat/*` | `tools/chat/web_search.py` |
 | `image_generate` | `stub` | 3/4 | `image/*` | `tools/image/image_generate.py` |
 | `code_interpreter` | `stub` | 3/4 | `code/*` | `tools/code/code_interpreter.py` |
 | `mindmap_generator` | `stub` | 3/4 | `mindmap/*` | `tools/mindmap/mindmap_generator.py` |
 | `compute_weighted_grade` | `stub` | 2 | `report/*` | `tools/report/compute_weighted_grade.py` |
-| `parse_document` | `stub` | 1 | `documents/*` | `tools/documents/parser.py` |
-| `chunk_document` | `stub` | 1 | `documents/*` | `tools/documents/chunker.py` |
+| `parse_document` | `implemented` | 1 | `documents/*` | `tools/documents/parser.py` |
+| `chunk_document` | `implemented` | 1 | `documents/*` | `tools/documents/chunker.py` |
+| `query_knowledge` | `implemented` | 1 | `knowledge/*` | `tools/knowledge/query_knowledge.py` |
+| `desensitize_transcript` | `implemented` | 1 | `documents/*` | `tools/documents/desensitizer.py` |
 
 ## 基础设施
 

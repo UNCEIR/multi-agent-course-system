@@ -3,9 +3,9 @@
 
 Endpoints:
   POST /api/v1/chat               - 主 agent 统一会话（多轮对话 + 记忆管理 + 意图识别）
-  POST /api/v1/recommend          - 获取公选课个性化推荐
-  POST /api/v1/recommend/stream   - SSE 流式公选课推荐
-  POST /api/v1/recommend/graph    - 通过LangGraph pipeline推荐公选课
+  POST /api/v1/chat/stream        - SSE 流式主 agent 会话（token/tool/done/error 事件）
+  POST /api/v1/recommend/stream   - SSE 流式推荐（默认 ReAct → 兜底 Pipeline，统一入口）
+  POST /api/v1/documents/upload   - 文档摄入（知识库）
   GET  /api/v1/experiments        - 查看A/B实验状态
   GET  /api/v1/metrics            - 查看系统监控指标
   GET  /api/v1/health             - 健康检查（与前端 /api 前缀一致）
@@ -33,7 +33,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent import runtime
-from api import recommend, health, chat
+from api import recommend, health, chat, documents
 from config import get_settings
 
 logger = structlog.get_logger()
@@ -43,7 +43,7 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _assert_llm_config()
-    runtime.init()
+    await runtime.init()
     llm_parsed = urlparse(settings.llm_base_url)
     logger.info(
         "app.startup",
@@ -73,6 +73,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(recommend.router)
 app.include_router(chat.router)
+app.include_router(documents.router)
 
 
 def _assert_llm_config() -> None:

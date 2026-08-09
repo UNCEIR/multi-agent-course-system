@@ -15,16 +15,16 @@ from deepagents.backends import CompositeBackend, FilesystemBackend, StateBacken
 from config import get_settings
 
 
-def build_main_backend() -> CompositeBackend:
-    """构建主 agent 的 CompositeBackend。
+def build_agent_backend() -> CompositeBackend:
+    """构建任意业务 agent 的 CompositeBackend。
 
     skills/memories 走真实文件系统，其余走 state（conversation_history 等）。
     """
     s = get_settings()
-    repo_root = Path(__file__).resolve().parent.parent.parent.parent  # <repo_root>
+    python_root = Path(__file__).resolve().parents[2]  # <repo_root>/python or /app
 
-    memory_dir = s.memory_dir or str(repo_root / "python" / "memories")
-    skills_dir = s.skills_dir or str(repo_root / "python" / "skills")
+    memory_dir = s.memory_dir or str(python_root / "memories")
+    skills_dir = s.skills_dir or str(python_root / "skills")
 
     return CompositeBackend(
         default=StateBackend(),
@@ -33,3 +33,8 @@ def build_main_backend() -> CompositeBackend:
             "/memories/": FilesystemBackend(root_dir=memory_dir),
         },
     )
+
+
+def build_main_backend() -> CompositeBackend:
+    """兼容旧调用点；新业务 agent 统一使用 build_agent_backend。"""
+    return build_agent_backend()

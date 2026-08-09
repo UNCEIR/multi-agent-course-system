@@ -1,12 +1,12 @@
 # parse_document
 
-**状态**: `stub` — `NotImplementedError`
+**状态**: `implemented` — Python 本地解析
 **Phase**: 1
 **类别**: `documents/*`
 
 ## 功能描述
 
-解析文档文件内容，支持 CSV/PDF/doc 三种格式。FastGPT KB 不可用时作为 Python 本地解析兜底。
+解析文档文件内容，支持 CSV/PDF/docx/txt/md。当前阶段不依赖 FastGPT。
 
 ## 输入参数
 

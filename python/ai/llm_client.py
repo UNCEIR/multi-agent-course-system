@@ -21,7 +21,10 @@ def build_chat_openai(
         streaming=streaming,
     )
     if task_name is not None:
-        llm = llm.with_config({"run_name": task_name.value})
+        # 用 pydantic 的 name 字段命名 trace（LangSmith 的 run name 取自
+        # get_name()），同时保持返回类型为 BaseChatModel——deepagents 无法
+        # 解析 with_config 产生的 RunnableBinding。
+        llm.name = task_name.value
     return llm
 
 
@@ -33,10 +36,10 @@ def build_tool_calling_llm(
     task_name: LLMTaskName | None = None,
 ) -> ChatOpenAI:
     llm = _create_chat_openai(temperature=temperature, max_tokens=max_tokens)
-    bound = llm.bind_tools(tools, tool_choice="auto")
     if task_name is not None:
-        bound = bound.with_config({"run_name": task_name.value})
-    return bound
+        # _ChatModelBinding.get_name() 委托给内部 bound，故在 bind 前命名。
+        llm.name = task_name.value
+    return llm.bind_tools(tools, tool_choice="auto")
 
 
 def _create_chat_openai(

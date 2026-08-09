@@ -1,5 +1,5 @@
 {
-  "user_id": "curl_test_user",
+  "user_id": "10001",
   "scene": "course_selection",
   "num_items": 6,
   "prompt": "我想上找得分高、是属于自然学科类的，偏人工智能的选修课，西校区优先",

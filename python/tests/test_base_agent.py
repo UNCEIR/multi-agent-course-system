@@ -15,7 +15,10 @@ class _TestAgent(BaseAgent):
         self._execute_fn = execute_fn or (lambda **kw: AgentResult(agent_name="test_agent", success=True))
 
     async def _execute(self, **kwargs):
-        return self._execute_fn(**kwargs)
+        result = self._execute_fn(**kwargs)
+        if asyncio.iscoroutine(result) or hasattr(result, "__await__"):
+            result = await result
+        return result
 
 
 class TestBaseAgent:
@@ -112,3 +115,28 @@ class TestBaseAgent:
 
         await agent.run()
         fallback_spy.assert_not_called()
+
+    @pytest.mark.unit
+    async def test_timeout_returns_fallback(self):
+        """单次 LLM 调用超时走 fallback（success=False）。"""
+        async def slow_execute(**kwargs):
+            await asyncio.sleep(0.2)
+            return AgentResult(agent_name="test_agent", success=True)
+
+        agent = _TestAgent(execute_fn=slow_execute, timeout=0.05, max_retries=1)
+        result = await agent.run()
+
+        assert result.success is False
+        assert result.confidence == 0.0
+
+    @pytest.mark.unit
+    async def test_execute_faster_than_timeout(self):
+        """执行快于 timeout 时正常返回成功结果。"""
+        async def fast_execute(**kwargs):
+            await asyncio.sleep(0.01)
+            return AgentResult(agent_name="test_agent", success=True)
+
+        agent = _TestAgent(execute_fn=fast_execute, timeout=0.5, max_retries=1)
+        result = await agent.run()
+
+        assert result.success is True

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .circuit_breaker import CircuitBreaker
+
 
 class ToolRegistry:
     """工具注册中心。
@@ -19,9 +21,12 @@ class ToolRegistry:
     Phase 1 为骨架，Phase 3 接入 MCP 动态发现。
     """
 
-    def __init__(self):
+    def __init__(self, *, failure_threshold: int = 3, recovery_timeout: float = 30.0):
         self._tools: dict[str, Any] = {}
         self._allowlist: set[str] = set()
+        self._breakers: dict[str, CircuitBreaker] = {}
+        self._failure_threshold = failure_threshold
+        self._recovery_timeout = recovery_timeout
 
     def register(self, tool: Any) -> None:
         """注册一个 tool。
@@ -32,6 +37,10 @@ class ToolRegistry:
         name = getattr(tool, "name", None) or tool.__name__
         self._tools[name] = tool
         self._allowlist.add(name)
+        self._breakers[name] = CircuitBreaker(
+            failure_threshold=self._failure_threshold,
+            recovery_timeout=self._recovery_timeout,
+        )
 
     def register_many(self, tools: list) -> None:
         """批量注册多个 tool。
@@ -69,6 +78,25 @@ class ToolRegistry:
     def is_allowed(self, name: str) -> bool:
         """检查 tool 是否在 allowlist 中。"""
         return name in self._allowlist
+
+    def call(self, name: str, *args, **kwargs) -> Any:
+        """通过对应熔断器调用已注册的 tool。
+
+        LangChain tool 使用 ``invoke``，普通 callable 直接调用；统一入口便于
+        API、subagent 和后续 MCP tool 共享失败计数。
+        """
+        tool = self._tools.get(name)
+        if tool is None:
+            raise KeyError(f"未注册工具：{name}")
+        target = getattr(tool, "invoke", tool)
+        invocation = lambda: target(*args, **kwargs)
+        return self._breakers[name].call(invocation)
+
+    def breaker_state(self, name: str) -> str:
+        """返回工具熔断器状态，便于健康检查和测试观察。"""
+        if name not in self._breakers:
+            raise KeyError(f"未注册工具：{name}")
+        return self._breakers[name].state
 
 
 # 全局单例

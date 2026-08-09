@@ -1,0 +1,36 @@
+{
+  "user_id": "3123003252",
+  "session_id": "kb-test-handbook",
+  "cases": [
+    {
+      "id": "handbook_001",
+      "question": "学生休学期间，是否享受在校学习学生的待遇？",
+      "expected_keywords": ["不享受", "保留其学籍", "休学"],
+      "expect_scope": "public"
+    },
+    {
+      "id": "handbook_002",
+      "question": "学生举行大型集会、游行、示威等活动，需要遵循什么程序？",
+      "expected_keywords": ["法律程序", "批准", "程序"],
+      "expect_scope": "public"
+    },
+    {
+      "id": "handbook_003",
+      "question": "学生应征参加中国人民解放军（含武警部队），学校应当保留其入学资格或学籍多长时间？",
+      "expected_keywords": ["保留其学籍", "退役后", "2 年"],
+      "expect_scope": "public"
+    },
+    {
+      "id": "handbook_004",
+      "question": "转专业的原则和条件是什么？",
+      "expected_keywords": ["转专业", "公开", "公平", "兴趣"],
+      "expect_scope": "public"
+    },
+    {
+      "id": "handbook_005",
+      "question": "学生因故不能按时注册需要什么手续？",
+      "expected_keywords": ["请假", "暂缓注册"],
+      "expect_scope": "public"
+    }
+  ]
+}

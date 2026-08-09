@@ -172,6 +172,22 @@ class ReactToolExecutor:
         method = getattr(self, f"_tool_{tool_name}", None)
         if not method:
             return f"Unknown tool: {tool_name}"
+        # 防重复工具：已完成的关键步骤直接跳过，避免重复召回/重复重排
+        already_done = {
+            "search_courses": self.state.recall_done,
+            "filter_hard_constraints": self.state.hard_filtered,
+            "rerank_courses": self.state.rerank_done,
+            "check_feasibility": self.state.feasibility_done,
+            "generate_reasons": self.state.reasons_done,
+            "extract_profile": self.state.profile_extracted,
+        }
+        if already_done.get(tool_name) and tool_name != "search_courses":
+            return f"Tool {tool_name} already executed, skipping."
+        if tool_name == "search_courses":
+            # search_courses 允许 wide/refined 两次（不同策略），但同策略不重复
+            strategy = (tool_args or {}).get("strategy", "wide")
+            if strategy == "refined" and not self.state.profile_extracted:
+                return "Search(wide) already executed; refined requires profile first."
         try:
             result = await method(**tool_args)
             return result
@@ -292,3 +308,35 @@ class ReactToolExecutor:
         self.state.reasons = reasons
         self.state.reasons_done = True
         return f"Generated {len(reasons)} recommendation reasons."
+
+    async def execute_rerank_on_snapshot(self, courses: list, num_items: int = 10) -> dict:
+        """B 组并行：在快照上执行重排，不写共享 state.courses。
+
+        Returns: {"course_ids": [...], "strategy": str}
+        """
+        result = await self.supervisor.course_rerank_agent.run(
+            student_profile=self.state.profile,
+            candidates=courses,
+            num_items=num_items,
+        )
+        ranked = getattr(result, "courses", courses) or courses
+        return {
+            "course_ids": [c.course_id for c in ranked],
+            "strategy": getattr(result, "rerank_strategy", ""),
+        }
+
+    async def execute_feasibility_on_snapshot(self, courses: list) -> dict:
+        """B 组并行：在快照上做可行性检查，不写共享 state.courses。
+
+        Returns: {"available_ids": [...], "warnings": [...], "priority_advice": {...}}
+        """
+        result = await self.supervisor.course_feasibility_agent.run(
+            student_profile=self.state.profile,
+            courses=courses,
+            context=self.context,
+        )
+        return {
+            "available_ids": list(getattr(result, "available_courses", [])),
+            "warnings": getattr(result, "selection_warnings", []),
+            "priority_advice": getattr(result, "priority_advice", {}),
+        }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from abc import ABC, abstractmethod
 from inspect import isawaitable
@@ -52,7 +53,9 @@ class BaseAgent(ABC):
             reraise=True,
         )
         async def _inner():
-            result = await self._execute(**kwargs)
+            # 单次 LLM 调用超时兜底：超过 self.timeout 抛 TimeoutError，
+            # 由 run() 捕获后走 _fallback（规则/启发式兜底），避免单次调用卡死。
+            result = await asyncio.wait_for(self._execute(**kwargs), timeout=self.timeout)
             if isawaitable(result):
                 result = await result
             return result

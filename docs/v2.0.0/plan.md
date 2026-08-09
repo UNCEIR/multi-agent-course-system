@@ -4,6 +4,33 @@
 >
 > 维护：本文件只记 Phase 级概要与索引，决策细节变更请同步 `notes/` 与对应 Phase 详细 plan。
 
+## 当前执行边界（2026-08-08）
+
+- 当前优先交付统一的 deepagent 工厂：所有业务 Agent 都通过 `python/agent/main/factory.py` 创建，再由场景规格注入各自的 system prompt、skills、memory、工具 allowlist 和 checkpointer。
+- 当前阶段完全不接入 FastGPT、FastGPT MCP、FastGPT client 或 FastGPT Compose 服务；相关旧计划内容保留为后续阶段背景，不作为当前编码任务或验收条件。
+- 当前阶段不为通过旧测试而回退业务设计；测试应验证统一工厂和业务场景契约，不能要求 report/evaluation/PPT Agent 继续保持 `NotImplementedError` 占位行为。
+- 已落地知识库 RAG（学生手册 public 分区 + 个人成绩单 user 分区）：`query_knowledge` 工具、`document_vector_repo`/`document_repo`、脱敏器、recursive 分块、`scripts/ingest_student_handbook.py`、`scripts/ingest_transcript_desensitized.py`。
+- 推荐接口已收敛：v1 遗留端点（同步 `/api/v1/recommend`、`/recommend/react`、`/recommend/react/stream`、`/recommend/graph`）删除，统一为 `POST /api/v1/recommend/stream`（默认并行 Pipeline 最快，`mode=react` 走 ReAct 可选）。`recommend_courses` 工具内部走同一 `supervisor.stream_recommend_unified`，与前端入口同源。
+
+## RAG 核心评估指标（LangSmith，待端测定基线）
+
+> 这些指标依赖真实端到端测试收集数据后才能定阈值与优化方向；当前仅记录为验收与监控目标，指标埋点后续 Phase 落地。
+
+| 指标 | 定义 | 目标 | 采集方式 |
+|---|---|---|---|
+| **上下文召回率 (Context Recall)** | 检索返回的 top-k 片段中，包含回答所需关键事实的比例 | 待端测定基线（初始目标 ≥0.7） | LangSmith trace 记录 query → 检索 hits → 回答；标注集标注"应命中的 chunk" |
+| **忠诚度 (Faithfulness/Groundedness)** | 回答中的陈述是否都能由检索到的片段支持（无幻觉/无源编造） | 待端测定基线（初始目标 ≥0.8） | 逐句核对回答陈述是否在检索片段中有依据；LangSmith rubric 或人工标注 |
+| 辅助指标 | 检索延迟 P50/P95、缓存命中率、LLM 生成延迟 | 记录分布，不设硬阈值 | `/metrics` + LangSmith |
+
+**优化策略（待端测后按数据驱动）**：top_k 调整、chunk 大小/overlap、混合检索（BM25+向量）、索引参数（HNSW）、rerank、query 改写、prompt 输出约束。
+
+## 增量更新与旧知识干扰规避
+
+- **数据集粒度去旧**：`delete_by_dataset(dataset_id)` + `replace_chunks` 以 dataset 为单位整体替换，重跑摄入即清理旧版本，避免新旧文档向量混杂。
+- **分区隔离**：手册 public / 成绩单 user 分区互不干扰；个人数据不进入共享检索。
+- **版本号**：dataset_id 带内容 hash（如 `handbook_2025_<hash>`），内容变化 → 新 hash → 新 dataset，旧版按需删除。
+- **增量建议**：定期重跑 `ingest_student_handbook.py`（幂等去旧）；新增文档走 `documents/upload` 同 pipeline。
+
 ## 背景
 
 - **v1.0.0 现状**：学校公选课 Multi-Agent 推荐系统已工作（固定 Pipeline + ReAct 双模式、SupervisorOrchestrator、MySQL+Milvus+Redis、7 个 ReAct 工具、A/B 实验）。本质是"一个推荐接口 + 简陋 RAG"，多 agent 活性不足、项目深度不够。

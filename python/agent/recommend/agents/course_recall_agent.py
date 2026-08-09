@@ -35,15 +35,29 @@ class CourseRecallAgent(BaseAgent):
         query = (prompt or context.get("query") or "").strip()
         query_embedding: list[float] | None = None
         if query:
-            try:
-                query_embedding = self.vector_repo.embedding_client.embed_text(query)
-                self.logger.info(
-                    "course_recall.query_embedded",
-                    query_len=len(query),
-                    embedding_dim=len(query_embedding),
-                )
-            except Exception as exc:
-                self.logger.warning("course_recall.query_embedding_failed", error=str(exc), query_len=len(query))
+            # 请求级 embedding 复用：同用户同 query 只 embed 一次（wide/refined 共享）
+            from agent.main.context import get_embedding_cache, get_embedding_lock, set_embedding_cache
+
+            cached = get_embedding_cache(query)
+            if cached:
+                query_embedding = cached
+                self.logger.info("course_recall.query_embedding_cached", query_len=len(query))
+            else:
+                try:
+                    async with get_embedding_lock():
+                        cached = get_embedding_cache(query)
+                        if cached:
+                            query_embedding = cached
+                        else:
+                            query_embedding = self.vector_repo.embedding_client.embed_text(query)
+                            set_embedding_cache(query, query_embedding)
+                    self.logger.info(
+                        "course_recall.query_embedded",
+                        query_len=len(query),
+                        embedding_dim=len(query_embedding),
+                    )
+                except Exception as exc:
+                    self.logger.warning("course_recall.query_embedding_failed", error=str(exc), query_len=len(query))
         cache_context = self.cache_key_builder.build_context(profile=profile, prompt=query, context=context)
         cache_key = cache_context.cache_key
         self.logger.info(

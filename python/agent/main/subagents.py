@@ -1,33 +1,38 @@
 # -*- coding: utf-8 -*-
-"""Subagent 工厂占位 — Phase 2/3 实装后替换为真实实现。
-
-当前返回 stub + NotImplementedError，保持主 agent 可编译。
-"""
+"""业务场景 Agent 工厂入口。"""
 
 from __future__ import annotations
 
 from typing import Any
 
-
-def build_report_subagent() -> Any:
-    """成绩统计报告 subagent — Phase 2 实装。
-
-    功能：批量 Excel → 单科 JSON → 学生 JSON → 加权复合统计 → HTML→PDF。
-    """
-    raise NotImplementedError("build_report_subagent: Phase 2 实装")
-
-
-def build_evaluation_agent() -> Any:
-    """评价寄语 subagent — Phase 2 实装。
-
-    功能：studentList JSON → comment_type 四种驱动 → LLM 生成 comment。
-    """
-    raise NotImplementedError("build_evaluation_agent: Phase 2 实装")
+from .factory import build_deep_agent
+from .specs import (
+    EVALUATION_AGENT_SPEC,
+    PPT_AGENT_SPEC,
+    RECOMMENDATION_AGENT_SPEC,
+    REPORT_AGENT_SPEC,
+)
 
 
-def build_ppt_agent() -> Any:
-    """PPT 生成 subagent — Phase 3 实装。
+async def build_recommendation_agent(tools: list[Any] | None = None):
+    """创建课程推荐场景 Agent。"""
+    return await build_deep_agent(RECOMMENDATION_AGENT_SPEC, tools=tools)
 
-    功能：参考 OpenMAIC，DSL→PPTX 渲染管线。
-    """
-    raise NotImplementedError("build_ppt_agent: Phase 3 实装")
+
+async def build_report_agent(tools: list[Any] | None = None):
+    """创建成绩报告场景 Agent。"""
+    return await build_deep_agent(REPORT_AGENT_SPEC, tools=tools)
+
+
+async def build_evaluation_agent(tools: list[Any] | None = None):
+    """创建评价寄语场景 Agent。"""
+    return await build_deep_agent(EVALUATION_AGENT_SPEC, tools=tools)
+
+
+async def build_ppt_agent(tools: list[Any] | None = None):
+    """创建课程小组 PPT 场景 Agent。"""
+    return await build_deep_agent(PPT_AGENT_SPEC, tools=tools)
+
+
+# 旧名称保留为显式别名，避免调用方把 evaluation 场景误认为通用 subagent。
+build_report_subagent = build_report_agent

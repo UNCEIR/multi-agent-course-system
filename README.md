@@ -112,7 +112,7 @@ curl http://localhost:8000/health
 ```
 
 ```powershell
-curl.exe -sS -X POST "http://localhost:8000/api/v1/recommend" `
+curl.exe -sS -X POST "http://localhost:8000/api/v1/recommend/stream" `
   -H "Content-Type: application/json" `
   --data-binary "@python/scripts/curl_recommend_payload.json"
 ```
@@ -274,9 +274,7 @@ Chunk 类型：`basic`、`schedule_capacity`、`learning_profile`、`audience_ta
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `POST` | `/api/v1/recommend` | 同步推荐（主链路） |
-| `POST` | `/api/v1/recommend/stream` | SSE 流式（`phase15_complete`、逐课理由 token） |
-| `POST` | `/api/v1/recommend/graph` | LangGraph 演示链路 |
+| `POST` | `/api/v1/recommend/stream` | 统一流式推荐入口（默认并行 Pipeline，可选 ReAct；`phase`/`text`/`done` 事件） |
 | `GET` | `/api/v1/metrics` | Agent / 业务指标 |
 | `GET` | `/api/v1/experiments` | 实验状态 |
 | `POST` | `/api/v1/experiments/{id}/outcome` | 记录实验结果 |
@@ -313,7 +311,7 @@ Chunk 类型：`basic`、`schedule_capacity`、`learning_profile`、`audience_ta
 | `AGENTS.md` | 环境、测试、架构要点（开发必读） |
 | `docs/architecture.md` | 系统架构 |
 | `docs/code-walkthrough.md` | 代码导读 |
-| `docs/notes/` | 迭代复盘（硬约束、缓存、流式、导入等） |
+| `docs/v2.0.0/notes/` | v2 设计决策与阶段复盘 |
 | `docs/interview-guide.md` | 面试讲法 |
 
 根目录 `docker-compose.yml`、Java/Go 为历史对照；公选课主链路以 `python/` + `docker-compose.python.yml` + `frontend/` 为准。

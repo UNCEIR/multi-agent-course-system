@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     app_name: str = "multi-agent-course-system"
     debug: bool = False
     llm_api_key: str = ""
-    llm_base_url: str = "https://one.zhique.cn/v1"
+    llm_base_url: str = ""
     llm_model: str = "deepseek-v4-flash"
     llm_temperature: float = 0.7
     llm_max_tokens: int = 4096
@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     milvus_uri: str = ""
     milvus_collection: str = "product_embeddings"
     course_milvus_collection: str = "course_chunks_real"
+    document_milvus_collection: str = "document_chunks"
     milvus_dimension: int = 1024
     milvus_metric_type: str = "COSINE"
     milvus_index_type: str = "AUTOINDEX"
@@ -72,11 +73,11 @@ class Settings(BaseSettings):
     ab_test_enabled: bool = True
     ab_test_default_bucket_count: int = 100
 
-    agent_timeout_user_profile: float = 5.0
-    agent_timeout_product_recall: float = 6.0
-    agent_timeout_product_rerank: float = 8.0
-    agent_timeout_marketing_copy: float = 10.0
-    agent_timeout_inventory: float = 5.0
+    agent_timeout_user_profile: float = 15.0
+    agent_timeout_product_recall: float = 10.0
+    agent_timeout_product_rerank: float = 15.0
+    agent_timeout_marketing_copy: float = 20.0
+    agent_timeout_inventory: float = 20.0
 
     # ── v2.0.0 主 Agent 记忆 / skill / checkpoint 配置 ─────────────────
     memory_dir: str = ""  # 长期记忆目录（AGENTS.md 所在目录，默认 <repo_root>/python/memories）

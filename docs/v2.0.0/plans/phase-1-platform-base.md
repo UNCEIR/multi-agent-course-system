@@ -6,6 +6,14 @@
 > 状态：待执行
 > 门控属性：**非 go/no-go 门**（Phase 0 已过）——子项失败走降级回退，不阻塞整体。
 
+> **当前执行修订（2026-08-08）**：本阶段以统一 deepagent 工厂、ToolRegistry、Python 本地文档解析/分块、v1 推荐 tool 包装和可测试的 `/documents/upload` 为验收范围。FastGPT、FastGPT MCP、FastGPT client、真实外部 KB 和 MySQL/Milvus 文档持久化不属于当前阶段验收条件，保留在后续阶段。
+
+## 当前验证记录
+
+- 已通过：统一 deepagent 场景工厂、ToolRegistry、异步 SQLite checkpointer、Skills/Memory backend 路由、v1 `recommend_courses` tool 委托、CSV 本地解析、确定性分块、`/api/v1/documents/upload` 本地 multipart 闭环。
+- 已通过：`cd python; python -m pytest tests/ -m "not slow" -q`，结果为 `95 passed, 4 deselected`。
+- 未纳入：FastGPT/MCP、真实 LLM 对话、外部 MySQL/Milvus 文档入库、报告/评价寄语/PPT 业务逻辑。
+
 ---
 
 ## 1. 目标与范围
