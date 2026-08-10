@@ -17,7 +17,7 @@
 - Coverage (`.coveragerc` present): `python -m pytest tests/ --cov --cov-report=term-missing`.
 - `pytest.ini` enables strict markers and auto asyncio; use the declared markers `unit`, `integration`, `slow`, `agent`, and `api` rather than inventing new ones.
 - Full or external-service tests may require LLM/database services; the `not slow` suite is the default verification target and mocks must avoid real LLM calls.
-- Import course data from `python/` with `python scripts/ingest_course_dataset.py --limit 20` before a full `python scripts/ingest_course_dataset.py`; use `python scripts/backfill_milvus_vectors.py` for missing vectors.
+- Import course data from `python/` with `python scripts/ingest_course_dataset.py --limit 20` before a full `python scripts/ingest_course_dataset.py`; the CSV source is `course_dataset_tools/output/course.csv` (`public_elective_courses.csv` is its pre-rename name). Use `python scripts/backfill_milvus_vectors.py` for missing vectors. Ingest strategy details for courses/handbook/transcript: `docs/v2.0.0/rag-ingest.md`.
 - Build the frontend with `cd frontend; npm ci; npm run build`; there are no frontend lint or test scripts. Use a Node version allowed by `frontend/package.json`.
 
 ## Environment And Services

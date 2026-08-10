@@ -1,6 +1,6 @@
 # 大学校园多智能体平台（University Campus Multi-Agent Platform）
 
-面向大学生校园场景的多智能体平台：学生用自然语言描述选课偏好完成公选课推荐，支持学生手册/个人成绩单知识库问答、成绩报告、评价寄语等校园业务。
+- 面向大学生校园场景的多智能体平台：学生用自然语言描述选课偏好完成公选课推荐，适用于学生手册/个人成绩单知识库问答、成绩报告、评价寄语，图片生成，网页搜索，PPT生成，编程，生成脑图等校园业务场景。
 
 ## 快速启动
 
@@ -101,7 +101,7 @@ python scripts/ingest_course_dataset.py --limit 20   # 先验证
 python scripts/ingest_course_dataset.py            # 全量约 500 门 × 4 chunk
 ```
 
-数据源：`course_dataset_tools/output/public_elective_courses.csv` → MySQL + Milvus。
+数据源：`course_dataset_tools/output/course.csv` → MySQL + Milvus。
 
 Milvus 向量缺失时可用 `python/scripts/backfill_milvus_vectors.py` 按 MySQL 差异补数。
 

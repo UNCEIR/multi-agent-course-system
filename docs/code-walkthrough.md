@@ -425,7 +425,7 @@
 
 把课程 CSV 变成可召回数据：
 
-1. 读取 `public_elective_courses.csv`。
+1. 读取 `course.csv`。
 2. 确保 MySQL schema。
 3. 写入 `course_records`。
 4. 构建四类 chunk。

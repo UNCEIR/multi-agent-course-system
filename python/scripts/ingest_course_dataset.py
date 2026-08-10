@@ -14,7 +14,7 @@ from storage import CourseRepository, CourseVectorRepository
 from ai import LLMTaskName, build_embedding_client
 
 
-DEFAULT_CSV = Path(__file__).resolve().parents[2] / "course_dataset_tools" / "output" / "public_elective_courses.csv"
+DEFAULT_CSV = Path(__file__).resolve().parents[2] / "course_dataset_tools" / "output" / "course.csv"
 
 
 # region agent log
