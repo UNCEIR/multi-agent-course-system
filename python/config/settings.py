@@ -19,7 +19,7 @@ def _env_file_candidates() -> tuple[str, ...] | str:
 
 
 class Settings(BaseSettings):
-    app_name: str = "multi-agent-course-system"
+    app_name: str = "mult-agent-university-system"
     debug: bool = False
     llm_api_key: str = ""
     llm_base_url: str = ""
@@ -97,7 +97,7 @@ class Settings(BaseSettings):
 
     langchain_endpoint: str = "https://api.smith.langchain.com"
     langchain_tracing_v2: bool = True
-    langchain_project: str = "multi-agent-course-system"
+    langchain_project: str = "mult-agent-university-system"
 
   
     model_config = SettingsConfigDict(

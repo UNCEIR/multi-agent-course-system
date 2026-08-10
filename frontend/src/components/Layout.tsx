@@ -99,7 +99,7 @@ export default function Layout() {
               whiteSpace: 'nowrap',
             }}
           >
-            公选课多Agent推荐系统
+            大学校园多智能体平台
           </span>
         </div>
 

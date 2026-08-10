@@ -14,6 +14,7 @@
 
 - Create the environment with `python -m venv .venv` and install backend dependencies with `python -m pip install -r python/requirements.txt`.
 - Run the focused backend suite with `cd python; python -m pytest tests/test_file.py -v`; run the normal local suite with `python -m pytest tests/ -m "not slow" -v`.
+- Coverage (`.coveragerc` present): `python -m pytest tests/ --cov --cov-report=term-missing`.
 - `pytest.ini` enables strict markers and auto asyncio; use the declared markers `unit`, `integration`, `slow`, `agent`, and `api` rather than inventing new ones.
 - Full or external-service tests may require LLM/database services; the `not slow` suite is the default verification target and mocks must avoid real LLM calls.
 - Import course data from `python/` with `python scripts/ingest_course_dataset.py --limit 20` before a full `python scripts/ingest_course_dataset.py`; use `python scripts/backfill_milvus_vectors.py` for missing vectors.
@@ -45,6 +46,7 @@
 - The knowledge base is stored in Milvus `document_chunks` (schema with `user_id` partition key). Public knowledge (student handbook) uses `user_id=public`; personal data (transcript) uses per-user partitions and is only retrievable by the owner.
 - Ingestion pipeline: parse (pypdf, pymupdf fallback for tables) → NFKC normalize → desensitize personal docs (name→`[姓名]`, student ID masked, class→grade, date→year; course names/credits/scores kept for owner queries) → recursive chunking (heading-aware + Chinese separators) → embed → upsert Milvus + MySQL metadata.
 - Run `python scripts/ingest_student_handbook.py` from `python/` for the handbook (public); `python scripts/ingest_transcript_desensitized.py --user-id <id> --name <姓名>` for a personal transcript. `--embedding local` does a quota-free smoke test.
+- Smoke-test KB answers end-to-end (needs a running API) with `python scripts/run_kb_test.py scripts/kb_test_transcript.json`; keyword hit/redact cases are in `kb_test_*.json`. The runtime upload path is `POST /api/v1/documents/upload` (multipart `file` + `dataset_name`, `chunk_strategy`), served by `agent/documents/service.py`.
 - Re-ingestion is idempotent: `DocumentVectorRepository.delete_by_dataset` + `DocumentRepository.replace_chunks` replace the whole dataset, so old knowledge does not linger alongside new.
 - Agents answer knowledge questions via the `query_knowledge` tool (retrieves `public + current user` partitions); answers must cite `source_doc_name`/`page_number` and must not fabricate when retrieval is empty.
 - LangSmith RAG quality gates (context recall, faithfulness) are defined in `docs/v2.0.0/plan.md`; baselines require real end-to-end measurement before tuning top_k/chunking/rerank.

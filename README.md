@@ -1,6 +1,6 @@
-# 学校公选课 Multi-Agent 推荐系统
+# 大学校园多智能体平台（University Campus Multi-Agent Platform）
 
-学生用自然语言描述选课偏好，系统从约 500 门公选课中完成召回、硬约束过滤、排序、风险检查与可解释推荐。
+面向大学生校园场景的多智能体平台：学生用自然语言描述选课偏好完成公选课推荐，支持学生手册/个人成绩单知识库问答、成绩报告、评价寄语等校园业务。
 
 ## 快速启动
 
@@ -314,4 +314,4 @@ Chunk 类型：`basic`、`schedule_capacity`、`learning_profile`、`audience_ta
 | `docs/v2.0.0/notes/` | v2 设计决策与阶段复盘 |
 | `docs/interview-guide.md` | 面试讲法 |
 
-根目录 `docker-compose.yml`、Java/Go 为历史对照；公选课主链路以 `python/` + `docker-compose.python.yml` + `frontend/` 为准。
+根目录 `docker-compose.yml`、Java/Go 为历史对照；大学校园多智能体平台主链路以 `python/` + `docker-compose.yml` + `frontend/` 为准。

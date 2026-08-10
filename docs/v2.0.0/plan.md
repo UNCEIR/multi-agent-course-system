@@ -33,7 +33,7 @@
 
 ## 背景
 
-- **v1.0.0 现状**：学校公选课 Multi-Agent 推荐系统已工作（固定 Pipeline + ReAct 双模式、SupervisorOrchestrator、MySQL+Milvus+Redis、7 个 ReAct 工具、A/B 实验）。本质是"一个推荐接口 + 简陋 RAG"，多 agent 活性不足、项目深度不够。
+- **v1.0.0 现状**：公选课推荐系统（大学校园多智能体平台的前身）已工作（固定 Pipeline + ReAct 双模式、SupervisorOrchestrator、MySQL+Milvus+Redis、7 个 ReAct 工具、A/B 实验）。本质是"一个推荐接口 + 简陋 RAG"，多 agent 活性不足、项目深度不够。
 - **v2.0.0 愿景**（见 `需求.md`）：新业务广度 + 知识库基础设施 + Agent 工程深度 + Skills 系统 + 跨语言 + 框架选型。
 - **目标**：先建平台基座，用"成绩单报告 + 评价寄语"两个学生场景验证。
 

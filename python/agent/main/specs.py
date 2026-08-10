@@ -23,6 +23,7 @@ class AgentSpec:
     temperature: float = 0.1
     max_tokens: int = 2048
     enable_compaction: bool = True
+    streaming: bool = True
 
 
 MAIN_AGENT_SPEC = AgentSpec(
@@ -32,6 +33,9 @@ MAIN_AGENT_SPEC = AgentSpec(
     # 主 agent 只暴露已实装且面向对话的工具。
     # 推荐原子工具（extract_profile 等 7 个）不暴露，避免它逐个串行调用变慢；
     # 推荐统一走 recommend_courses 一键工具（mode=pipeline，内部并行）。
+    # streaming=True：让 /chat/stream 能透出 on_chat_model_stream token 事件；
+    # 否则 deepagents 按 stream_mode="updates" 聚合，stream 端点只能拿到空 reply。
+    streaming=True,
     allowed_tools=(
         "list_available_skills",
         "get_current_time",
@@ -48,7 +52,6 @@ MAIN_AGENT_SPEC = AgentSpec(
         
     ),
 )
-
 RECOMMENDATION_AGENT_SPEC = AgentSpec(
     name="recommendation_agent",
     task_name=LLMTaskName.RECOMMEND_COURSES_TOOL,

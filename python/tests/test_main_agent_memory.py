@@ -67,7 +67,7 @@ def test_main_agent_prompt_and_memory_seed_exist():
     memory_file = repo_root / "python" / "memories" / "AGENTS.md"
     assert "课程推荐" in MAIN_AGENT_SYSTEM_PROMPT
     assert memory_file.is_file()
-    assert "学校公选课推荐系统" in memory_file.read_text(encoding="utf-8")
+    assert "大学校园多智能体平台" in memory_file.read_text(encoding="utf-8")
 
 
 def test_all_scenario_specs_have_isolated_context():

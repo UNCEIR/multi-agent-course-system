@@ -41,6 +41,7 @@ async def build_deep_agent(
     llm = build_chat_openai(
         temperature=spec.temperature,
         max_tokens=spec.max_tokens,
+        streaming=spec.streaming,
         task_name=spec.task_name,
     )
 

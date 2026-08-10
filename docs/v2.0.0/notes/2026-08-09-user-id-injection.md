@@ -32,5 +32,5 @@
 ## 经验与后续
 
 - **ContextVar + 端点包裹是最可靠穿透方式**；deepagents `AgentMiddleware.abefore_model` 不接收 config，`Runtime` 也无 config 属性，middleware 注入方案不可靠，最终放弃。
-- `astream_events` 的 `on_chat_model_stream` 在 chat/stream 上未透出 text 事件（deepagents 图以 `stream_mode="updates"` 聚合），chat/stream 目前只稳定产出 `done`；token 级透出待后续用 `astream(stream_mode="messages")` 处理，不阻塞 user_id 注入目标。
+- `astream_events` 的 `on_chat_model_stream` 在 chat/stream 上未透出 text 事件（deepagents 图以 `stream_mode="updates"` 聚合），chat/stream 目前只稳定产出 `done`；token 级透出待后续用 `astream(stream_mode="messages")` 处理，不阻塞 user_id 注入目标。**（2026-08-10 已修复**：`MAIN_AGENT_SPEC` 加 `streaming=True`，factory 透传后 `astream_events` 能产出 `on_chat_model_stream`，chat/stream 恢复 text 事件，不再空回复。见 `specs.py`/`factory.py`。）
 - 后续所有需要用户身份的工具/插件统一走 `get_current_user_id()`。

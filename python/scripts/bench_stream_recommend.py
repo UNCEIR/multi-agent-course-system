@@ -34,13 +34,13 @@ def flush_recall_cache() -> None:
 
     try:
         result = subprocess.run(
-            ["docker", "exec", "multi-agent-course-system-redis-1", "redis-cli", "KEYS", RECALL_PATTERN],
+            ["docker", "exec", "mult-agent-university-system-redis-1", "redis-cli", "KEYS", RECALL_PATTERN],
             capture_output=True, text=True, timeout=10,
         )
         keys = [k.strip() for k in result.stdout.strip().split("\n") if k.strip()]
         if keys:
             subprocess.run(
-                ["docker", "exec", "multi-agent-course-system-redis-1", "redis-cli", "DEL"] + keys,
+                ["docker", "exec", "mult-agent-university-system-redis-1", "redis-cli", "DEL"] + keys,
                 capture_output=True, timeout=10,
             )
             print(f"  flushed {len(keys)} redis recall keys")

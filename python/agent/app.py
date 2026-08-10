@@ -1,5 +1,5 @@
 """
-学校公选课 Multi-Agent 推荐系统 — FastAPI Entry Point
+大学校园多智能体平台 — FastAPI Entry Point
 
 Endpoints:
   POST /api/v1/chat               - 主 agent 统一会话（多轮对话 + 记忆管理 + 意图识别）
@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Public Elective Course Multi-Agent Recommendation System",
+    title="University Campus Multi-Agent Platform",
     description="学生画像Agent + 课程召回Agent + 课程重排Agent + 选课可行性Agent + 推荐理由Agent",
     version="1.0.0",
     lifespan=lifespan,

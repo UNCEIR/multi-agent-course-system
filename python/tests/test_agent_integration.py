@@ -32,7 +32,7 @@ class TestAgentRealIntegration:
         agents_md = self.memories_dir / "AGENTS.md"
         if not agents_md.exists():
             agents_md.write_text(
-                "# 项目记忆\n\n学校公选课推荐系统\n\n## 用户偏好\n（暂无）\n",
+                "# 项目记忆\n\n大学校园多智能体平台\n\n## 用户偏好\n（暂无）\n",
                 encoding="utf-8",
             )
 
