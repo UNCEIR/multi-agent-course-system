@@ -6,7 +6,6 @@ ToolRegistry 在 build_main_agent 之前初始化，确保主 agent 能从注册
 
 from __future__ import annotations
 
-import sqlite3
 from typing import Any
 
 import structlog
@@ -27,7 +26,6 @@ course_vector_repo: Any = None
 
 # v2.0.0 主 agent 单例
 main_agent: Any = None
-_main_checkpointer_conn: sqlite3.Connection | None = None
 
 # v2.0.0 ToolRegistry 单例
 tool_registry: Any = None
@@ -41,7 +39,7 @@ async def init() -> None:
     """初始化所有运行时单例。在 lifespan 启动时调用。"""
     global ab_engine, metrics_collector, supervisor
     global mysql_repo, redis_repo, course_vector_repo
-    global main_agent, _main_checkpointer_conn, tool_registry
+    global main_agent, tool_registry
     global document_vector_repo, document_repo
 
     from ai.embedding_client import build_embedding_client
@@ -116,23 +114,11 @@ async def init() -> None:
         logger.warning("runtime.init.documents_tools_not_available")
 
     # ── v2.0.0 主 agent（deepagents 记忆 + 意图识别 + 渐进式 skill） ──
+    # 主 agent 工具白名单由 MAIN_AGENT_SPEC.allowed_tools 声明（specs.py），
+    # factory 在 tools=None 时从 registry 按白名单取；此处不传 tools。
     from agent.main import build_main_agent
 
-    # 主 agent 只暴露已实装且面向对话的工具。
-    # 推荐原子工具（extract_profile 等 7 个）不暴露给主 agent，避免它逐个串行调用变慢；
-    # 推荐统一走 recommend_courses 一键工具（mode=pipeline，内部并行）。
-    _main_agent_allowed = [
-        "list_available_skills",
-        "get_current_time",
-        "recommend_courses",
-        "query_knowledge",
-        "parse_document",
-        "chunk_document",
-    ]
-    main_agent = await build_main_agent(tools=tool_registry.get_all(allowed=_main_agent_allowed))
-    # 保存 sqlite conn 引用以便 shutdown 时关闭
-    # AsyncSqliteSaver 内部管理连接池，无需手动关闭
-    _main_checkpointer_conn = None
+    main_agent = await build_main_agent()
 
     logger.info(
         "runtime.init",
@@ -144,15 +130,10 @@ async def init() -> None:
 
 
 def shutdown() -> None:
-    """清理运行时资源。在 lifespan 关闭时调用。"""
-    global _main_checkpointer_conn
+    """清理运行时资源。在 lifespan 关闭时调用。
 
-    if _main_checkpointer_conn is not None:
-        try:
-            _main_checkpointer_conn.close()
-            logger.info("runtime.shutdown.checkpointer_closed")
-        except Exception:
-            logger.exception("runtime.shutdown.checkpointer_close_error")
-        _main_checkpointer_conn = None
-
+    当前无外部连接需显式关闭：AsyncSqliteSaver 内部管理连接池，
+    MySQL/Redis/Milvus/embedding 客户端由进程退出时回收。
+    若未来引入需要显式关闭的资源（如长连接池），在此补充。
+    """
     logger.info("runtime.shutdown")

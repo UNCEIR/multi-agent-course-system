@@ -42,7 +42,7 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    _assert_llm_config()
+    _assert_startup_config()
     await runtime.init()
     llm_parsed = urlparse(settings.llm_base_url)
     logger.info(
@@ -76,7 +76,7 @@ app.include_router(chat.router)
 app.include_router(documents.router)
 
 
-def _assert_llm_config() -> None:
+def _assert_startup_config() -> None:
     required = {
         "LLM_API_KEY": settings.llm_api_key,
         "LLM_BASE_URL": settings.llm_base_url,
@@ -85,6 +85,27 @@ def _assert_llm_config() -> None:
     missing = [name for name, value in required.items() if not str(value).strip()]
     if missing:
         raise RuntimeError(f"Missing required LLM env vars: {', '.join(missing)}")
+
+    provider = settings.embedding_provider.strip().lower()
+    if provider not in ("local", "openai", "dashscope_multimodal"):
+        raise RuntimeError(
+            f"Unsupported EMBEDDING_PROVIDER: {settings.embedding_provider!r} "
+            "(expected local/openai/dashscope_multimodal)"
+        )
+    if provider != "local":
+        missing_emb = [
+            name
+            for name, value in {
+                "EMBEDDING_API_KEY": settings.embedding_api_key,
+                "EMBEDDING_MODEL": settings.embedding_model,
+            }.items()
+            if not str(value).strip()
+        ]
+        if missing_emb:
+            raise RuntimeError(
+                f"Missing required embedding env vars for provider {provider!r}: "
+                + ", ".join(missing_emb)
+            )
 
 
 if __name__ == "__main__":

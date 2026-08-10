@@ -29,6 +29,24 @@ MAIN_AGENT_SPEC = AgentSpec(
     name="main_agent",
     task_name=LLMTaskName.MAIN_AGENT_ROUTER,
     system_prompt=MAIN_AGENT_SYSTEM_PROMPT,
+    # 主 agent 只暴露已实装且面向对话的工具。
+    # 推荐原子工具（extract_profile 等 7 个）不暴露，避免它逐个串行调用变慢；
+    # 推荐统一走 recommend_courses 一键工具（mode=pipeline，内部并行）。
+    allowed_tools=(
+        "list_available_skills",
+        "get_current_time",
+        "recommend_courses",
+        "query_knowledge",
+        "parse_document",
+        "chunk_document",
+        "writing_assistant",
+        "web_search",
+        "image_generate",
+        "code_interpreter",
+        "mindmap_generator",
+        "compute_weighted_grade",
+        
+    ),
 )
 
 RECOMMENDATION_AGENT_SPEC = AgentSpec(

@@ -7,45 +7,9 @@ making them usable via LLM tool/function calling.
 
 from __future__ import annotations
 
-from typing import Any, Literal
-
-from pydantic import BaseModel, Field
+from typing import Any
 
 from models.schemas import Course, StudentProfile
-
-
-class HardConstraintArgs(BaseModel):
-    """Parameters for filter_hard_constraints tool. This tool is MANDATORY."""
-    courses: list[str] = Field(description="List of course IDs to apply hard constraint filtering to")
-
-
-class SearchCoursesArgs(BaseModel):
-    """Parameters for search_courses tool."""
-    strategy: Literal["wide", "refined"] = Field(
-        description="'wide' for broad vector search, 'refined' for profile-aware structured search"
-    )
-
-
-class RerankCoursesArgs(BaseModel):
-    """Parameters for rerank_courses tool."""
-    courses: list[str] = Field(description="List of course IDs to rerank")
-    num_items: int = Field(default=10, description="Number of courses to return")
-
-
-class CheckFeasibilityArgs(BaseModel):
-    """Parameters for check_feasibility tool."""
-    courses: list[str] = Field(description="List of course IDs to check feasibility for")
-
-
-class GenerateReasonsArgs(BaseModel):
-    """Parameters for generate_reasons tool."""
-    courses: list[str] = Field(description="List of course IDs to generate reasons for")
-
-
-class SemanticFilterArgs(BaseModel):
-    """Parameters for semantic_filter_courses tool."""
-    courses: list[str] = Field(description="List of course IDs to filter semantically")
-    target_count: int = Field(default=40, description="Target number of courses to keep")
 
 
 # Tool definitions for bind_tools

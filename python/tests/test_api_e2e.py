@@ -118,7 +118,6 @@ def mock_runtime_and_app(mock_full_settings):
     mock_runtime.main_agent = mock_agent
     # v1 单例也需要 mock 避免 runtime.init() 出错
     mock_runtime.supervisor = MagicMock()
-    mock_runtime.rec_graph = MagicMock()
     mock_runtime.mysql_repo = MagicMock()
     # redis_repo.ping() 是 async 方法，需要 AsyncMock 或 async 函数
     mock_redis = MagicMock()
