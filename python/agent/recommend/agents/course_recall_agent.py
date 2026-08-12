@@ -157,7 +157,8 @@ class CourseRecallAgent(BaseAgent):
                     confidence=0.87,
                 )
 
-        db_candidates = self.course_repo.fetch_courses(
+        db_candidates = await asyncio.to_thread(
+            self.course_repo.fetch_courses,
             limit=max(num_items * 8, 40),
             domains=profile.preferred_domains if profile else None,
             categories=profile.preferred_categories if profile else None,
@@ -178,7 +179,7 @@ class CourseRecallAgent(BaseAgent):
             semantic_ids, semantic_distances, semantic_status = self._semantic_course_ids(
                 query, limit=num_items * 5, query_embedding=query_embedding
             )
-            semantic_courses = self.course_repo.fetch_courses_by_ids(semantic_ids)
+            semantic_courses = await asyncio.to_thread(self.course_repo.fetch_courses_by_ids, semantic_ids)
             id_to_distance = dict(zip(semantic_ids, semantic_distances))
             for course in semantic_courses:
                 distance = id_to_distance.get(course.course_id, 1.0)
@@ -266,7 +267,7 @@ class CourseRecallAgent(BaseAgent):
                 cache_key_suffix=self._cache_key_suffix(cache_key),
             )
             return []
-        courses = self.course_repo.fetch_courses_by_ids(cached_ids)
+        courses = await asyncio.to_thread(self.course_repo.fetch_courses_by_ids, cached_ids)
         if not courses:
             self.logger.warning(
                 "course_recall.cache_ids_stale",

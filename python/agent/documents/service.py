@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from pathlib import Path
 from typing import Any
@@ -100,7 +101,8 @@ class DocumentIngestionService:
             self.vector_repo.upsert_chunks(vector_chunks)
 
         if self.document_repo is not None:
-            self.document_repo.create_dataset(
+            await asyncio.to_thread(
+                self.document_repo.create_dataset,
                 dataset_id=dataset_id,
                 dataset_name=dataset_name,
                 source_doc_name=filename,
@@ -122,7 +124,7 @@ class DocumentIngestionService:
                 }
                 for idx, chunk in enumerate(chunks)
             ]
-            self.document_repo.replace_chunks(dataset_id, meta_chunks)
+            await asyncio.to_thread(self.document_repo.replace_chunks, dataset_id, meta_chunks)
 
         return {
             "dataset_id": dataset_id,

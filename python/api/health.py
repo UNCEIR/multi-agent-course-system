@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 from urllib.parse import urlparse
 
@@ -36,9 +37,9 @@ async def _health_payload() -> dict[str, Any]:
         "embedding_provider": settings.embedding_provider,
         "langsmith": get_tracing_status(),
         "deps": {
-            "mysql": runtime.mysql_repo.ping() if runtime.mysql_repo else False,
+            "mysql": await asyncio.to_thread(runtime.mysql_repo.ping) if runtime.mysql_repo else False,
             "redis": redis_ok,
-            "milvus": runtime.course_vector_repo.ping() if runtime.course_vector_repo else False,
+            "milvus": await asyncio.to_thread(runtime.course_vector_repo.ping) if runtime.course_vector_repo else False,
         },
     }
 

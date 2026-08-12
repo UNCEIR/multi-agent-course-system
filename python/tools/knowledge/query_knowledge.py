@@ -9,6 +9,7 @@ user_id 由系统统一注入（agent.main.context），不依赖 LLM 从对话�
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 from langchain_core.tools import tool
@@ -77,7 +78,7 @@ async def query_knowledge(query: str, top_k: int = 5) -> str:
     document_repo = getattr(runtime, "document_repo", None)
     if document_repo is not None:
         chunk_ids = [hit["chunk_id"] for hit in hits]
-        contents = document_repo.get_chunk_contents(chunk_ids)
+        contents = await asyncio.to_thread(document_repo.get_chunk_contents, chunk_ids)
 
     matches = []
     for idx, hit in enumerate(hits):

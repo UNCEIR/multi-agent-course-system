@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -138,7 +139,7 @@ async def filter_hard_constraints(profile_json: str, course_ids: list[str]) -> s
     from agent import runtime
 
     profile = _load_profile(profile_json)
-    courses = _hydrate_courses(course_ids)
+    courses = await asyncio.to_thread(_hydrate_courses, course_ids)
     if profile is None or not courses:
         return json.dumps({"course_ids": course_ids, "warnings": []}, ensure_ascii=False)
     filtered, _hc_filtered, hc_warnings = runtime.supervisor.hard_constraint_filter.filter(
@@ -157,12 +158,11 @@ async def filter_hard_constraints(profile_json: str, course_ids: list[str]) -> s
 @tool(args_schema=SemanticFilterCoursesInput)
 async def semantic_filter_courses(profile_json: str, course_ids: list[str], target_count: int = 40) -> str:
     """LLM 语义初筛候选课程（可选）。返回初筛后 course_id 列表。"""
-    import asyncio
 
     from agent import runtime
 
     profile = _load_profile(profile_json)
-    courses = _hydrate_courses(course_ids)
+    courses = await asyncio.to_thread(_hydrate_courses, course_ids)
     if profile is None or not courses:
         return json.dumps({"course_ids": course_ids}, ensure_ascii=False)
     try:
@@ -185,7 +185,7 @@ async def rerank_courses(profile_json: str, course_ids: list[str], num_items: in
     from agent import runtime
 
     profile = _load_profile(profile_json)
-    courses = _hydrate_courses(course_ids)
+    courses = await asyncio.to_thread(_hydrate_courses, course_ids)
     if not courses:
         return json.dumps({"course_ids": []}, ensure_ascii=False)
     result = await runtime.supervisor.course_rerank_agent.run(
@@ -205,7 +205,7 @@ async def check_feasibility(course_ids: list[str], context_json: str = "{}") -> 
     """容量/时间冲突/风险检查。返回可用 course_id 列表与 warnings。"""
     from agent import runtime
 
-    courses = _hydrate_courses(course_ids)
+    courses = await asyncio.to_thread(_hydrate_courses, course_ids)
     if not courses:
         return json.dumps({"course_ids": [], "warnings": []}, ensure_ascii=False)
     try:
@@ -231,7 +231,7 @@ async def generate_reasons(profile_json: str, course_ids: list[str], warnings_js
     from agent import runtime
 
     profile = _load_profile(profile_json)
-    courses = _hydrate_courses(course_ids)
+    courses = await asyncio.to_thread(_hydrate_courses, course_ids)
     if not courses:
         return json.dumps({"reasons": []}, ensure_ascii=False)
     try:
