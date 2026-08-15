@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <title>学业质量评价学生成绩报告单</title>
+  <style>
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0;
+    }
+
+    th,
+    td {
+      border: 1px solid #000;
+      padding: 8px;
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    th {
+      background-color: #f2f2f2;
+    }
+  </style>
+</head>
+
+<body>
+  <h2><span class="fill" data-slot="semester"></span></h2>
+  <h3>《南山区前海小学四五六年级学业质量评价学生成绩报告单》</h3>
+  <div class="info-line">
+    <span>班级：</span>
+    <span class="fill" data-slot="class|name"></span>
+    <span style="margin-left: 50px;">学生姓名：</span>
+    <span class="fill" data-slot="student|name"></span>
+  </div>
+
+  <!-- 道德与法治、语文、数学 -->
+  <table>
+    <tr>
+      <th colspan="4">道德与法治</th>
+      <th colspan="4">语文</th>
+      <th colspan="4">数学</th>
+    </tr>
+    
+    
+    
+    
+    
+    <tr><td colspan="1">过程性评价</td><td colspan="3"><span class="fill" data-slot="道德与法治|过程性评价|grade"></span></td><td colspan="1">过程性评价</td><td colspan="3"><span class="fill" data-slot="语文|过程性评价|grade"></span></td><td colspan="1">过程性评价</td><td colspan="3"><span class="fill" data-slot="数学|过程性评价|grade"></span></td></tr><tr><td rowspan="2">展示性评价（30%）</td><td>综合答辩</td><td colspan="2"><span class="fill" data-slot="道德与法治|综合答辩|grade"></span></td><td rowspan="2">展示性评价（30%）</td><td>综合答辩</td><td colspan="2"><span class="fill" data-slot="语文|综合答辩|grade"></span></td><td rowspan="2">展示性评价（30%）</td><td>综合答辩</td><td colspan="2"><span class="fill" data-slot="数学|综合答辩|grade"></span></td></tr><tr><td>学科实践</td><td colspan="2"><span class="fill" data-slot="道德与法治|学科实践|grade"></span></td><td>学科实践</td><td colspan="2"><span class="fill" data-slot="语文|学科实践|grade"></span></td><td>学科实践</td><td colspan="2"><span class="fill" data-slot="数学|学科实践|grade"></span></td></tr><tr><td>考试性评价（70%）</td><td>卷面成绩</td><td colspan="2"><span class="fill" data-slot="道德与法治|卷面成绩|grade"></span></td><td>考试性评价（70%）</td><td>卷面成绩</td><td colspan="2"><span class="fill" data-slot="语文|卷面成绩|grade"></span></td><td>考试性评价（70%）</td><td>卷面成绩</td><td colspan="2"><span class="fill" data-slot="数学|卷面成绩|grade"></span></td></tr><tr><td>综合性评价（100%）</td><td>期末总评</td><td colspan="2"><span class="fill" data-slot="道德与法治|期末总评|grade"></span></td><td>综合性评价（100%）</td><td>期末总评</td><td colspan="2"><span class="fill" data-slot="语文|期末总评|grade"></span></td><td>综合性评价（100%）</td><td>期末总评</td><td colspan="2"><span class="fill" data-slot="数学|期末总评|grade"></span></td></tr><tr>
+      <th colspan="4">英语</th>
+      <th colspan="4">科学</th>
+      <th colspan="4">社团</th>
+    </tr>
+    
+     
+    
+     
+    
+    <!-- 音乐、体育、美术 -->
+    <tr><td colspan="1">过程性评价</td><td colspan="3"><span class="fill" data-slot="英语|过程性评价|grade"></span></td><td colspan="1">过程性评价</td><td colspan="3"><span class="fill" data-slot="科学|过程性评价|grade"></span></td><td colspan="4"><span class="fill" data-slot="社团|课程名称|grade"></span></td></tr><tr><td rowspan="2">展示性评价（30%）</td><td>综合答辩</td><td colspan="2"><span class="fill" data-slot="英语|综合答辩|grade"></span></td><td rowspan="2">展示性评价（30%）</td><td>综合答辩</td><td colspan="2"><span class="fill" data-slot="科学|综合答辩|grade"></span></td><td rowspan="2" colspan="4"></td></tr><tr><td>学科实践</td><td colspan="2"><span class="fill" data-slot="英语|学科实践|grade"></span></td><td>学科实践</td><td colspan="2"><span class="fill" data-slot="科学|学科实践|grade"></span></td></tr><tr><td>考试性评价（70%）</td><td>卷面成绩</td><td colspan="2"><span class="fill" data-slot="英语|卷面成绩|grade"></span></td><td>考试性评价（70%）</td><td>卷面成绩</td><td colspan="2"><span class="fill" data-slot="科学|卷面成绩|grade"></span></td><td colspan="4"><span class="fill" data-slot="社团|综合评价|grade"></span></td></tr><tr><td>综合性评价（100%）</td><td>期末总评</td><td colspan="2"><span class="fill" data-slot="英语|期末总评|grade"></span></td><td>综合性评价（100%）</td><td>期末总评</td><td colspan="2"><span class="fill" data-slot="科学|期末总评|grade"></span></td><td rowspan="1" colspan="4"></td></tr><tr>
+      <th colspan="4">音乐</th>
+      <th colspan="4">体育</th>
+      <th colspan="4">美术</th>
+    </tr>
+    
+    
+    
+    
+
+     <tr><td colspan="2">过程性评价</td><td colspan="2"><span class="fill" data-slot="音乐|过程性评价|grade"></span></td><td colspan="2">过程性评价</td><td colspan="2"><span class="fill" data-slot="体育|过程性评价|grade"></span></td><td colspan="2">过程性评价</td><td colspan="2"><span class="fill" data-slot="美术|过程性评价|grade"></span></td></tr><tr><td rowspan="2">展示性评价</td><td>必选</td><td colspan="2"><span class="fill" data-slot="音乐|必选|grade"></span></td><td rowspan="2">展示性评价</td><td>必选</td><td colspan="2"><span class="fill" data-slot="体育|必选|grade"></span></td><td rowspan="2">展示性评价</td><td>必选</td><td colspan="2"><span class="fill" data-slot="美术|必选|grade"></span></td></tr><tr><td>自选</td><td colspan="2"><span class="fill" data-slot="音乐|自选|grade"></span></td><td>自选</td><td colspan="2"><span class="fill" data-slot="体育|自选|grade"></span></td><td>自选</td><td colspan="2"><span class="fill" data-slot="美术|自选|grade"></span></td></tr><tr><td colspan="3">综合性评价</td><td><span class="fill" data-slot="音乐|综合性评价|grade"></span></td><td colspan="3">综合性评价</td><td><span class="fill" data-slot="体育|综合性评价|grade"></span></td><td colspan="3">综合性评价</td><td><span class="fill" data-slot="美术|综合性评价|grade"></span></td></tr><tr>
+      <th colspan="4">信息</th>
+      <th colspan="4">劳动</th>
+      <th colspan="4">综实</th>
+    </tr>
+    
+    
+    
+    
+  </table>
+
+ 
+
+
+ <tr><td colspan="2">过程性评价</td><td colspan="2"><span class="fill" data-slot="信息|过程性评价|grade"></span></td><td colspan="2">过程性评价</td><td colspan="2"><span class="fill" data-slot="劳动|过程性评价|grade"></span></td><td colspan="2">过程性评价</td><td colspan="2"><span class="fill" data-slot="综实|过程性评价|grade"></span></td></tr><tr><td rowspan="2">展示性评价</td><td>必选</td><td colspan="2"><span class="fill" data-slot="信息|必选|grade"></span></td><td rowspan="2">展示性评价</td><td>必选</td><td colspan="2"><span class="fill" data-slot="劳动|必选|grade"></span></td><td rowspan="2">展示性评价</td><td>必选</td><td colspan="2"><span class="fill" data-slot="综实|必选|grade"></span></td></tr><tr><td>自选</td><td colspan="2"><span class="fill" data-slot="信息|自选|grade"></span></td><td>自选</td><td colspan="2"><span class="fill" data-slot="劳动|自选|grade"></span></td><td>自选</td><td colspan="2"><span class="fill" data-slot="综实|自选|grade"></span></td></tr><tr><td colspan="3">综合性评价</td><td><span class="fill" data-slot="信息|综合性评价|grade"></span></td><td colspan="3">综合性评价</td><td><span class="fill" data-slot="劳动|综合性评价|grade"></span></td><td colspan="3">综合性评价</td><td><span class="fill" data-slot="综实|综合性评价|grade"></span></td></tr>
+<div class="comment-section">
+  <h3>学生综合评价</h3>
+  <p class="fill" data-slot="comment"></p>
+</div>
+</body>
+</html>

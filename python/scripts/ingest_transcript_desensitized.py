@@ -38,7 +38,11 @@ def ingest(
     from ai.llm_task_name import LLMTaskName
     from storage.mysql.document_repo import DocumentRepository
     from tools.documents import chunk_document, parse_document
-    from tools.documents.desensitizer import build_pii_report, desensitize_transcript
+    from tools.documents.desensitizer import (
+        build_pii_report,
+        desensitize_transcript,
+        extract_transcript_courses,
+    )
 
     if not user_id.strip():
         raise ValueError("user_id 不能为空（成绩单必须归属某用户）")
@@ -54,6 +58,13 @@ def ingest(
     text = desensitize_transcript(raw, student_name=student_name)
 
     chunks = chunk_document.invoke({"text": text, "strategy": "recursive"})
+
+    # Phase 2（evaluation 数据基准）：结构化课程提取 → metadata_json
+    # （快照工具确定性直查；提取失败仅告警，不阻塞摄入）
+    courses = extract_transcript_courses(raw)
+    if not courses:
+        print(f"[WARNING] 成绩单结构化提取为空（格式可能不兼容）：{pdf_path}")
+    structured = {"user_id": user_id, "courses": courses}
 
     embedding_client = build_embedding_client(task_name=LLMTaskName.DOCUMENTS_UPLOAD)
     vector_repo = DocumentVectorRepository(embedding_client)
@@ -89,7 +100,7 @@ def ingest(
                 "chunk_type": "generic_fixed",
                 "content": chunk["text"],
                 "page_number": 0,
-                "metadata": {"user_id": user_id},
+                "metadata": structured,
             }
         )
     written = vector_repo.upsert_chunks(vector_chunks)

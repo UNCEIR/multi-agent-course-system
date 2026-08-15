@@ -1,0 +1,77 @@
+{
+  "date": "2026-08-15",
+  "set": "web_search",
+  "mode": "live",
+  "judge": false,
+  "metrics": {
+    "total": 5,
+    "passed": 5,
+    "pass_rate": 1.0,
+    "latency_p50": 878.7,
+    "latency_p95": 8907.0,
+    "context_recall_avg": null,
+    "context_precision_avg": null,
+    "by_difficulty": {
+      "easy": {
+        "total": 2,
+        "passed": 2
+      },
+      "medium": {
+        "total": 3,
+        "passed": 3
+      }
+    }
+  },
+  "results": [
+    {
+      "case_id": "ws_01",
+      "type": "web_search",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 8907.0,
+      "mode": "live"
+    },
+    {
+      "case_id": "ws_02",
+      "type": "web_search",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 1059.3,
+      "mode": "live"
+    },
+    {
+      "case_id": "ws_03",
+      "type": "web_search",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 878.7,
+      "mode": "live"
+    },
+    {
+      "case_id": "ws_04",
+      "type": "web_search",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 848.6,
+      "mode": "live"
+    },
+    {
+      "case_id": "ws_05",
+      "type": "web_search",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 858.4,
+      "mode": "live"
+    }
+  ]
+}

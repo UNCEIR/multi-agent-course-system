@@ -59,6 +59,47 @@ class CircuitBreaker:
             self._on_failure()
             raise
 
+    async def acall(self, awaitable_factory):
+        """熔断保护下执行 async 函数（工厂返回 coroutine）。
+
+        Args:
+            awaitable_factory: 返回 coroutine 的可调用对象
+
+        Raises:
+            RuntimeError: 熔断器处于 open 状态且未到恢复时间
+            Exception: coroutine 抛出的异常
+        """
+        if self._state == "open":
+            if time.time() - self._last_failure_time >= self._recovery_timeout:
+                self._state = "half_open"
+            else:
+                raise RuntimeError(f"CircuitBreaker is OPEN (failure_count={self._failure_count})")
+
+        try:
+            result = await awaitable_factory()
+            self._on_success()
+            return result
+        except Exception as e:
+            self._on_failure()
+            raise
+
+    def record_success(self) -> None:
+        """手动记录一次成功（MCP 工具返回 isError 结果时由调用方判定）。"""
+        self._on_success()
+
+    def record_failure(self) -> None:
+        """手动记录一次失败（连接/调用失败且不抛异常的路径）。"""
+        self._on_failure()
+
+    def can_proceed(self) -> bool:
+        """当前是否允许调用（open 且未到恢复时间 → False）。"""
+        if self._state == "open":
+            if time.time() - self._last_failure_time >= self._recovery_timeout:
+                self._state = "half_open"
+                return True
+            return False
+        return True
+
     def _on_success(self) -> None:
         """成功调用后的状态转换。"""
         if self._state == "half_open":

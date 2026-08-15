@@ -8,7 +8,7 @@ from config import get_settings
 from agent.recommend.agents.course_recall_agent import CourseRecallAgent
 from models.schemas import Course, StudentProfile
 
-# Embedding 维度跟随配置（中转站 text-embedding-v4，1024 维），避免维度变更时测试漏改。
+# Embedding 维度跟随配置（ text-embedding-v4，1024 维），避免维度变更时测试漏改。
 _EMBED_DIM = get_settings().embedding_dimension
 
 

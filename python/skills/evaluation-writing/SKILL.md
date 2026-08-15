@@ -1,40 +1,23 @@
 ---
 name: evaluation-writing
-description: 根据学生成绩数据和表现，生成个性化评价寄语（支持多种评语类型：学期总结、鼓励寄语、改进建议、升学推荐）。当用户需要生成评语、教师寄语、学生评价时使用。
-allowed_tools: [compute_weighted_grade]
+description: 根据学生成绩数据（知识库成绩单，user 分区隔离）生成个性化学业评价（雷达图评价体系 + 评语），教师端生成后同步学生端。当需要生成评语、教师寄语、学业评价时使用。
+allowed_tools: [get_academic_snapshot, design_dimensions, compute_radar_values, generate_comment]
 ---
 
-## 评价寄语生成流程
+## Description
+教师端学业评价生成：以知识库成绩单为数据基准 → 五层反幻觉管线（快照→维度提案→雷达数值→评语核验→兜底）→ 落库同步学生端。
 
-### 1. 识别触发场景
+## Trigger
+教师为指定学生生成评语/寄语/学业评价时激活。
 
-用户需求中出现以下关键词时调用本技能：
-
-- 评语：写评语、评价、寄语、教师评语、学期评语
-- 评价：评价学生、表现评价、综合素质
-- 类型：总结、鼓励、建议、推荐
-
-### 2. 执行步骤
-
-1. **确认评价类型**（comment_type）：
-   - `semester_summary`：学期总结评语
-   - `encouragement`：鼓励寄语
-   - `improvement_advice`：改进建议
-   - `recommendation`：升学/就业推荐信
-2. **获取学生数据**：确认用户提供 studentList JSON（含成绩、表现、教师主观评价）
-3. **调 `compute_weighted_grade` tool**（可选）：若需要基于成绩数据生成评语，先计算加权统计
-4. **LLM 生成评语**：
-   - 根据 comment_type 确定语气和长度
-   - 引用具体成绩和表现数据（数值引用文件）
-   - 个性化：结合学生姓名、课程特点、进步情况
-5. **呈现结果**：
-   - 展示生成的评语文本
-   - 支持用户修改意见后重新生成
-   - 支持批量生成（多名学生一次性生成）
-
-### 3. 注意事项
-
-- **数值引用文件**：评语中引用的成绩、排名必须是真实数据，不允许 LLM 编造
-- **评论类型四种**：不同类型对应不同语气和篇幅
-- **失败兜底**：LLM 生成失败时返回规则模板评语，确保不空返回
-- **批量处理**：多名学生时逐条生成，一条失败不影响其他学生
+## Architecture（按序加载）
+1. Rules（先读边界，再行动）：
+   - [Load Shared Rules: identity](../_shared/rules/identity.md)
+   - [Load Shared Rules: facts](../_shared/rules/facts.md)
+   - [Load Shared Rules: fallback](../_shared/rules/fallback.md)
+   - [Load Rules: anti-hallucination](./rules/anti-hallucination.md)
+2. Commands（按流程执行）：
+   - [Load Command: five-layer-pipeline](./commands/five-layer-pipeline.md)
+   - [Load Command: comment-types](./commands/comment-types.md)
+3. Scripts（编排序列示例，按需引用）：
+   - [Load Script: pipeline-sequence](./scripts/pipeline-sequence.md)

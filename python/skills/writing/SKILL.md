@@ -1,45 +1,21 @@
 ---
 name: writing
-description: 辅助学生完成论文写作、报告撰写、方案设计等写作任务，支持多体裁多风格。当用户需要写作帮助、论文润色、文档起草时使用。
-allowed_tools: [writing_assistant, web_search]
+description: 辅助学生完成论文写作、报告撰写、方案设计等写作任务（多体裁/多风格，对话式协作）。当用户需要写作、论文、报告、读后感时使用。
+allowed_tools: [writing_assistant]
 ---
 
-## 论文写作流程
+## Description
+对话式写作助手：多体裁（学术论文/读书报告/实习报告/课程设计/演讲稿/新闻稿/散文）成稿 + 迭代修改。
 
-### 1. 识别触发场景
+## Trigger
+用户需要写作/论文/报告/读后感/演讲稿时激活。触发关键词：写/写一篇/帮我写/论文/报告/读后感/综述。
 
-用户需求中出现以下关键词时调用本技能：
-
-- 写作：写论文、写报告、写方案、起草、撰写
-- 润色：修改、润色、改写、扩写、缩写
-- 体裁：综述、实验报告、课程论文、读后感、调研报告
-- 格式：引用格式、参考文献、排版
-
-### 2. 执行步骤
-
-1. **确认写作需求**：
-   - 体裁：论文/报告/方案/读后感/实验报告/综述
-   - 主题：具体题目或方向
-   - 篇幅：字数要求（默认 1000 字）
-   - 大纲：用户是否已有大纲，或需要 AI 生成
-   - 风格：学术/通俗/正式/创意
-2. **如需资料搜索**：调 `web_search` tool 搜索相关文献和资料
-3. **调 `writing_assistant` tool**，传入：
-   - `topic`：写作主题
-   - `genre`：体裁
-   - `outline`：大纲（可选，自动生成）
-   - `word_count`：目标字数
-4. **等待 tool 返回写作结果**：
-   - 完整文章
-   - 引用来源（如有）
-5. **呈现结果**：
-   - 展示文章
-   - 支持用户提出修改意见后迭代优化
-   - 提供导出建议（复制到 Word / Markdown）
-
-### 3. 注意事项
-
-- **引用真实性**：`web_search` 搜索到的引用需标注来源，不编造参考文献
-- **多轮迭代**：写作是一个创作过程，支持用户多次修改意见
-- **失败兜底**：`writing_assistant` tool 失败时提示用户稍后重试，保留已生成的大纲
-- **学术诚信**：提示用户 AI 辅助写作需遵守学校学术诚信规定
+## Architecture（按序加载）
+1. Rules（先读边界，再行动）：
+   - [Load Shared Rules: facts](../_shared/rules/facts.md)
+   - [Load Rules: no-fabrication](./rules/no-fabrication.md)
+2. Commands（执行流程）：
+   - [Load Command: request-confirm](./commands/request-confirm.md)
+   - [Load Command: generate-iterate](./commands/generate-iterate.md)
+3. Scripts（调用示例，按需引用）：
+   - [Load Script: writing-example](./scripts/writing-example.md)

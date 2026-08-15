@@ -37,7 +37,7 @@ def add(a: float, b: float) -> float:
 
 
 def build_poc_llm(*, enable_thinking: bool) -> ChatOpenAI:
-    """复用 v1 的中转站配置（one.zhique.cn / deepseek-v4-flash / verify_ssl）。
+    """复用 v1 的中转站配置（one.zhique.cn / qwen3.6-max-preview / verify_ssl）。
 
     与 services/llm_client.py:_create_chat_openai 保持一致的 SSL 处理。
     """

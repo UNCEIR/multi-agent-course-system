@@ -173,3 +173,43 @@ class DocumentRepository(MySQLRepository):
                     "dataset_id": str(row["dataset_id"] or ""),
                 }
         return result
+
+    def get_chunks_by_user(self, user_id: str) -> list[dict[str, Any]]:
+        """按 metadata_json.user_id 取该用户全部 chunk（含结构化 courses）。
+
+        Phase 2：evaluation 快照确定性直查源；覆盖 ingest 脚本与
+        /documents/upload 两条摄入路径（dataset_name 不可靠，按 JSON 过滤）。
+        """
+        if not user_id or not self.ping():
+            return []
+        assert self._engine is not None
+        sql = text(
+            """
+            SELECT chunk_id, dataset_id, chunk_index, content, page_number, metadata_json
+            FROM document_chunks
+            WHERE JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.user_id')) = :user_id
+            ORDER BY dataset_id, chunk_index
+            """
+        )
+        with self._engine.connect() as conn:
+            rows = conn.execute(sql, {"user_id": user_id}).mappings().all()
+        out = []
+        for row in rows:
+            metadata = row["metadata_json"]
+            if isinstance(metadata, str) and metadata:
+                try:
+                    import json
+
+                    metadata = json.loads(metadata)
+                except (json.JSONDecodeError, TypeError):
+                    metadata = {}
+            out.append(
+                {
+                    "chunk_id": str(row["chunk_id"]),
+                    "dataset_id": str(row["dataset_id"] or ""),
+                    "content": str(row["content"] or ""),
+                    "page_number": int(row["page_number"] or 0),
+                    "metadata": metadata or {},
+                }
+            )
+        return out

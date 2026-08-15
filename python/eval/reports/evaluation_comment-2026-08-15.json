@@ -1,0 +1,153 @@
+{
+  "date": "2026-08-15",
+  "set": "evaluation_comment",
+  "mode": "live",
+  "judge": false,
+  "metrics": {
+    "total": 10,
+    "passed": 0,
+    "pass_rate": 0.0,
+    "latency_p50": 34573.4,
+    "latency_p95": 49086.6,
+    "context_recall_avg": null,
+    "context_precision_avg": null,
+    "by_difficulty": {
+      "easy": {
+        "total": 4,
+        "passed": 0
+      },
+      "medium": {
+        "total": 3,
+        "passed": 0
+      },
+      "hard": {
+        "total": 3,
+        "passed": 0
+      }
+    }
+  },
+  "results": [
+    {
+      "case_id": "eval_comment_01",
+      "type": "evaluation_comment",
+      "difficulty": "easy",
+      "pass": false,
+      "failures": [
+        "reference 输出数字 71 不在数据源"
+      ],
+      "metrics": {},
+      "latency_ms": 37589.7,
+      "mode": "live"
+    },
+    {
+      "case_id": "eval_comment_02",
+      "type": "evaluation_comment",
+      "difficulty": "easy",
+      "pass": false,
+      "failures": [
+        "reference 输出数字 71 不在数据源"
+      ],
+      "metrics": {},
+      "latency_ms": 49086.6,
+      "mode": "live"
+    },
+    {
+      "case_id": "eval_comment_03",
+      "type": "evaluation_comment",
+      "difficulty": "medium",
+      "pass": false,
+      "failures": [
+        "reference 输出数字 71 不在数据源"
+      ],
+      "metrics": {},
+      "latency_ms": 24679.5,
+      "mode": "live"
+    },
+    {
+      "case_id": "eval_comment_04",
+      "type": "evaluation_comment",
+      "difficulty": "hard",
+      "pass": false,
+      "failures": [
+        "reference 输出数字 71 不在数据源"
+      ],
+      "metrics": {},
+      "latency_ms": 35239.1,
+      "mode": "live"
+    },
+    {
+      "case_id": "eval_comment_05",
+      "type": "evaluation_comment",
+      "difficulty": "medium",
+      "pass": false,
+      "failures": [
+        "contains comment_status=rule 未命中: llm",
+        "numeric comment_length 无输出"
+      ],
+      "metrics": {},
+      "latency_ms": 33556.7,
+      "mode": "live"
+    },
+    {
+      "case_id": "eval_comment_06",
+      "type": "evaluation_comment",
+      "difficulty": "easy",
+      "pass": false,
+      "failures": [
+        "contains error=no_transcript_data 未命中: "
+      ],
+      "metrics": {},
+      "latency_ms": 34573.4,
+      "mode": "live"
+    },
+    {
+      "case_id": "eval_comment_07",
+      "type": "evaluation_comment",
+      "difficulty": "hard",
+      "pass": false,
+      "failures": [
+        "contains proposal_status=default 未命中: "
+      ],
+      "metrics": {},
+      "latency_ms": 22218.1,
+      "mode": "live"
+    },
+    {
+      "case_id": "eval_comment_08",
+      "type": "evaluation_comment",
+      "difficulty": "medium",
+      "pass": false,
+      "failures": [
+        "numeric radar.学业水平 无输出",
+        "numeric radar.稳定性 无输出"
+      ],
+      "metrics": {},
+      "latency_ms": 24133.1,
+      "mode": "live"
+    },
+    {
+      "case_id": "eval_comment_09",
+      "type": "evaluation_comment",
+      "difficulty": "hard",
+      "pass": false,
+      "failures": [
+        "numeric items_count 无输出"
+      ],
+      "metrics": {},
+      "latency_ms": 37028.1,
+      "mode": "live"
+    },
+    {
+      "case_id": "eval_comment_10",
+      "type": "evaluation_comment",
+      "difficulty": "easy",
+      "pass": false,
+      "failures": [
+        "numeric persisted_count 无输出"
+      ],
+      "metrics": {},
+      "latency_ms": 23915.8,
+      "mode": "live"
+    }
+  ]
+}

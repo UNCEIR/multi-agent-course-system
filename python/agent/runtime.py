@@ -34,6 +34,12 @@ tool_registry: Any = None
 document_vector_repo: Any = None
 document_repo: Any = None
 
+# Phase 2：report 产物存储与元数据；evaluation 评价档案
+minio_repo: Any = None
+report_artifact_repo: Any = None
+evaluation_repo: Any = None
+chat_session_repo: Any = None
+
 
 async def init() -> None:
     """初始化所有运行时单例。在 lifespan 启动时调用。"""
@@ -41,6 +47,7 @@ async def init() -> None:
     global mysql_repo, redis_repo, course_vector_repo
     global main_agent, tool_registry
     global document_vector_repo, document_repo
+    global minio_repo, report_artifact_repo, evaluation_repo, chat_session_repo
 
     from ai.embedding_client import build_embedding_client
     from ai.llm_task_name import LLMTaskName
@@ -64,6 +71,28 @@ async def init() -> None:
     )
     document_repo = DocumentRepository()
 
+    # ── Phase 2：report 产物存储（MinIO + 本地兜底）与元数据 ─────────
+    from config import get_settings as _get_settings
+    from storage.minio.minio_repo import MinioRepository
+    from storage.mysql.report_artifact_repo import ReportArtifactRepository
+
+    _s = _get_settings()
+    minio_repo = MinioRepository(
+        endpoint=_s.minio_endpoint,
+        port=_s.minio_port,
+        access_key=_s.minio_access_key,
+        secret_key=_s.minio_secret_key,
+        secure=_s.minio_secure,
+        bucket=_s.minio_report_bucket,
+        connect_timeout=_s.minio_connect_timeout,
+    )
+    report_artifact_repo = ReportArtifactRepository()
+    from storage.mysql.evaluation_repo import EvaluationRepository
+    from storage.mysql.chat_session_repo import ChatSessionRepository
+
+    evaluation_repo = EvaluationRepository()
+    chat_session_repo = ChatSessionRepository()
+
     # ── v2.0.0 ToolRegistry（必须在 build_main_agent 之前初始化） ─────
     from tools import (
         ToolRegistry,
@@ -75,16 +104,21 @@ async def init() -> None:
         generate_reasons,
         get_current_time,
         image_generate,
+        image_recognize,
+        inspect_score_excels,
         list_available_skills,
         mindmap_generator,
         query_knowledge,
         recommend_courses,
+        render_report_batch,
         rerank_courses,
         search_courses,
         semantic_filter_courses,
         web_search,
         writing_assistant,
     )
+    from tools.evaluation import get_academic_snapshot
+    from tools.image import image_recognize
 
     tool_registry = ToolRegistry()
     tool_registry.register_many([
@@ -105,6 +139,10 @@ async def init() -> None:
         mindmap_generator,
         compute_weighted_grade,
         query_knowledge,
+        inspect_score_excels,
+        render_report_batch,
+        get_academic_snapshot,
+        image_recognize,
     ])
     # 注册子包 tool（documents/）
     try:

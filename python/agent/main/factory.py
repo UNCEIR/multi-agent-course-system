@@ -34,7 +34,7 @@ async def build_deep_agent(
     """按业务规格创建一个 deepagent。"""
     settings = get_settings()
     backend = build_agent_backend()
-    checkpointer = await build_checkpointer()
+    checkpointer = await build_checkpointer() if spec.use_checkpointer else None
 
     # build_chat_openai 通过 pydantic 的 name 字段命名 trace，保持 BaseChatModel
     # 类型，deepagents 可正常解析；LangSmith 中 LLM run 显示 spec.task_name。
@@ -80,6 +80,17 @@ async def build_deep_agent(
         memory=list(spec.memory),
     )
 
+    # Phase 2 多租户修复：main agent 对 AGENTS.md 代码级禁写
+    # （deepagents MemoryMiddleware 内置 <memory_guidelines> 会主动教唆写回，
+    # 仅靠 prompt 约束不可控；用户级记忆一律走 chat_memory_entries 表）
+    permissions = None
+    if spec.name == "main_agent":
+        from deepagents import FilesystemPermission
+
+        permissions = [
+            FilesystemPermission(operations=["write"], paths=["/memories/AGENTS.md"], mode="deny")
+        ]
+
     agent = create_deep_agent(
         model=llm,
         tools=tools,
@@ -89,7 +100,7 @@ async def build_deep_agent(
         checkpointer=checkpointer,
         system_prompt=spec.system_prompt,
         middleware=middleware,
-
+        permissions=permissions,
     )
 
     # 外层 agent run 也以业务名标识（图级别的 trace 根节点），LLM 层的
