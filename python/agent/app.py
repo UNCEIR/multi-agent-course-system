@@ -33,7 +33,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent import runtime
-from api import recommend, health, chat, documents
+from api import recommend, health, chat, documents, report, evaluation
 from config import get_settings
 
 logger = structlog.get_logger()
@@ -74,6 +74,8 @@ app.include_router(health.router)
 app.include_router(recommend.router)
 app.include_router(chat.router)
 app.include_router(documents.router)
+app.include_router(report.router)
+app.include_router(evaluation.router)
 
 
 def _assert_startup_config() -> None:

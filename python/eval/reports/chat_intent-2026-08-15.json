@@ -1,0 +1,47 @@
+{
+  "date": "2026-08-15",
+  "set": "chat_intent",
+  "mode": "live",
+  "judge": false,
+  "metrics": {
+    "total": 1,
+    "passed": 1,
+    "pass_rate": 1.0,
+    "latency_p50": 68448.5,
+    "latency_p95": 68448.5,
+    "ttft_p50": 7252.0,
+    "api_latency_p50": 67860.1,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "total": 0
+    },
+    "context_recall_avg": null,
+    "context_precision_avg": null,
+    "by_difficulty": {
+      "medium": {
+        "total": 1,
+        "passed": 1
+      }
+    }
+  },
+  "results": [
+    {
+      "case_id": "intent_17",
+      "type": "chat_intent",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 68448.5,
+      "mode": "live",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "api_latency_ms": 67860.1,
+      "ttft_ms": 7252.0,
+      "detail": "我来为你创建一个 Python 成绩分布统计脚本，包含数据生成、统计分析和可视化功能。\n\n脚本已创建并成功运行！以下是运行结果：\n\n## 📊 成绩分布统计报告\n\n```\n==============="
+    }
+  ]
+}

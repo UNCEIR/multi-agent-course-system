@@ -284,3 +284,33 @@ allowed_tools = registry.get_all(allowed=["recommend_courses", "writing_assistan
 - `CLAUDE.md` — 项目级指令（分层原则、贯穿原则）
 - `python/skills/README.md` — skills 层说明
 - `python/tools/README.md` — tools 层索引
+## 10. 有状态 vs 无状态智能体（Phase 2 新增）
+
+| 维度 | 有状态（chat / main agent） | 无状态（report / evaluation / recommend） |
+|------|------------------------------|-------------------------------------------|
+| checkpointer | 挂 SqliteSaver（thread_id 恢复） | AgentSpec.use_checkpointer=False → checkpointer=None（LangGraph 不写 checkpoint） |
+| 长期记忆 | chat_memory_entries（user 分区）+ 首轮注入 | 无（memory=()，一次性上下文注入） |
+| 会话记录 | chat_messages 逐条落库（写纪律） | 不落会话树（业务产物落业务表：report_artifacts / evaluation_records） |
+| 上下文 | 跨轮恢复 + 增量摘要压缩 | 请求即上下文（快照/约束拼 system_prompt） |
+| 结果 | 对话式 | 结构化返回调用方（JSON/链接列表） |
+
+对应 pi 的 --no-session / in-memory 模式：无状态场景不建持久会话、不挂记忆、不落 checkpoint，
+每次请求独立上下文窗口，产物按业务域落独立表。main agent 的 AGENTS.md 写回被
+FilesystemPermission(deny write) 代码级禁止，用户级记忆全部走 chat_memory_entries 表。
+
+## 11. Skills 模块化目录规范（2026-08-14 新增）
+
+SKILL.md 由单文件扩展为模块化目录（SKILL.md 变目录，逻辑下沉），与 SkillsMiddleware 渐进披露完全兼容：
+
+`
+skills/<skill-name>/
+├── SKILL.md              # 主入口：frontmatter（SkillsMiddleware 注入依据，保持不变）+ Description + Trigger + Architecture
+├── rules/                # 边界防守：约束/纪律（identity/facts/fallback/grounding 等）
+├── commands/             # 执行步骤：触发场景、流程顺序、工具调用序列
+└── scripts/              # 编排契约示例：多工具调用序列（不重复单工具 docstring）
+`
+
+- **加载机制**：SkillsMiddleware 只扫描一级子目录中含 SKILL.md 的目录（不递归）；SKILL.md 正文用 [Load ...] 标记引导 agent 按需 read_file 子模块——运行时主链路不变，无自定义 loader
+- **共享规则**：skills/_shared/rules/（identity/facts/fallback/grounding），无 SKILL.md 不会被扫描为独立技能，各 skill 相对路径引用
+- **scripts/ 边界**：只放编排序列示例（端到端调用 JSON），单工具参数以工具 docstring 为准，避免与 tools/ 注释重复臃肿
+- **职责**：SKILL.md=路由与描述；rules=边界防守；commands=执行步骤；scripts=编排示例。能力实现仍全部在 tools/（@tool）

@@ -1,0 +1,81 @@
+{
+  "date": "2026-08-15",
+  "set": "image_generate",
+  "mode": "live",
+  "judge": false,
+  "metrics": {
+    "total": 5,
+    "passed": 5,
+    "pass_rate": 1.0,
+    "latency_p50": 72431.8,
+    "latency_p95": 97191.5,
+    "context_recall_avg": null,
+    "context_precision_avg": null,
+    "by_difficulty": {
+      "easy": {
+        "total": 1,
+        "passed": 1
+      },
+      "medium": {
+        "total": 1,
+        "passed": 1
+      },
+      "hard": {
+        "total": 3,
+        "passed": 3
+      }
+    }
+  },
+  "results": [
+    {
+      "case_id": "ig_01",
+      "type": "image_generate",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 28705.8,
+      "mode": "live"
+    },
+    {
+      "case_id": "ig_02",
+      "type": "image_generate",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 95940.9,
+      "mode": "live"
+    },
+    {
+      "case_id": "ig_03",
+      "type": "image_generate",
+      "difficulty": "hard",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 97191.5,
+      "mode": "live"
+    },
+    {
+      "case_id": "ig_04",
+      "type": "image_generate",
+      "difficulty": "hard",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 72431.8,
+      "mode": "live"
+    },
+    {
+      "case_id": "ig_05",
+      "type": "image_generate",
+      "difficulty": "hard",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 45051.1,
+      "mode": "live"
+    }
+  ]
+}

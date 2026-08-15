@@ -6,7 +6,10 @@
 --   course_chunks    — v1 课程文本块(每课 4 块:basic/schedule_capacity/learning_profile/audience_tags)
 --   document_records — v2 文档摄入 dataset 级元数据(源文档)
 --   document_chunks  — v2 文档摄入 chunk 级元数据(分块)
--- source of truth: 本文件是建表唯一来源,代码层(course_repo/document_repo)不建表只 CRUD
+--   report_artifacts — v2 Phase2 report(教师端成绩单)产物元数据
+--   evaluation_records — v2 Phase2 evaluation(教师端生成→学生端同步)评价档案
+--   chat_sessions/chat_messages/chat_memory_entries — v2 Phase2 chat 长期记忆
+-- source of truth: 本文件是建表唯一来源,代码层不建表只 CRUD
 -- 重建方式: docker compose down -v && docker compose up -d --build
 -- 字符集: utf8mb4 / utf8mb4_unicode_ci
 -- ============================================================
@@ -90,4 +93,84 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     INDEX idx_doc_chunks_dataset (dataset_id),
     INDEX idx_doc_chunks_type (chunk_type),
     INDEX idx_doc_chunks_page (dataset_id, page_number)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------ report_artifacts
+-- report(教师端批量成绩单)产物元数据：一学生一行，支持失败重试/下载寻址/审计
+CREATE TABLE IF NOT EXISTS report_artifacts (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    batch_id VARCHAR(32) NOT NULL,
+    student_id VARCHAR(64) NOT NULL,
+    student_name VARCHAR(128) NOT NULL DEFAULT '',
+    format VARCHAR(8) NOT NULL DEFAULT 'pdf',          -- pdf | html
+    status VARCHAR(16) NOT NULL DEFAULT 'ok',           -- ok | failed
+    file_key VARCHAR(512) NOT NULL DEFAULT '',          -- MinIO 对象键或本地相对路径
+    token_expires_at DATETIME DEFAULT NULL,             -- 下载 token 过期时间（TTL 校验落点）
+    error_code VARCHAR(64) DEFAULT '',
+    error_message TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_report_artifacts_batch (batch_id),
+    INDEX idx_report_artifacts_student (student_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------ evaluation_records
+-- evaluation(教师端生成→学生端同步)评价档案：append 保留历史，学生端只读本人
+CREATE TABLE IF NOT EXISTS evaluation_records (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    target_user_id VARCHAR(64) NOT NULL,
+    comment_type VARCHAR(32) NOT NULL,                 -- semester_summary|encouragement|improvement_advice|recommendation
+    radar_json JSON,                                   -- 维度提案 + 确定性雷达值
+    comment TEXT NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'generated',   -- generated | fallback
+    generated_by VARCHAR(64) DEFAULT '',               -- 教师 user_id（临时口径，不校验）
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_evaluation_user_time (target_user_id, created_at DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------ chat_sessions
+-- chat 会话元数据：会话归属/统计/记忆提取水位（last_extracted_seq 幂等标记）
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    session_id VARCHAR(64) PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL,
+    title VARCHAR(255) NOT NULL DEFAULT '',
+    message_count INT NOT NULL DEFAULT 0,
+    last_extracted_seq INT NOT NULL DEFAULT 0,          -- 记忆提取水位（增量幂等）
+    last_failure_at BIGINT NOT NULL DEFAULT 0,          -- 提取失败时间戳（epoch 秒，退避用）
+    status VARCHAR(16) NOT NULL DEFAULT 'active',        -- active | closed
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_chat_sessions_user (user_id, updated_at DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------ chat_messages
+-- chat 会话记录（append-only）：用户当前通话的消息历史，可查询/可审计/是记忆提取源
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    session_id VARCHAR(64) NOT NULL,
+    user_id VARCHAR(64) NOT NULL,
+    seq INT NOT NULL,
+    role VARCHAR(16) NOT NULL,                           -- user | assistant | tool
+    content MEDIUMTEXT,
+    tool_calls_json JSON,                                -- assistant 工具调用（审计）
+    usage_json JSON,                                     -- token 统计（Phase 4 指标源）
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_chat_messages_session_seq (session_id, seq),
+    INDEX idx_chat_messages_user (user_id, seq),
+    INDEX idx_chat_messages_session (session_id, seq)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------ chat_memory_entries
+-- 跨会话长期记忆：按 user_id 隔离，新会话首轮注入；AGENTS.md 不再承载用户级内容
+CREATE TABLE IF NOT EXISTS chat_memory_entries (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL,
+    kind VARCHAR(16) NOT NULL DEFAULT 'fact',            -- preference | fact | decision
+    content TEXT NOT NULL,
+    content_hash CHAR(32) NOT NULL,                      -- NFKC 归一后 md5（精确去重键）
+    source_session_id VARCHAR(64) NOT NULL DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_memory_dedup (user_id, kind, content_hash),
+    INDEX idx_memory_entries_user (user_id, updated_at DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

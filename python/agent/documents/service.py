@@ -75,13 +75,18 @@ class DocumentIngestionService:
         )
 
         # 个人文档（非 public 分区）先脱敏：姓名/学号/班级/日期
+        structured: dict = {"user_id": user_id}
         if user_id and user_id != "public" and student_name:
-            from tools.documents.desensitizer import desensitize_transcript
+            from tools.documents.desensitizer import desensitize_transcript, extract_transcript_courses
 
             desensitized = desensitize_transcript(text, student_name=student_name)
             chunks = chunk_document.invoke(
                 {"text": desensitized, "strategy": strategy}
             )
+            # Phase 2（evaluation 数据基准）：成绩单结构化课程提取 → metadata_json
+            courses = extract_transcript_courses(text)
+            if courses:
+                structured["courses"] = courses
 
         # 写 Milvus + MySQL（若仓储已注入）
         if self.vector_repo is not None and self.embedding_client is not None:
@@ -120,7 +125,7 @@ class DocumentIngestionService:
                     "chunk_type": chunk["strategy"],
                     "content": chunk["text"],
                     "page_number": 0,
-                    "metadata": {"user_id": user_id},
+                    "metadata": structured,
                 }
                 for idx, chunk in enumerate(chunks)
             ]

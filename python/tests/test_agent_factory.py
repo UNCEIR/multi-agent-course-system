@@ -21,17 +21,17 @@ def factory_settings():
 @pytest.mark.asyncio
 async def test_shared_factory_loads_scenario_context(factory_settings):
     from agent.main.factory import build_deep_agent
-    from agent.main.specs import REPORT_AGENT_SPEC
+    from agent.main.specs import MAIN_AGENT_SPEC, REPORT_AGENT_SPEC
 
     backend = MagicMock()
     checkpointer = MagicMock()
     llm = MagicMock()
     compiled_agent = MagicMock()
-    tools = [MagicMock(name="compute_weighted_grade")]
+    tools = [MagicMock(name="inspect_score_excels")]
 
     with (
         patch("agent.main.factory.build_agent_backend", return_value=backend),
-        patch("agent.main.factory.build_checkpointer", new_callable=AsyncMock, return_value=checkpointer),
+        patch("agent.main.factory.build_checkpointer", new_callable=AsyncMock, return_value=checkpointer) as build_cp,
         patch("agent.main.factory.build_chat_openai", return_value=llm) as build_llm,
         patch("agent.main.factory.create_deep_agent", return_value=compiled_agent) as create_agent,
     ):
@@ -40,13 +40,47 @@ async def test_shared_factory_loads_scenario_context(factory_settings):
     assert result is compiled_agent.with_config.return_value
     kwargs = create_agent.call_args.kwargs
     assert kwargs["backend"] is backend
-    assert kwargs["checkpointer"] is checkpointer
+    # 无状态场景（use_checkpointer=False）：不建 checkpointer（试金石 10）
+    assert kwargs["checkpointer"] is None
+    build_cp.assert_not_called()
     assert kwargs["tools"] == tools
     assert kwargs["skills"] == ["/skills/report-generation/"]
     assert kwargs["memory"] == []
     assert kwargs["system_prompt"] == REPORT_AGENT_SPEC.system_prompt
     assert build_llm.call_args.kwargs["task_name"] == REPORT_AGENT_SPEC.task_name
     assert compiled_agent.with_config.call_args.kwargs["run_name"] == REPORT_AGENT_SPEC.task_name.value
+
+
+@pytest.mark.asyncio
+async def test_stateless_spec_skips_checkpointer(factory_settings):
+    """无状态三 spec（report/evaluation/recommend）不建 checkpointer；main 保持 True。"""
+    from agent.main.factory import build_deep_agent
+    from agent.main.specs import (
+        EVALUATION_AGENT_SPEC,
+        MAIN_AGENT_SPEC,
+        RECOMMENDATION_AGENT_SPEC,
+        REPORT_AGENT_SPEC,
+    )
+
+    assert REPORT_AGENT_SPEC.use_checkpointer is False
+    assert EVALUATION_AGENT_SPEC.use_checkpointer is False
+    assert RECOMMENDATION_AGENT_SPEC.use_checkpointer is False
+    assert MAIN_AGENT_SPEC.use_checkpointer is True  # chat 恢复是既有功能，不得关闭
+
+    backend = MagicMock()
+    llm = MagicMock()
+    compiled_agent = MagicMock()
+    with (
+        patch("agent.main.factory.build_agent_backend", return_value=backend),
+        patch("agent.main.factory.build_checkpointer", new_callable=AsyncMock) as build_cp,
+        patch("agent.main.factory.build_chat_openai", return_value=llm),
+        patch("agent.main.factory.create_deep_agent", return_value=compiled_agent) as create_agent,
+    ):
+        for spec in (REPORT_AGENT_SPEC, EVALUATION_AGENT_SPEC, RECOMMENDATION_AGENT_SPEC):
+            await build_deep_agent(spec, tools=[])
+    assert build_cp.await_count == 0
+    for call in create_agent.call_args_list:
+        assert call.kwargs["checkpointer"] is None
 
 
 @pytest.mark.asyncio

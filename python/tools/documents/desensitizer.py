@@ -146,3 +146,67 @@ def build_pii_report(text: str) -> dict[str, int]:
         "id_card": len(ID_CARD_RE.findall(text)),
         "mobile": len(MOBILE_RE.findall(text)),
     }
+
+
+# ── 成绩单结构化提取（evaluation 数据基准，摄入时写入 metadata_json）───
+# 真实版式：表格 3 列布局，每行「课程名 性质 学分 成绩」拼 3 组；
+# 兼容三列简式「课程名 学分 成绩」（测试/其他学校）。
+# 分隔符只用空格类（不含换行），防止学期行/表头跨行拼入课程组。
+_GROUP_SEP = r"[ \t\u3000]+"
+_COURSE_GROUP_RE = re.compile(
+    rf"(?P<name>[^\d\s][^\s]{{1,39}}?){_GROUP_SEP}"
+    rf"(?:(?P<nature>[^\s]{{1,12}}){_GROUP_SEP})?"
+    rf"(?P<credits>\d+(?:\.\d+)?){_GROUP_SEP}"
+    rf"(?P<score>\S{{1,8}})"
+)
+# 表头/干扰行关键词（命中则跳过）
+_SKIP_NAME_KEYWORDS = (
+    "课程名称", "已获得", "其中", "说明", "打印", "毕业设计", "平均",
+    "学号", "姓名", "学院", "专业", "班级", "契约锁", "以下", "性质", "学分", "成绩",
+)
+# 非数值成绩（保留字符串，numeric_score=None）
+_TEXT_GRADES = ("优秀", "良好", "中等", "及格", "通过", "合格")
+
+
+def _parse_score(value: str) -> float | None:
+    """成绩 → 数值；非数值（及格/优秀等）→ None。"""
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def extract_transcript_courses(text: str) -> list[dict]:
+    """从成绩单文本确定性提取课程记录（evaluation 快照的结构化源）。
+
+    容错设计：行内多组匹配「课程名 [性质] 学分 成绩」（真实成绩单 3 列拼行）；
+    表头/学期/汇总行跳过；提取不足 2 条视为格式不兼容 → 返回空（不阻塞摄入）。
+
+    Returns:
+        [{"name", "nature", "credits", "score", "numeric_score"}]
+    """
+    courses: list[dict] = []
+    seen: set[str] = set()
+    for m in _COURSE_GROUP_RE.finditer(text):
+        name = m.group("name").strip()
+        if not name or len(name) > 40:
+            continue
+        if any(kw in name for kw in _SKIP_NAME_KEYWORDS):
+            continue
+        if name in seen:
+            continue
+        score_text = m.group("score").strip()
+        numeric = _parse_score(score_text)
+        if numeric is not None and (numeric < 0 or numeric > 150):
+            continue  # 学分数值误匹配（如年份/学分）
+        seen.add(name)
+        courses.append(
+            {
+                "name": name,
+                "nature": (m.group("nature") or "").strip(),
+                "credits": float(m.group("credits")),
+                "score": score_text,
+                "numeric_score": numeric,
+            }
+        )
+    return courses if len(courses) >= 2 else []

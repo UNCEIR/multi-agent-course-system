@@ -18,6 +18,12 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - MILVUS_HOST=milvus
       - MILVUS_PORT=19530
+      # Phase 2：容器内走服务名访问共享 minio（密码统一 123456，与 mysql 一致）
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=12345678
+      - MINIO_SECURE=false
     ports:
       - "8000:8000"
     depends_on:
@@ -70,12 +76,20 @@ services:
 
   minio:
     image: minio/minio:RELEASE.2024-05-10T01-41-38Z
-    command: minio server /minio_data
+    command: minio server /minio_data --console-address ":9001"
     environment:
       - MINIO_ACCESS_KEY=minioadmin
-      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_SECRET_KEY=12345678
+    ports:
+      - "9000:9000"
+      - "9001:9001"
     volumes:
       - minio_data:/minio_data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   milvus:
     image: milvusdb/milvus:v2.4.6
@@ -83,14 +97,18 @@ services:
     environment:
       - ETCD_ENDPOINTS=etcd:2379
       - MINIO_ADDRESS=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=12345678
+    # Phase 2：env 覆盖 minio 凭据在 v2.4.6 不生效，用 yaml 挂载（凭据统一 12345678）
+    volumes:
+      - ./python/configs/milvus.yaml:/milvus/configs/milvus.yaml
+      - milvus_data:/var/lib/milvus
     ports:
       - "19530:19530"
       - "9091:9091"
     depends_on:
       - etcd
       - minio
-    volumes:
-      - milvus_data:/var/lib/milvus
 
 volumes:
   mysql_python_data:

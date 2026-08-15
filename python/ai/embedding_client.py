@@ -42,9 +42,8 @@ class LocalDeterministicEmbeddingClient(EmbeddingClient):
 
 class OpenAIEmbeddingClient(EmbeddingClient):
     """OpenAI 协议 Embedding 客户端。
-
     底层委托 langchain_openai.OpenAIEmbeddings，通过 @traceable 自动被 LangSmith trace。
-    公司内部中转站（one.zhique.cn）的 LLM 与 Embedding 端点均暴露为 OpenAI
+    LLM 与 Embedding 端点均暴露为 OpenAI
     兼容协议，认证和 base_url 与 LLM 共用同一套配置。
     """
 

@@ -30,6 +30,13 @@ class LLMTaskName(str, Enum):
     QUERY_KNOWLEDGE = "query_knowledge"  # 知识库检索（学生手册/个人成绩单）
     DOCUMENTS_UPLOAD = "documents_upload"  # 文档摄入向量化
 
+    # ── Phase 2：report / evaluation / 记忆 / 视觉 ────────────────────
+    REPORT_HTML_FILL = "report_html_fill"  # report LLM 模板填充（复用 llm_model）
+    REPORT_SUBJECTIVE_EVAL = "report_subjective_eval"  # report 综合评语
+    EVALUATION_DIMENSION_DESIGN = "evaluation_dimension_design"  # evaluation 维度提案
+    MEMORY_EXTRACT = "memory_extract"  # chat 跨会话记忆提取（增量摘要）
+    VISION_ANALYZE = "vision_analyze"  # image_recognize 视觉分析（qwen3.7-plus）
+
     # ── Embedding 场景 ──────────────────────────────────────────────
     COURSE_RECALL = "course_recall"  # 在线召回/搜索（course_recall_agent + main.py 探活）
     BACKFILL = "backfill"  # 离线批量回填（backfill_milvus_vectors.py）

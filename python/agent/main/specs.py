@@ -24,6 +24,7 @@ class AgentSpec:
     max_tokens: int = 2048
     enable_compaction: bool = True
     streaming: bool = True
+    use_checkpointer: bool = True  # Phase 2：无状态场景（report/evaluation/recommend）设 False
 
 
 MAIN_AGENT_SPEC = AgentSpec(
@@ -46,10 +47,10 @@ MAIN_AGENT_SPEC = AgentSpec(
         "writing_assistant",
         "web_search",
         "image_generate",
+        "image_generate_get",
+        "image_recognize",
         "code_interpreter",
         "mindmap_generator",
-        "compute_weighted_grade",
-        
     ),
 )
 RECOMMENDATION_AGENT_SPEC = AgentSpec(
@@ -62,18 +63,20 @@ RECOMMENDATION_AGENT_SPEC = AgentSpec(
     skills=("/skills/recommend-courses/",),
     memory=(),
     allowed_tools=("recommend_courses",),
+    use_checkpointer=False,
 )
 
 REPORT_AGENT_SPEC = AgentSpec(
     name="report_agent",
     task_name=LLMTaskName.TRANSCRIPT_PARSER,
     system_prompt=(
-        "你是学生成绩报告 Agent。只处理成绩数据分析和报告解释；"
+        "你是学生成绩报告 Agent。只处理成绩数据分析与成绩单生成；"
         "数值统计必须交给确定性工具，不要凭语言模型心算。"
     ),
     skills=("/skills/report-generation/",),
     memory=(),
-    allowed_tools=("compute_weighted_grade",),
+    allowed_tools=("inspect_score_excels", "render_report_batch"),
+    use_checkpointer=False,
 )
 
 EVALUATION_AGENT_SPEC = AgentSpec(
@@ -85,6 +88,9 @@ EVALUATION_AGENT_SPEC = AgentSpec(
     ),
     skills=("/skills/evaluation-writing/",),
     memory=(),
+    # Phase 2 端点走直接管线；本 spec 为 Phase 3 chat 路由经 subagent 委派预留
+    allowed_tools=("get_academic_snapshot", "design_dimensions", "compute_radar_values", "generate_comment"),
+    use_checkpointer=False,
 )
 
 PPT_AGENT_SPEC = AgentSpec(

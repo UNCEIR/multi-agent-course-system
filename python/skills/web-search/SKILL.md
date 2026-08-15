@@ -1,38 +1,20 @@
 ---
 name: web-search
-description: 通过互联网搜索获取实时信息，回答超出知识库范围的最新问题。当用户需要实时信息、最新新闻、外部资料时使用。
+description: 通过互联网搜索获取实时信息（tavily MCP 主路，熔断自动降级直连 SDK）。当用户需要实时信息、最新新闻、外部资料时使用。
 allowed_tools: [web_search]
 ---
 
-## 网页搜索流程
+## Description
+实时网页搜索：MCP 主路（tavily）→ 熔断降级直连 SDK → 双失败结构化错误；回答标注来源。
 
-### 1. 识别触发场景
+## Trigger
+用户需要实时信息、最新新闻、外部资料时激活。触发关键词：搜索/搜一下/查查/最新/最近/今天/网上说/据报道/知识库没有的。
 
-用户需求中出现以下关键词时调用本技能：
-
-- 搜索：搜一下、查查、搜索、查找资料
-- 实时：最新、最近、今天、当前
-- 外部：网上说、互联网上、据报道
-- 补充：知识库没有的、外部资料
-
-### 2. 执行步骤
-
-1. **确认搜索意图**：明确用户需要搜索的具体内容，提炼关键词
-2. **调 `web_search` tool**，传入：
-   - `query`：搜索关键词（中文，精准简洁）
-   - `max_results`：返回结果数量（默认 5）
-3. **整合搜索结果**：
-   - 摘要各搜索结果的核心信息
-   - 标注信息来源（URL）
-   - 与已有知识库信息交叉验证
-4. **呈现结果**：
-   - 搜索结果摘要
-   - 来源链接（便于用户点击查看原文）
-   - 若搜索无结果，提供搜索建议
-
-### 3. 注意事项
-
-- **时效性标注**：搜索结果带时间属性的，标注信息时效
-- **来源可信度**：区分官方来源（学校官网、政府网站）和普通来源
-- **失败兜底**：`web_search` tool 不可用时（如网络问题），告知用户并建议稍后重试
-- **隐私保护**：不将用户个人信息作为搜索关键词
+## Architecture（按序加载）
+1. Rules（先读边界，再行动）：
+   - [Load Shared Rules: grounding](../_shared/rules/grounding.md)
+   - [Load Shared Rules: fallback](../_shared/rules/fallback.md)
+2. Commands（执行流程）：
+   - [Load Command: search-and-answer](./commands/search-and-answer.md)
+3. Scripts（调用示例，按需引用）：
+   - [Load Script: search-example](./scripts/search-example.md)

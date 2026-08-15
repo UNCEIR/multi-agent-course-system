@@ -13,12 +13,20 @@ def build_chat_openai(
     max_tokens: int,
     streaming: bool = False,
     task_name: LLMTaskName | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    enable_thinking: bool | None = None,
 ) -> ChatOpenAI:
     settings = get_settings()
     llm = _create_chat_openai(
         temperature=temperature,
         max_tokens=max_tokens,
         streaming=streaming,
+        model=model,
+        base_url=base_url,
+        api_key=api_key,
+        enable_thinking=enable_thinking,
     )
     if task_name is not None:
         # 用 pydantic 的 name 字段命名 trace（LangSmith 的 run name 取自
@@ -34,8 +42,19 @@ def build_tool_calling_llm(
     temperature: float = 0.1,
     max_tokens: int = 4096,
     task_name: LLMTaskName | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    enable_thinking: bool | None = None,
 ) -> ChatOpenAI:
-    llm = _create_chat_openai(temperature=temperature, max_tokens=max_tokens)
+    llm = _create_chat_openai(
+        temperature=temperature,
+        max_tokens=max_tokens,
+        model=model,
+        base_url=base_url,
+        api_key=api_key,
+        enable_thinking=enable_thinking,
+    )
     if task_name is not None:
         # _ChatModelBinding.get_name() 委托给内部 bound，故在 bind 前命名。
         llm.name = task_name.value
@@ -47,10 +66,17 @@ def _create_chat_openai(
     temperature: float,
     max_tokens: int,
     streaming: bool = False,
+    model: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    enable_thinking: bool | None = None,
 ) -> ChatOpenAI:
     settings = get_settings()
     extra_body = {}
-    if settings.llm_enable_thinking:
+    # Phase 2 扩展：enable_thinking 可逐调用覆盖（None 时沿用全局开关）
+    if enable_thinking is None:
+        enable_thinking = settings.llm_enable_thinking
+    if enable_thinking:
         extra_body["enable_thinking"] = True
 
     verify = settings.httpx_verify_ssl
@@ -58,9 +84,9 @@ def _create_chat_openai(
     http_async_client = httpx.AsyncClient(verify=verify)
 
     return ChatOpenAI(
-        api_key=settings.llm_api_key,
-        base_url=settings.llm_base_url,
-        model=settings.llm_model,
+        api_key=api_key if api_key is not None else settings.llm_api_key,
+        base_url=base_url if base_url is not None else settings.llm_base_url,
+        model=model if model is not None else settings.llm_model,
         temperature=temperature,
         max_tokens=max_tokens,
         streaming=streaming,

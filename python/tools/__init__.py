@@ -37,6 +37,7 @@ from .system import get_current_time, list_available_skills
 from .chat import web_search, writing_assistant
 from .documents import chunk_document, parse_document
 from .knowledge import query_knowledge
+from .evaluation import get_academic_snapshot
 from .recommend import (
     check_feasibility,
     extract_profile,
@@ -47,10 +48,14 @@ from .recommend import (
     search_courses,
     semantic_filter_courses,
 )
-from .image import image_generate
+from .image import image_generate, image_generate_get, image_recognize
 from .code import code_interpreter
 from .mindmap import mindmap_generator
-from .report import compute_weighted_grade
+from .report import (
+    compute_weighted_grade,
+    inspect_score_excels,
+    render_report_batch,
+)
 
 # ── 公开 API ──────────────────────────────────────────────────────────
 __all__ = [
@@ -77,7 +82,12 @@ __all__ = [
     "check_feasibility",
     "generate_reasons",
     "image_generate",
+    "image_generate_get",
+    "image_recognize",
     "code_interpreter",
     "mindmap_generator",
     "compute_weighted_grade",
+    "inspect_score_excels",
+    "render_report_batch",
+    "get_academic_snapshot",
 ]

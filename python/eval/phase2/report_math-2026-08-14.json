@@ -1,0 +1,131 @@
+{
+  "date": "2026-08-14",
+  "set": "report_math",
+  "mode": "smoke",
+  "judge": false,
+  "metrics": {
+    "total": 10,
+    "passed": 10,
+    "pass_rate": 1.0,
+    "latency_p50": null,
+    "latency_p95": null,
+    "context_recall_avg": null,
+    "context_precision_avg": null,
+    "by_difficulty": {
+      "easy": {
+        "total": 2,
+        "passed": 2
+      },
+      "medium": {
+        "total": 4,
+        "passed": 4
+      },
+      "hard": {
+        "total": 4,
+        "passed": 4
+      }
+    }
+  },
+  "results": [
+    {
+      "case_id": "report_math_01",
+      "type": "report_math",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "report_math_02",
+      "type": "report_math",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "report_math_03",
+      "type": "report_math",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "report_math_04",
+      "type": "report_math",
+      "difficulty": "hard",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "report_math_05",
+      "type": "report_math",
+      "difficulty": "hard",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "report_math_06",
+      "type": "report_math",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "report_math_07",
+      "type": "report_math",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "report_math_08",
+      "type": "report_math",
+      "difficulty": "hard",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "report_math_09",
+      "type": "report_math",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "report_math_10",
+      "type": "report_math",
+      "difficulty": "hard",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    }
+  ]
+}

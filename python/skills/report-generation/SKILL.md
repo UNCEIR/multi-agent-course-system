@@ -1,41 +1,24 @@
 ---
 name: report-generation
-description: 根据学生成绩数据（CSV/JSON），生成期末课程报告分析（加权统计、成绩趋势、PDF 报告下载）。当用户需要分析成绩、生成报告、查看学业表现时使用。
-allowed_tools: [compute_weighted_grade]
+description: 根据批量学科成绩 Excel（一科一文件），生成逐学生期末成绩报告单（PDF/HTML 下载链接 + LLM 综合评价）。当教师需要生成成绩单、期末报告、班级成绩汇总时使用。
+allowed_tools: [inspect_score_excels, render_report_batch]
 ---
 
-## 报告生成流程
+## Description
+教师端批量成绩单生成：多科 Excel → 确定性解析合并 → 年级分类选模板 → 逐学生填表（LLM+Jinja2 降级）→ PDF/HTML 渲染 → token 下载链接 + 失败重试。
 
-### 1. 识别触发场景
+## Trigger
+用户提供学科成绩 Excel（一科一文件）并要求生成成绩单/期末报告时激活。
 
-用户需求中出现以下关键词时调用本技能：
-
-- 报告：成绩报告、课程报告、期末报告、学业分析
-- 成绩：我的成绩、成绩单、绩点、加权平均
-- 数据：分析成绩、统计分数、导出报告
-
-### 2. 执行步骤
-
-1. **确认数据源**：询问用户提供成绩数据（CSV 上传 / JSON 粘贴 / 系统已有数据）
-2. **调 `compute_weighted_grade` tool**，传入：
-   - `display_eval`：平时成绩列表
-   - `exam_eval`：期末成绩列表
-   - `bonus`：加分项（可选）
-3. **等待 tool 返回统计结果**：
-   - 加权平均分、各科成绩分布
-   - 绩点计算（若提供学分信息）
-   - 成绩趋势分析（多学期时）
-4. **生成报告内容**：
-   - 数值分析：加权统计、排名、进步/退步科目
-   - 理性分析：各科强弱项、学习建议
-   - 感性评语：鼓励话语、下学期展望
-5. **引导用户下载**：
-   - 告知用户可通过 `/api/v1/report/download` 获取 PDF 报告
-   - 每学生独有下载链接
-
-### 3. 注意事项
-
-- **数值引用文件**：成绩、排名等数值来自用户提供的原始数据，不要凭记忆编造
-- **LLM 只产文本段**：统计计算用 Python 确定执行，LLM 不参与数值计算
-- **失败兜底**：`compute_weighted_grade` tool 失败时，提示用户检查数据格式后重试
-- **隐私提醒**：成绩数据仅用于本次报告生成，不会持久化存储
+## Architecture（按序加载）
+1. Rules（先读边界，再行动）：
+   - [Load Shared Rules: identity](../_shared/rules/identity.md)
+   - [Load Shared Rules: facts](../_shared/rules/facts.md)
+   - [Load Shared Rules: fallback](../_shared/rules/fallback.md)
+   - [Load Rules: integrity](./rules/integrity.md)
+2. Commands（按流程执行）：
+   - [Load Command: inspect-classify](./commands/inspect-classify.md)
+   - [Load Command: render-batch](./commands/render-batch.md)
+   - [Load Command: retry-failed](./commands/retry-failed.md)
+3. Scripts（编排序列示例，按需引用）：
+   - [Load Script: batch-sequence](./scripts/batch-sequence.md)

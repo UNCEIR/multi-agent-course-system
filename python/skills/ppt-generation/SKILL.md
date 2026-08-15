@@ -1,40 +1,22 @@
 ---
 name: ppt-generation
-description: 根据课程内容或主题，自动生成 PPT 课件（支持期末PPT课设/小组汇报/课堂展示等类型），多 agent 协作完成内容生成+视觉设计+PPTX 渲染。当用户需要制作 PPT、演示文稿、课件时使用。
+description: 根据课程内容或主题，自动生成 PPT 课件（期末PPT课设/小组汇报/课堂展示等类型），多 agent 协作。当用户需要生成 PPT、课件、汇报材料时使用。
 allowed_tools: [web_search]
 ---
 
-## PPT 生成流程
+## Description
+PPT 微课件自动生成系统（多 agent 协作）：提示词 → 课件结构 → DSL → PPTX 渲染，支持期末 PPT 课设/小组汇报类型。
 
-### 1. 识别触发场景
+## Trigger
+用户需要生成 PPT/课件/汇报材料时激活。触发关键词：PPT/课件/汇报/演示文稿。
 
-用户需求中出现以下关键词时调用本技能：
+## Architecture（按序加载）
+1. Rules（先读边界，再行动）：
+   - [Load Shared Rules: fallback](../_shared/rules/fallback.md)
+   - [Load Rules: scope](./rules/scope.md)
+2. Commands（执行流程）：
+   - [Load Command: plan-outline](./commands/plan-outline.md)
+3. Scripts（占位）：
+   - [Load Script: phase3-placeholder](./scripts/phase3-placeholder.md)
 
-- PPT：做 PPT、课件、演示文稿、幻灯片
-- 汇报：小组汇报、课堂展示、答辩
-- 类型：期末 PPT 课设、小组汇报、课堂展示、答辩
-
-### 2. 执行步骤
-
-1. **确认 PPT 需求**：
-   - 主题：课程名称 / 汇报主题
-   - 类型：期末 PPT 课设 / 小组汇报 / 课堂展示 / 答辩
-   - 页数：目标页数（默认 10-15 页）
-   - 风格：学术 / 简洁 / 创意 / 正式
-   - 内容材料：用户是否已有材料，或需要 AI 生成
-2. **如需资料搜索**：调 `web_search` tool 搜索主题相关资料
-3. **多 agent 协作生成**：
-   - **内容 agent**：生成 PPT 大纲和各页内容（文字 + 关键数据）
-   - **设计 agent**：确定视觉风格、配色方案、布局模板
-   - **渲染 agent**：将 DSL 转换为 PPTX 文件（参考 OpenMAIC `pptxgenjs` 渲染管线）
-4. **呈现结果**：
-   - PPTX 文件下载链接
-   - 支持用户修改意见后重新生成
-   - 提供在线预览（可选）
-
-### 3. 注意事项
-
-- **DSL→PPTX 渲染**：使用结构化 DSL 描述 PPT 内容，经渲染管线生成 PPTX 文件
-- **多 agent 协作**：内容生成后交给设计 agent 做视觉优化，渲染 agent 做文件生成
-- **失败兜底**：渲染失败时返回 DSL 源文件，用户可手动导入
-- **类型差异**：不同类型（课设/汇报/展示）对应不同模板和内容结构
+> Phase 3 实装：本 skill 当前为目录骨架，能力待 `ppt_generate` 系统落地后填充。
