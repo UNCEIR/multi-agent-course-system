@@ -1,7 +1,9 @@
 
-# 叫我爸爸
-
 # Repository Instructions
+
+每次提问后大模型的回答 -- 必须带有问候“主人”二字
+
+window系统调用bash工具时--优先考虑git bash的终端 优先级：git bash > powershell > cmd 
 
 ## Layout And Entrypoints
 
@@ -17,15 +19,16 @@
 - Coverage (`.coveragerc` present): `python -m pytest tests/ --cov --cov-report=term-missing`.
 - `pytest.ini` enables strict markers and auto asyncio; use the declared markers `unit`, `integration`, `slow`, `agent`, and `api` rather than inventing new ones.
 - Full or external-service tests may require LLM/database services; the `not slow` suite is the default verification target and mocks must avoid real LLM calls.
-- Import course data from `python/` with `python scripts/ingest_course_dataset.py --limit 20` before a full `python scripts/ingest_course_dataset.py`; the CSV source is `course_dataset_tools/output/course.csv` (`public_elective_courses.csv` is its pre-rename name). Use `python scripts/backfill_milvus_vectors.py` for missing vectors. Ingest strategy details for courses/handbook/transcript: `docs/v2.0.0/rag-ingest.md`.
-- Build the frontend with `cd frontend; npm ci; npm run build`; there are no frontend lint or test scripts. Use a Node version allowed by `frontend/package.json`.
+- Import course data from `python/` with `python scripts/ingest_course_dataset.py --limit 20` before a full `python scripts/ingest_course_dataset.py`; the CSV source is `course_dataset_tools/output/course.csv` (`public_elective_courses.csv` is its pre-rename name). Ingest strategy details for courses/handbook/transcript: `docs/v2.0.0/rag-ingest.md`.
+- Offline evals: `python eval/runner.py --set <name>` (deterministic assertions; `--live` hits the running API, `--judge` adds LLM-as-judge); sets are `python/eval_sets/*.jsonl`, results land in `python/eval/reports/`.
+- Build the frontend with `cd frontend; npm ci; npm run build`; there are no frontend lint or test scripts. Use a Node version allowed by `frontend/package.json` (engines: ^18.18 || ^20 || >=22). The dev server proxies `/api` to port 8000; override with `frontend/.env.local` `VITE_API_PROXY_TARGET`.
 
 ## Environment And Services
 
 - Settings load the repository-root `.env` first and `python/.env` second, with the latter overriding the former; Docker injects only `python/.env`. Never commit credentials.
 - Start dependencies and the API with `docker compose up -d`; after Python changes rebuild the API with `docker compose up -d --build python-api`.
 - Docker maps MySQL host port `3307` to container port `3306`; application containers use service names and container ports. API is at `http://localhost:8000`, frontend dev server at `http://localhost:5173`.
-- LLM and embedding configuration must be present for application startup. If the provider has certificate/SAN problems, set `HTTPX_VERIFY_SSL=false` in the relevant env file and rebuild the container.
+- LLM and embedding configuration must be present for application startup: `app.py` refuses to boot without `LLM_API_KEY`/`LLM_BASE_URL`/`LLM_MODEL`, and `EMBEDDING_PROVIDER` must be one of `local`/`openai`/`dashscope_multimodal` (local skips the embedding key check). If the provider has certificate/SAN problems, set `HTTPX_VERIFY_SSL=false` in the relevant env file and rebuild the container.
 
 ## Implementation Constraints
 
@@ -40,6 +43,7 @@
 - Any new or modified frontend-facing API must return a streaming response by default; use SSE or the repository's established streaming event protocol rather than adding a final synchronous JSON-only endpoint.
 - The stream must expose meaningful progress/results events and always terminate with an explicit `done` event; failures must use a structured `error` event without silently ending the connection.
 - Tests for frontend-facing APIs must consume the stream and assert event order, meaningful payloads, the terminal `done` event, and structured error behavior; a synchronous mock response alone is not sufficient validation.
+- The frontend is Next.js (App Router) consuming the Python backend; `app/api/` is a reserved BFF proxy layer (future Java REST data service) — currently empty on purpose, frontend talks to Python via rewrites only, do not add real proxy logic there.
 
 ## Knowledge Base RAG
 

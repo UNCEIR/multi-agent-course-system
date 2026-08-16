@@ -116,6 +116,11 @@
 - **修订（2026-08-15）**：image_generate（即梦）接入形态从"外部即梦 MCP server"修订为 **自建 stdio MCP server 包装火山引擎 API**（火山无官方 MCP）：`tools/image/jimeng_mcp_server.py`（generate_image_submit / generate_image_get 两段式）+ `jimeng_client.py`（SDK 签名/提交/轮询/错误码分类）。两段式链式调用（B1）：agent 提交拿 task_id → 按指数退避（3→6→10s 封顶）轮询 get → done 转存 MinIO/本地；force_single 默认 false（组图 1-3 张由 prompt 语义控制，scale 默认 0.7 增强文本遵从）；错误码分类（审核不可重试/限流可重试）。**A（工具内阻塞轮询）vs B（两段式链式）取舍**：B 的每环状态可观测、逐环独立兜底、task_id 12h 有效可续查——见 `docs/notes/v2.0.0/2026-08-15-jimeng-mcp-chain.md`
 - **执行**：Java 数据服务（Phase 3/4）暴露 OpenAPI；批量任务队列在任务量出现并发时引入 RabbitMQ；MCP 桥接按决策 8 推进
 
+### 决策 22（2026-08-16）：前端 BFF 代理层预留 —— 为什么在 Next.js 留 `app/api/`
+- **背景**：后续部分数据 CRUD 转 Java 数据服务（REST/OpenAPI，决策 21），前端将面对 **Python（SSE 流式）+ Java（REST CRUD）双后端**；未来还可能有独立管理平台（同 React 栈）。
+- **BFF 作用**：前端**永远只请求自己的 `/api`**，由 Next.js Route Handlers 在服务端转发到 Python 或 Java——前端对"后端是谁"无感，Java 接入/地址变动/鉴权聚合都不改前端。
+- **结论**：`app/api/` 仅**预留目录 + 文档**（本阶段零代理逻辑），当前前端仍经 rewrites 直连 Python 8000；分线策略：Python SSE 直连、Java REST 走 BFF。
+
 ## Phase 概要
 
 ### Phase 0：deepagents POC（go/no-go 门）—— ✅ GO（2026-07-29）
