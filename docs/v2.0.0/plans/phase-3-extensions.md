@@ -54,17 +54,20 @@
 
 同时满足 = **Phase 3 GO**：
 
-1. **注册一致性**：`image_generate_get` 已注册；`compute_weighted_grade` 已实装（总评 = display×0.3 + exam×0.7 + bonus，含边界校验）；新增测试断言 `MAIN_AGENT_SPEC.allowed_tools ⊆ ToolRegistry 注册表` 全绿；`design_dimensions/compute_radar_values/generate_comment` 提升为 @tool 并注册，`EVALUATION_AGENT_SPEC` 白名单可被 `registry.get_all` 全量命中
-2. **前端失效端点清理**：`api.ts` 不再调用 `/recommend`、`/recommend/react`、`/recommend/graph`、`/recommend/react/stream`（grep 零命中）；`RecommendationRequest` 后端/前端均含 `mode` 字段，`/recommend/stream` 支持 `mode="react"` 走 ReAct（复验 `stream_recommend_unified` 既有逻辑）
-3. **前端四 Page 可交互（Next.js 架构下）**：前端已迁移到 Next.js（`npm run dev` 起 App Router 服务，tsc 编译通过）；MainPage 发消息 → 流式渲染 text/tool/done/error，多轮对话回显；ReportPage 上传 2 个成绩单 → progress/student_done 进度 → 每学生下载链接可用（token 下载 200）；EvaluationPage 教师端生成 → echarts 雷达图 + 评语流 + 落库 → 学生端 `/evaluation/me` 列表可见；DocumentsPage 上传 CSV/PDF → 返回 dataset_id/chunks_count；现有 RecommendPage/MonitorPage 功能迁移后等价可用
-4. **前端导航重构**：App Router 真路由（`app/(main)/chat/page.tsx` 等目录约定 + 顶部导航），菜单含 推荐 / 智能对话 / 报告 / 评价 / 知识库 / 系统监控；废弃 `Layout.tsx` 的 `display:none` 假路由
-5. **eval oracle 对齐**：`kb_retrieval` 的 `expected.chunk_ids` 改为真实 chunk_id 体系（`handbook_2025_<hash>:<N>`）；`evaluation_comment` 新增真实数据版集（用户 3123003252 成绩单真实数字）；`report_math` live 断言改为映射真实输出字段（batch_id/students）；live 跑 `kb_retrieval` 通过率 > 0（从 0/10 修复）
-6. **summary_prompt 五字段**：`factory.py` 的 `SummarizationMiddleware` 传入自定义 `summary_prompt`（含决策 11 五字段：Goal / Progress / Key Decisions / Next Steps / Critical Context）；单测断言 prompt 注入
-7. **forked subagent 提取**：`extractor.py` 提取在独立隔离上下文执行（不共享主 agent checkpointer/状态），失败退避幂等保持；新增/更新单测覆盖
-8. **consolidation**：记忆条目超限时按 kind 去重合并（确定性 + 可选 LLM 合并提案）；单测覆盖"同内容不重复、相似条目合并"
-9. **RedisSaver 文档化**：`checkpoint_backend` 配置预留（默认 `sqlite`），`build_checkpointer` 支持按配置分支（redis 路径 import 探测，未装依赖时明确报错）；`docs/v2.0.0/` 决策 20 切换条件记录同步；单实例运行 `pytest` 全绿且 `.checkpoint.db` 使用不变
-10. **回归**：`cd python; python -m pytest tests/ -m "not slow" -v` 全绿（新代码含前端契约流式断言）；`cd frontend; npm ci; npm run build`（tsc + **next build**，Vite 已废弃）通过；`python eval/runner.py --set chat_intent` 不回归
-11. **文档同步**：本 plan §7 后续 phase 输入清单更新到 `plan.md`；AGENTS.md 若涉及新配置（checkpoint_backend）保持准确
+> **验收策略（2026-08-16，LLM 算力受限）**：本阶段**不实际跑真实 LLM 端测**（live eval、真实对话/报告/评价端到端）。以下试金石按两级执行：标注 ⏳ 的项以**确定性单测 + 构建 + mock 路径**为验收替代（数据正确性、结构正确性），真实 LLM 端测在算力允许时补跑；标注 ✅ 的项为必做。
+> **未来承诺**：上游资源充足后必须严格跑真实端测并 eval 评估（`eval/runner.py --live` 跑真实结果、回填 `eval/reports/`、核对各集通过率），作为 Phase 3 正式验收依据。
+
+1. **注册一致性**：`image_generate_get` 已注册；`compute_weighted_grade` 已实装（总评 = display×0.3 + exam×0.7 + bonus，含边界校验）；新增测试断言 `MAIN_AGENT_SPEC.allowed_tools ⊆ ToolRegistry 注册表` 全绿；`design_dimensions/compute_radar_values/generate_comment` 提升为 @tool 并注册，`EVALUATION_AGENT_SPEC` 白名单可被 `registry.get_all` 全量命中（✅）
+2. **前端失效端点清理**：`api.ts` 不再调用 `/recommend`、`/recommend/react`、`/recommend/graph`、`/recommend/react/stream`（grep 零命中）；`RecommendationRequest` 后端/前端均含 `mode` 字段，`/recommend/stream` 支持 `mode="react"` 走 ReAct（复验 `stream_recommend_unified` 既有逻辑）（✅）
+3. **前端四 Page（Next.js 架构下）**：前端已迁移到 Next.js（`npm run build` 通过）；四 Page 代码就位，chat 流式渲染以 mock 事件源单测覆盖 text/tool/done/error 事件序；DocumentsPage 上传端点以单测/接口验证（✅）；真实对话 / report PDF 下载 / evaluation 生成 / 推荐流 ⏳ 延后
+4. **前端导航重构**：App Router 真路由（`app/(main)/chat/page.tsx` 等目录约定 + 顶部导航），菜单含 推荐 / 智能对话 / 报告 / 评价 / 知识库 / 系统监控；废弃 `Layout.tsx` 的 `display:none` 假路由（✅ build + dev 路由冒烟）
+5. **eval oracle 对齐**：`kb_retrieval` 的 `expected.chunk_ids` 改为真实 chunk_id 体系（`handbook_2025_<hash>:<N>`）；`evaluation_comment` 新增真实数据版集（用户 3123003252 成绩单真实数字）；`report_math` live 断言改为映射真实输出字段（batch_id/students）——**oracle 数据正确性 ✅（采集脚本产出 + runner smoke）；⏳ live 通过率 > 0 延后**
+6. **summary_prompt 五字段**：`factory.py` 的 `SummarizationMiddleware` 传入自定义 `summary_prompt`（含决策 11 五字段：Goal / Progress / Key Decisions / Next Steps / Critical Context）；单测断言 prompt 注入（✅ mock）
+7. **forked subagent 提取**：`extractor.py` 提取在独立隔离上下文执行（不共享主 agent checkpointer/状态），失败退避幂等保持；新增/更新单测覆盖（✅ mock LLM）
+8. **consolidation**：记忆条目超限时按 kind 去重合并（确定性 + 可选 LLM 合并提案）；单测覆盖"同内容不重复、相似条目合并"（✅ mock LLM）
+9. **RedisSaver 文档化**：`checkpoint_backend` 配置预留（默认 `sqlite`），`build_checkpointer` 支持按配置分支（redis 路径 import 探测，未装依赖时明确报错）；`docs/v2.0.0/` 决策 20 切换条件记录同步；单实例运行 `pytest` 全绿且 `.checkpoint.db` 使用不变（✅ 单测）
+10. **回归**：`cd python; python -m pytest tests/ -m "not slow" -v` 全绿（新代码含前端契约流式断言）；`cd frontend; npm ci; npm run build`（tsc + **next build**，Vite 已废弃）通过；`python eval/runner.py --set chat_intent` 以 smoke 模式不回归（✅；⏳ live/真实 LLM 不跑）
+11. **文档同步**：本 plan §7 后续 phase 输入清单更新到 `plan.md`；AGENTS.md 若涉及新配置（checkpoint_backend）保持准确（✅）
 
 ---
 

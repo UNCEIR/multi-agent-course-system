@@ -21,7 +21,7 @@ from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
 from tools.report.contract import ERR_RENDER_FAILED, ERR_UPLOAD_FAILED
-from tools.report.fill_report_html import FillValidationError, fill_one_llm, fill_with_jinja2, get_template
+from tools.report.fill_report_html import fill_one_llm, fill_with_jinja2, get_template
 from tools.report.generate_subjective_eval import generate_subjective_eval
 from tools.report.merge_students import assert_integrity, journal_save, merge_files
 from tools.report.parse_score_excels import ExcelParseError, parse_workbook
@@ -34,6 +34,9 @@ report_progress_ctx: contextvars.ContextVar["asyncio.Queue"] = contextvars.Conte
     "report_progress", default=None  # type: ignore[arg-type]
 )
 report_template_ctx: contextvars.ContextVar[str] = contextvars.ContextVar("report_template", default="grade4-6.html")
+# 2026-08-31：用户在前端手动选择班级（覆盖 Excel 里的班级）；用户补充要求（透传到评语生成）
+report_class_ctx: contextvars.ContextVar[str] = contextvars.ContextVar("report_class", default="")
+report_user_message_ctx: contextvars.ContextVar[str] = contextvars.ContextVar("report_user_message", default="")
 
 # 年级分类规则兜底（LLM 分类失败/非法时使用）
 DAOFA_SUBJECTS = {"道法", "道德与法治"}
@@ -51,6 +54,38 @@ def classify_by_rules(summary: dict) -> int | None:
     if any_ro and not any_daofa:
         return 1
     return None
+
+
+def _llm_fill_enabled() -> bool:
+    """读取 report_llm_fill_enabled（测试用 MagicMock settings 时 getattr 兜底）。"""
+    from config import get_settings
+
+    return bool(getattr(get_settings(), "report_llm_fill_enabled", True))
+
+
+async def _fill_html(fill_enabled: bool, template_html: str, stu: dict) -> tuple[str, str | None]:
+    """填表：LLM 主路（失败 → Jinja2 兜底）| 确定性直填（fill_enabled=False，快 ~10x）。
+
+    返回 (html, fill_error)；fill_error 非空表示 LLM 路径失败已降级（不阻塞生成）。
+    2026-08-31：加开关解决「37 人 12~15min 导致前端误判卡死」——关闭 LLM 填表后
+    同一锚点模板确定性替换，数值零幻觉风险，整批可压缩到约 2~3min。
+    """
+    if not fill_enabled:
+        return fill_with_jinja2(template_html, stu), None
+    try:
+        html = await asyncio.wait_for(fill_one_llm(template_html, stu), timeout=60.0)
+        return html, None
+    except Exception as exc:  # noqa: BLE001 — FillValidationError 亦属此类
+        return fill_with_jinja2(template_html, stu), str(exc)[:200]
+
+
+def apply_class_override(students: list[dict], class_name: str) -> None:
+    """用户手动选择班级时，批量覆盖每个学生的 class（空值不覆盖，保留 Excel 解析值）。"""
+    cn = (class_name or "").strip()
+    if not cn:
+        return
+    for stu in students:
+        stu["class"] = cn
 
 
 async def _put(event: str, data: dict) -> None:
@@ -100,6 +135,8 @@ async def render_report_batch(category: int, semester: str = "") -> dict:
         except ExcelParseError as exc:
             return _result([], [], [f"解析失败 {Path(fp).name}: {exc.reason}"], "error")
     merged = merge_files(parsed, semester=semester)
+    # 用户手动选择的班级优先（解决 Excel 班级缺失时「班级：」为空）
+    apply_class_override(merged.students, report_class_ctx.get())
     integrity_errors = assert_integrity(merged, len(file_keys))
     if integrity_errors:
         return _result([], [], integrity_errors[:10], merged.batch_id)
@@ -122,17 +159,13 @@ async def render_report_batch(category: int, semester: str = "") -> dict:
             name = stu.get("name", sid)
             t0 = time.perf_counter()
             try:
-                # 填表：LLM 主路 → Jinja2 降级
-                html = None
-                fill_error = None
-                try:
-                    html = await asyncio.wait_for(fill_one_llm(template_html, stu), timeout=60.0)
-                except (FillValidationError, Exception) as exc:  # noqa: BLE001
-                    fill_error = str(exc)[:200]
-                if html is None:
-                    html = fill_with_jinja2(template_html, stu)
-                # 综合评语（失败留空不阻塞）
-                comment = await generate_subjective_eval(stu)
+                # 填表：LLM 主路（report_llm_fill_enabled=true）→ Jinja2 降级；false 直接确定性直填
+                html, fill_error = await _fill_html(_llm_fill_enabled(), template_html, stu)
+                # 综合评语（失败留空不阻塞）；透传用户补充要求（前端 user_message）
+                comment = await generate_subjective_eval(
+                    stu,
+                    user_message=report_user_message_ctx.get(),
+                )
                 if comment:
                     html = html.replace('data-slot="comment"></p>', f'data-slot="comment">{comment}</p>')
                 # 渲染：PDF 主路 → HTML 兜底

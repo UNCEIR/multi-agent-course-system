@@ -44,10 +44,10 @@ skills/<skill-name>/
 | `report-generation` | 2 | ✅ 实装（模块化） | rules×1 + commands×3 + scripts×1 | `tools/report/` |
 | `evaluation-writing` | 2 | ✅ 实装（模块化） | rules×1 + commands×2 + scripts×1 | `tools/evaluation/` |
 | `web-search` | 2 | ✅ 实装（模块化） | commands×1 + scripts×1 | `tools/chat/web_search.py` |
-| `image-generation` | 2 | ✅ 实装（模块化） | rules×1 + commands×1 + scripts×1 | `tools/image/` |
+| `image-generation` | 2 | ✅ 实装（模块化） | rules×1 + commands×2 + scripts×2 | `tools/image/` |
 | `writing` | 2 | ✅ 实装（模块化） | rules×1 + commands×1 + scripts×1 | `tools/chat/writing_assistant.py` |
-| `knowledge-query` | 3 | ⏳ 骨架（模块化） | rules×1 + commands×1 + scripts×1 | `tools/knowledge/` |
-| `deep-thinking` | 3 | ⏳ 骨架（模块化） | commands×1 | 纯推理 |
-| `ppt-generation` | 3 | ⏳ 骨架（模块化占位） | rules×1 + commands×1 + scripts×1 | `ppt_generate`（待实装） |
+| `knowledge-query` | 3 | ✅ 实装（模块化） | rules×1 + commands×1 + scripts×1 | `tools/knowledge/` |
+| `deep-thinking` | 3 | ✅ 实装（模块化） | commands×1 | 纯推理 |
+| `ppt-generation` | 3 | ⏳ 骨架（模块化占位，PPT 后续 phase） | rules×1 + commands×1 + scripts×1 | `ppt_generate`（待实装） |
 
 共享规则：`_shared/rules/{identity, facts, fallback, grounding}.md`

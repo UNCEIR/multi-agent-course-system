@@ -8,7 +8,7 @@
 | 系统工具 | `tools/system/` | `get_current_time`、`list_available_skills` |
 | 对话工具 | `tools/chat/` | `writing_assistant`、`web_search` |
 | 文档工具 | `tools/documents/` | 文档解析 + 分块 + 个人数据脱敏 |
-| 知识检索工具 | `tools/knowledge/` | `query_knowledge` 知识库 RAG 检索 |
+| 知识检索工具 | `tools/knowledge/` | `query_handbook` + `query_transcript`（v0.9 拆分：手册 vs 个人成绩单） |
 | 推荐工具 | `tools/recommend/` | 推荐课程 tool |
 | 图片工具 | `tools/image/` | 图片生成 |
 | 代码工具 | `tools/code/` | 代码执行 |
@@ -30,7 +30,8 @@
 | `compute_weighted_grade` | `stub` | 2 | `report/*` | `tools/report/compute_weighted_grade.py` |
 | `parse_document` | `implemented` | 1 | `documents/*` | `tools/documents/parser.py` |
 | `chunk_document` | `implemented` | 1 | `documents/*` | `tools/documents/chunker.py` |
-| `query_knowledge` | `implemented` | 1 | `knowledge/*` | `tools/knowledge/query_knowledge.py` |
+| `query_handbook` | `implemented` | 1 | `knowledge/*` | `tools/knowledge/query_handbook.py`（手册检索，user_id=public 分区，top_k 默认 5） |
+| `query_transcript` | `implemented` | 1 | `knowledge/*` | `tools/knowledge/query_transcript.py`（个人成绩单，仅本人 user_id 分区，top_k 默认 3，强权限隔离） |
 | `desensitize_transcript` | `implemented` | 1 | `documents/*` | `tools/documents/desensitizer.py` |
 
 ## 基础设施

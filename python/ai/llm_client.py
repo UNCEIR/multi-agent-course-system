@@ -76,12 +76,30 @@ def _create_chat_openai(
     # Phase 2 扩展：enable_thinking 可逐调用覆盖（None 时沿用全局开关）
     if enable_thinking is None:
         enable_thinking = settings.llm_enable_thinking
-    if enable_thinking:
-        extra_body["enable_thinking"] = True
+    # 必须显式传布尔值：qwen3 在 DashScope 兼容模式下，省略该字段时默认仍走 thinking，
+    # 只有显式 false 才会真正关闭思考链（实测省略时耗时反而更长）。
+    extra_body["enable_thinking"] = bool(enable_thinking)
 
     verify = settings.httpx_verify_ssl
-    http_client = httpx.Client(verify=verify)
-    http_async_client = httpx.AsyncClient(verify=verify)
+    # P0 修复：显式设置超时。缺失时实际超时由 openai SDK 默认值决定（数百秒量级），
+    # 会绕过 agent_timeout_* 与 supervisor_global_timeout，表现为 SSE 链路静默挂死、前端空流。
+    # 用 getattr + 类型校验兜底：部分测试以 MagicMock 模拟 settings 且不含这些字段，
+    # 此时回退为 None（不显式限制），保证既有调用点行为不回归。
+    timeout_seconds = getattr(settings, "llm_timeout_seconds", None)
+    has_timeout = isinstance(timeout_seconds, (int, float))
+    timeout = None
+    if has_timeout:
+        connect_seconds = getattr(settings, "llm_connect_timeout_seconds", None)
+        timeout = httpx.Timeout(
+            float(timeout_seconds),
+            connect=float(connect_seconds) if isinstance(connect_seconds, (int, float)) else 5.0,
+        )
+    http_client = httpx.Client(verify=verify, timeout=timeout)
+    http_async_client = httpx.AsyncClient(verify=verify, timeout=timeout)
+
+    llm_max_retries = getattr(settings, "llm_max_retries", None)
+    if not isinstance(llm_max_retries, int):
+        llm_max_retries = None  # None → 沿用 langchain / openai SDK 默认
 
     return ChatOpenAI(
         api_key=api_key if api_key is not None else settings.llm_api_key,
@@ -91,6 +109,11 @@ def _create_chat_openai(
         max_tokens=max_tokens,
         streaming=streaming,
         extra_body=extra_body or None,
+        max_retries=llm_max_retries,
+        # 注意字段名是 request_timeout 而非 timeout：ChatOpenAI 无 timeout 字段，
+        # 传 timeout= 会被 pydantic 静默忽略、超时完全不生效（排查时极易踩坑）。
+        # 必须在此显式传：openai SDK 会用自身默认超时覆盖传入 httpx client 的配置。
+        request_timeout=float(timeout_seconds) if has_timeout else None,
         http_client=http_client,
         http_async_client=http_async_client,
     )

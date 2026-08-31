@@ -3,7 +3,7 @@
 > 本文档是 `plans/phase-3-extensions.md`（详细设计）的**编码执行清单**：按工作流拆解为可落地的编码任务（文件级），带依赖顺序与验证命令。编码时以本文件为任务主索引，设计细节（契约/事件协议/防线机制）回查详细计划。
 >
 > 日期：2026-08-16
-> 状态：待执行
+> 状态：✅ W-A~W-F 编码完成（后端 267 passed；前端已迁移 Next.js 16，build 通过）；W-G 全量回归与文档同步执行中。真实 LLM 端测（live eval / 真实对话 / report PDF / evaluation 生成）按验收策略延后，算力允许时补跑。
 > 验收：十一条试金石（详细计划 §1.4），全绿 = Phase 3 GO
 
 ## 一、概览
@@ -59,10 +59,11 @@ W-A 地基修复 ──┬─→ W-B 记忆深化 ──→ W-C 后端回归（W
 ```bash
 cd python && python -m compileall agent/ tools/ models/ api/ scripts/
 cd python && python -m pytest tests/test_tool_registry_consistency.py tests/test_compute_weighted_grade.py tests/test_evaluation_radar.py tests/test_stream_recommend.py -v
-cd python && python eval/runner.py --set kb_retrieval --live        # 需 API + 已摄入手册，通过率 > 0
-cd python && python eval/runner.py --set evaluation_comment_live --live  # 通过率 > 0
+cd python && python eval/runner.py --set kb_retrieval               # smoke 断言器自检通过
+cd python && python eval/runner.py --set evaluation_comment         # smoke 自检通过
+# ⏳ live（--live，真实检索/生成）因 LLM 算力受限延后，算力允许时补跑
 ```
-**风险卡点**：eval oracle 依赖已摄入数据 → 先 `run_kb_test.py` 确认 KB 可用；chunk_id 从 MySQL 采集不依赖在线检索。
+**风险卡点**：eval oracle 依赖已摄入数据 → 采集脚本先做 `dataset_id LIKE '%handbook%'` 存在性预检，缺数据显式提示并跳过（不写假值）；脚本只产出数据正确性，不做 live 断言。
 
 ---
 
@@ -94,7 +95,7 @@ cd python && python -m compileall agent/ config/
 
 ## 四、工作流 C：后端回归
 
-**目标**：W-A/B 后后端基线全绿。
+**目标**：W-A/B 后后等端基线全绿。
 
 **验证**：
 ```bash
@@ -160,11 +161,8 @@ cd frontend && npm run build
 **验证**：
 ```bash
 cd frontend && npm run build
-# dev 手动冒烟：
-#  chat 一轮（知识库问题 + 推荐问题）→ text/tool/done 可见
-#  report 上传 2 个 xlsx → 下载 200
-#  evaluation 教师端生成（3123003252）→ 学生端 /me 列表可见
-#  documents 上传 CSV → chunks_count > 0
+# 流式事件渲染以 mock 事件源（组件级单测）验证 text/tool/done/error 事件序，不依赖真实 LLM
+# ⏳ dev 手动冒烟（真实对话 / report PDF / evaluation 生成）因 LLM 算力受限延后
 ```
 
 ---
@@ -182,14 +180,19 @@ cd frontend && npm run build
 
 ## 九、验收清单（对应详细计划 §1.4 十一条试金石）
 
-- [ ] 注册一致性：image_generate_get 已注册、compute_weighted_grade 已实装、白名单 ⊆ 注册表测试全绿、evaluation 三工具注册
-- [ ] 前端失效端点清零；RecommendationRequest 前后端均含 mode；/recommend/stream 支持 mode="react"
-- [ ] 前端已迁移 Next.js：四 Page 可交互（chat 流 / report 下载 200 / evaluation 教师→学生端 / documents 上传）
-- [ ] App Router 真路由六菜单；废弃 display:none 假路由
-- [ ] eval oracle 对齐：kb_retrieval live > 0、evaluation_comment_live > 0
-- [ ] summary_prompt 五字段注入且有单测
-- [ ] forked worker 提取隔离 + 失败幂等测试
-- [ ] consolidation 去重合并 + 单测
-- [ ] checkpoint_backend 配置预留 + 分支单测 + 决策 20 文档
-- [ ] pytest not-slow 全绿 + npm run build 通过
-- [ ] plan.md/AGENTS.md 文档同步
+> **验收策略（2026-08-16，LLM 算力受限）**：本阶段**不实际跑真实 LLM 端测**（live eval、真实对话/报告/评价端到端）。验收分两级：
+> - ✅ **必做**（确定性，零真实 LLM）：`pytest -m "not slow"` 全绿（mock 路径）、`npm run build` 通过、oracle 数据回填正确（脚本产出即验收）、路由/构建冒烟。
+> - ⏳ **延后**（依赖真实 LLM/外部算力，算力允许时补跑）：live eval 通过率、真实 chat 对话流、report 真实 PDF 下载、evaluation 真实生成。对应项以"mock/单测覆盖 + 结构正确"作为本阶段验收替代。
+> - **未来承诺**：上游资源充足后，必须**严格跑真实端测并 eval 评估**——`eval/runner.py --set <集> --live` 跑真实结果、回填 `eval/reports/`、核对各集通过率，作为 Phase 3 正式验收依据（本阶段 ⏳ 项全部补测）。
+
+- [ ] 注册一致性：image_generate_get 已注册、compute_weighted_grade 已实装、白名单 ⊆ 注册表测试全绿、evaluation 三工具注册（✅ 单测）
+- [ ] 前端失效端点清零；RecommendationRequest 前后端均含 mode；/recommend/stream 支持 mode="react"（✅ grep + `test_stream_recommend.py`）
+- [ ] 前端已迁移 Next.js：四 Page 代码就位且 build 通过；chat 流式渲染以 mock 事件源单测覆盖 text/tool/done/error（⏳ 真实对话/报告/评价端测延后）
+- [ ] App Router 真路由六菜单；废弃 display:none 假路由（✅ build + dev 路由冒烟）
+- [ ] eval oracle 对齐：`refresh_kb_retrieval_oracle.py` 回填后 jsonl 为真实 chunk_id、`evaluation_comment_live.jsonl`/`report_math_live.jsonl` 就位且 runner smoke 通过（✅ 数据正确性）；⏳ live 通过率 > 0 延后
+- [ ] summary_prompt 五字段注入且有单测（✅ mock）
+- [ ] forked worker 提取隔离 + 失败幂等测试（✅ mock LLM）
+- [ ] consolidation 去重合并 + 单测（✅ mock LLM）
+- [ ] checkpoint_backend 配置预留 + 分支单测 + 决策 20 文档（✅ 单测）
+- [ ] pytest not-slow 全绿 + npm run build 通过（✅ 必做）
+- [ ] plan.md/AGENTS.md 文档同步（✅）

@@ -109,7 +109,7 @@
 5. **llm_task_name.py**：新增 `REPORT_HTML_FILL = "report_html_fill"`（模板填充）、`REPORT_SUBJECTIVE_EVAL = "report_subjective_eval"`（综合评语）、`EVALUATION_DIMENSION_DESIGN = "evaluation_dimension_design"`（维度提案）、`VISION_ANALYZE = "vision_analyze"`（图片识别）、`MEMORY_EXTRACT = "memory_extract"`（记忆提取）；`EVALUATION_GENERATOR`/`TRANSCRIPT_PARSER` 已在。
 6. **llm_client.py**：`_create_chat_openai` 增加可选覆盖参数 `model: str | None = None` / `base_url` / `api_key` / `enable_thinking: bool | None = None`，默认 None 时取 settings（**既有调用行为零变化**）；`build_chat_openai` 透传。填表/综合评语/维度/视觉调用经此入口 + 各自 `task_name`（AGENTS.md 硬约束）。
 7. **storage/minio/minio_repo.py**（新）：`MinioRepository`——`ensure_bucket(bucket)`（幂等）/ `upload(bucket, object_key, data) -> object_key` / `download(bucket, key) -> bytes` / `exists(bucket, key) -> bool` / `delete(bucket, key)`；启动时 `ensure_bucket(report_bucket)`；**本地兜底**：初始化时探测 MinIO 可用性（3s 超时），不可用/后续异常 → 降级写入 `python/.documents/reports/<batch_id>/`，`exists/download` 统一寻址（先 MinIO 后本地）。可测：mock minio client。
-8. **docker-compose.yml**：minio 服务暴露 `9000:9000`/`9001:9001`，python-api 环境注入 `MINIO_ENDPOINT/MINIO_ACCESS_KEY/MINIO_SECRET_KEY`（不写死凭据，从 `.env` 读）；`MYSQL_PORT` 宿主 3307 维持不变。
+8. **docker-compose.yml**：minio 服务暴露 `9002:9002`/`9002:9002`，python-api 环境注入 `MINIO_ENDPOINT/MINIO_ACCESS_KEY/MINIO_SECRET_KEY`（不写死凭据，从 `.env` 读）；`MYSQL_PORT` 宿主 3307 维持不变。
 9. **.env.example**：补 `MINIO_*`、`TAVILY_API_KEY`、`JIMENG_API_KEY`、`JIMENG_MCP_URL`（占位）、`E2B_API_KEY`、`E2B_MCP_URL`（占位）。
 
 **验证点**：
@@ -436,7 +436,7 @@
 ```python
 # ── MinIO（report artifact 存储，Phase 2）──────────────
 minio_endpoint: str = "localhost"
-minio_port: int = 9000
+minio_port: int = 9002
 minio_access_key: str = "minioadmin"
 minio_secret_key: str = "minioadmin"
 minio_secure: bool = False
@@ -616,7 +616,7 @@ memory_entries_per_user_limit: int = 50      # 新会话注入的记忆条目上
 | 30 | deepagents 版本锁定 | requirements 锁 `deepagents>=0.7.5,<0.8`（本阶段依赖 0.7.5 的 checkpointer=None/MemoryMiddleware/FilesystemPermission 语义，防升级漂移） |
 | 31 | 评估方针范围切割 | Phase 2 只做**首批 eval set**（eval_sets 4 集 + runner 断言式指标 + LangSmith 导入）；全量指标（LLM-as-judge/NDCG/monitor 看板）在总 plan.md 记录为 Phase 4 |
 | 32 | vision_model 选型 | `qwen3-vl-plus`（用户 2026-08-13 确认，替换 qwen3.7-plus；与文本模型同 base_url/api_key） |
-| 33 | MinIO 凭据 | 共享实例密码统一 `123456`（与 mysql 一致）；milvus 同步配 MINIO_ACCESS_KEY/SECRET；宿主暴露 9000/9001；`.env` 注入 REPORT_DOWNLOAD_SECRET |
+| 33 | MinIO 凭据 | 共享实例密码统一 `123456`（与 mysql 一致）；milvus 同步配 MINIO_ACCESS_KEY/SECRET；宿主暴露 9002/9002；`.env` 注入 REPORT_DOWNLOAD_SECRET |
 
 ### 7.2 Phase 3 输入清单（本阶段推迟项）
 

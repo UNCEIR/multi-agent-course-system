@@ -567,6 +567,26 @@ class SupervisorOrchestrator:
                     "request_id": request_id,
                 },
             }
+        except asyncio.CancelledError:
+            # 客户端断开 / 上层 cancel scope（uvicorn h11 disconnect）传播到这里的 asyncio.gather：
+            # 先 yield 一个结构化的 cancelled 事件，再 re-raise 让上层（chat.py `_generate`）
+            # 兜底 + fire-and-forget persist。不要让 CancelledError 串透 deepagents /
+            # langgraph / langsmith / tenacity 整条栈在 stderr 喷一整页 traceback。
+            logger.info(
+                "course_supervisor.stream_cancelled request_id=%s phase=%s",
+                request_id,
+                current_phase,
+            )
+            yield {
+                "event": "error",
+                "data": {
+                    "code": "CANCELLED",
+                    "message": "推荐请求被客户端中断",
+                    "phase": current_phase,
+                    "request_id": request_id,
+                },
+            }
+            raise
 
     @staticmethod
     def _request_prompt(request: RecommendationRequest) -> str:

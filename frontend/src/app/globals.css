@@ -1,0 +1,251 @@
+@import "tailwindcss";
+
+/* ===== Tailwind v4 preflight × antd 6 兼容 (Phase 3.5) =====
+   Tailwind v4 preflight 会重置 button/input/select/textarea/h1-h6 的全部默认样式；
+   antd 6 内部依赖 user-agent 的部分默认（button 无 border、input margin、textarea 默认 box），
+   不补回会导致按钮/输入框样式错乱、form 表单错位。
+   解决：在 preflight 后通过 @layer base 注入 antd 需要的最小补回值。 */
+@layer base {
+  /* button：恢复 padding/cursor/text-align，避免 antd Button 内部裸 button 变方块 */
+  button {
+    cursor: pointer;
+    padding: 0;
+    border: none;
+    background: transparent;
+    font: inherit;
+    color: inherit;
+    text-align: inherit;
+  }
+  /* input/textarea/select：margin 归零 + box-sizing 沿用全局 border-box */
+  input, textarea, select {
+    margin: 0;
+    font: inherit;
+    color: inherit;
+  }
+  /* antd 全局静态层：message / notification / modal 容器需高 z-index 才能盖在 Header 之上 */
+  .ant-message, .ant-notification, .ant-modal-mask, .ant-modal-wrap {
+    z-index: 2000;
+  }
+  /* body：让 antd Layout 的 sticky Header 不被 body::after 网格底纹盖住 */
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* ===== 主题变量（Phase 3.5：创新实验室 · 学院蓝） ===== */
+@theme {
+  --color-primary: #2e6fbf;          /* 学院蓝 */
+  --color-primary-light: #4a90d9;    /* 亮蓝 */
+  --color-primary-muted: #eaf2fb;    /* 浅蓝底 */
+  --color-accent: #14b8a6;           /* 电光青（创新强调） */
+  --color-accent-light: #e0f5f2;     /* 青浅底 */
+  --color-success: #1fa88d;
+  --color-warning: #e8a23d;
+  --color-danger: #d64545;
+  --color-surface: #eaf3fc;          /* 页面底（淡蓝） */
+  --color-card: #ffffff;
+  --color-border: #cfe3f5;           /* 浅蓝描边 */
+  --color-text: #16365c;             /* 深学院蓝文字 */
+  --color-text-secondary: #6b7a8d;
+  --font-serif: 'Noto Serif SC', 'Source Han Serif SC', 'STSong', 'SimSun', serif;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  color: var(--color-text);
+  /* 淡蓝渐变页面底 + 实验室网格线 + 顶部光晕 */
+  background:
+    radial-gradient(1200px 500px at 20% -10%, rgba(74, 144, 217, 0.18), transparent 60%),
+    radial-gradient(900px 420px at 85% 0%, rgba(20, 184, 166, 0.12), transparent 55%),
+    linear-gradient(180deg, #f0f7fe 0%, #e0eefa 45%, #eaf3fc 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+/* 实验室网格线 overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.045;
+  background-image:
+    linear-gradient(to right, #2e6fbf 1px, transparent 1px),
+    linear-gradient(to bottom, #2e6fbf 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+/* ===== 玻璃卡片（科技感） ===== */
+.glass-card {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(207, 227, 245, 0.9);
+  box-shadow: 0 4px 24px rgba(46, 111, 191, 0.08);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.glass-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(46, 111, 191, 0.14);
+}
+
+/* ===== Scrollbar ===== */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #b8d3ec; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #8fb6dd; }
+
+/* ===== Animations ===== */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeInScale {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.animate-fade-in { animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-fade-scale { animation: fadeInScale 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-slide-right { animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* Staggered children */
+.stagger > * { opacity: 0; }
+.stagger > *:nth-child(1) { animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both; }
+.stagger > *:nth-child(2) { animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both; }
+.stagger > *:nth-child(3) { animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both; }
+.stagger > *:nth-child(4) { animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both; }
+.stagger > *:nth-child(5) { animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.25s both; }
+.stagger > *:nth-child(6) { animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both; }
+
+/* ===== Shimmer loading ===== */
+.shimmer {
+  background: linear-gradient(90deg, #eef4fb 25%, #ddeaf7 50%, #eef4fb 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* ===== Focus ring ===== */
+*:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* ===== Reduced motion ===== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ===== Typography utility ===== */
+.serif-heading {
+  font-family: var(--font-serif);
+  letter-spacing: 0.02em;
+}
+
+/* ===== Streaming ===== */
+@keyframes blinkCursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes tokenFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes cardSlideIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes phasePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.25); }
+  50% { box-shadow: 0 0 0 6px rgba(20, 184, 166, 0); }
+}
+
+.stream-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--color-primary);
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  animation: blinkCursor 0.7s steps(1) infinite;
+}
+
+.stream-cursor-hidden {
+  opacity: 0;
+}
+
+.stream-token {
+  animation: tokenFadeIn 0.08s ease-out both;
+}
+
+.card-slide-in {
+  animation: cardSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.phase-dot-active {
+  animation: phasePulse 2s ease-in-out infinite;
+}
+
+.stream-text-block {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.85;
+  font-size: 15px;
+  color: #33475c;
+}
+
+.stream-text-block strong {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.stream-intro {
+  color: var(--color-text-secondary);
+  font-style: italic;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px dashed #cfe3f5;
+}
+
+.stream-course-name {
+  display: inline-block;
+  color: var(--color-primary);
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-size: 16px;
+  margin-top: 20px;
+  margin-bottom: 6px;
+}

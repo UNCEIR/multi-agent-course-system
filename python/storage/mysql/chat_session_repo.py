@@ -14,7 +14,7 @@ import hashlib
 import unicodedata
 
 import structlog
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from .base import MySQLRepository
 
@@ -104,6 +104,65 @@ class ChatSessionRepository(MySQLRepository):
         with self._engine.connect() as conn:
             rows = conn.execute(sql, {"sid": session_id, "after": after_seq, "limit": limit}).mappings().all()
         return [dict(r) for r in rows]
+
+    def list_sessions_by_user(self, user_id: str, limit: int = 100) -> list[dict]:
+        """按用户列会话（active），title 为空时取该会话首条 user 消息作显示名。"""
+        if not self.ping():
+            return []
+        assert self._engine is not None
+        sql = text(
+            """
+            SELECT s.session_id, s.title, s.message_count, s.created_at, s.updated_at,
+                   COALESCE(NULLIF(s.title, ''),
+                            (SELECT LEFT(m.content, 24) FROM chat_messages m
+                             WHERE m.session_id = s.session_id AND m.role = 'user'
+                             ORDER BY m.seq LIMIT 1),
+                            '新对话') AS display_title
+            FROM chat_sessions s
+            WHERE s.user_id = :uid AND s.status = 'active'
+            ORDER BY s.updated_at DESC
+            LIMIT :limit
+            """
+        )
+        with self._engine.connect() as conn:
+            rows = conn.execute(sql, {"uid": user_id, "limit": limit}).mappings().all()
+        return [dict(r) for r in rows]
+
+    def session_owner(self, session_id: str) -> str | None:
+        """查询会话归属 user_id（越权校验用）；不存在返回 None。"""
+        if not self.ping():
+            return None
+        assert self._engine is not None
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT user_id FROM chat_sessions WHERE session_id = :sid"),
+                {"sid": session_id},
+            ).mappings().first()
+        return str(row["user_id"]) if row else None
+
+    def rename_session(self, session_id: str, user_id: str, title: str) -> bool:
+        """重命名会话（归属校验）；成功返回 True。"""
+        if not self.ping():
+            return False
+        assert self._engine is not None
+        with self._engine.begin() as conn:
+            result = conn.execute(
+                text("UPDATE chat_sessions SET title = :title WHERE session_id = :sid AND user_id = :uid"),
+                {"title": title[:255], "sid": session_id, "uid": user_id},
+            )
+        return (result.rowcount or 0) > 0
+
+    def close_session(self, session_id: str, user_id: str) -> bool:
+        """软删会话（status='closed'，保留记忆提取水位）；成功返回 True。"""
+        if not self.ping():
+            return False
+        assert self._engine is not None
+        with self._engine.begin() as conn:
+            result = conn.execute(
+                text("UPDATE chat_sessions SET status = 'closed' WHERE session_id = :sid AND user_id = :uid"),
+                {"sid": session_id, "uid": user_id},
+            )
+        return (result.rowcount or 0) > 0
 
     def count_unextracted(self, session_id: str) -> int:
         """未提取消息数（message_count - last_extracted_seq）。"""
@@ -197,3 +256,59 @@ class ChatSessionRepository(MySQLRepository):
             trimmed.append(e)
             total += len(str(e["content"]))
         return trimmed
+
+    def delete_memory_entries(self, user_id: str, contents: list[str]) -> None:
+        """按内容精确删除记忆条目（consolidation 替换旧条目用）。"""
+        if not self.ping() or not contents:
+            return
+        assert self._engine is not None
+        norms = [unicodedata.normalize("NFKC", str(c)).strip() for c in contents]
+        sql = text(
+            "DELETE FROM chat_memory_entries WHERE user_id = :uid AND content IN :contents"
+        ).bindparams(bindparam("contents", expanding=True))
+        with self._engine.begin() as conn:
+            conn.execute(sql, {"uid": user_id, "contents": norms})
+
+    def replace_memory_entries(
+        self, user_id: str, delete_contents: list[str], upsert_entries: list[tuple[str, str]]
+    ) -> None:
+        """原子替换记忆条目：单事务内 DELETE 旧内容 + INSERT/UPDATE 新条目（consolidation 用）。
+
+        Args:
+            delete_contents: 要删除的旧条目内容列表
+            upsert_entries: (kind, content) 新条目列表
+        """
+        if not self.ping():
+            return
+        assert self._engine is not None
+        delete_sql = text(
+            "DELETE FROM chat_memory_entries WHERE user_id = :uid AND content IN :contents"
+        ).bindparams(bindparam("contents", expanding=True))
+        upsert_sql = text(
+            "INSERT INTO chat_memory_entries (user_id, kind, content, content_hash, source_session_id) "
+            "VALUES (:uid, :kind, :content, :hash, :src) "
+            "ON DUPLICATE KEY UPDATE content = VALUES(content), source_session_id = VALUES(source_session_id)"
+        )
+        with self._engine.begin() as conn:
+            if delete_contents:
+                conn.execute(
+                    delete_sql,
+                    {
+                        "uid": user_id,
+                        "contents": [unicodedata.normalize("NFKC", str(c)).strip() for c in delete_contents],
+                    },
+                )
+            for kind, content in upsert_entries:
+                norm = unicodedata.normalize("NFKC", str(content)).strip()
+                if not norm:
+                    continue
+                conn.execute(
+                    upsert_sql,
+                    {
+                        "uid": user_id,
+                        "kind": kind,
+                        "content": norm,
+                        "hash": hashlib.md5(norm.encode("utf-8")).hexdigest(),
+                        "src": "consolidate",
+                    },
+                )

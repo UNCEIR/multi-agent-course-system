@@ -1,0 +1,84 @@
+{
+  "date": "2026-08-16",
+  "set": "web_search",
+  "mode": "smoke",
+  "judge": false,
+  "metrics": {
+    "total": 5,
+    "passed": 5,
+    "pass_rate": 1.0,
+    "latency_p50": null,
+    "latency_p95": null,
+    "ttft_p50": null,
+    "api_latency_p50": null,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "total": 0
+    },
+    "context_recall_avg": null,
+    "context_precision_avg": null,
+    "by_difficulty": {
+      "easy": {
+        "total": 2,
+        "passed": 2
+      },
+      "medium": {
+        "total": 3,
+        "passed": 3
+      }
+    }
+  },
+  "results": [
+    {
+      "case_id": "ws_01",
+      "type": "web_search",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "ws_02",
+      "type": "web_search",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "ws_03",
+      "type": "web_search",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "ws_04",
+      "type": "web_search",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "ws_05",
+      "type": "web_search",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    }
+  ]
+}

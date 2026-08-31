@@ -33,11 +33,16 @@ from .mcp_client import MultiServerMCPClient, get_mcp_client
 from .registry import ToolRegistry, get_registry
 
 # ── 功能域子包（工具逐级导出） ─────────────────────────────────────────
-from .system import get_current_time, list_available_skills
+from .system import dispatch_module, get_current_time, list_available_skills
 from .chat import web_search, writing_assistant
 from .documents import chunk_document, parse_document
-from .knowledge import query_knowledge
-from .evaluation import get_academic_snapshot
+from .knowledge import query_handbook, query_transcript
+from .evaluation import (
+    compute_radar_values,
+    design_dimensions,
+    generate_comment,
+    get_academic_snapshot,
+)
 from .recommend import (
     check_feasibility,
     extract_profile,
@@ -66,13 +71,16 @@ __all__ = [
     "MultiServerMCPClient",
     "get_mcp_client",
     # 工具
+    "dispatch_module",
     "get_current_time",
     "list_available_skills",
     "writing_assistant",
     "web_search",
     "parse_document",
     "chunk_document",
-    "query_knowledge",
+    # query_knowledge 在 2026-08-25 重构中删除，被 query_handbook / query_transcript 替代
+    "query_handbook",
+    "query_transcript",
     "recommend_courses",
     "extract_profile",
     "search_courses",
@@ -90,4 +98,7 @@ __all__ = [
     "inspect_score_excels",
     "render_report_batch",
     "get_academic_snapshot",
+    "design_dimensions",
+    "compute_radar_values",
+    "generate_comment",
 ]

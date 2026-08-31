@@ -10,8 +10,11 @@ Phase 3 目标：
      - 推荐课程 → recommend_courses tool
      - 成绩单报告 → 委派 report subagent
      - 评价寄语 → 委派 evaluation subagent
-     - 学校制度/科研/活动等通用知识 → query_knowledge tool
+     - 学校制度/规章/流程 → query_handbook tool（公开手册分区）
+     - 本人成绩单/某科成绩 → query_transcript tool（个人分区，强权限隔离）
      - 闲聊 → 直接回答
+     - **2026-08-25 重构**：query_knowledge 拆成 query_handbook / query_transcript 两个独立工具，
+       按问题域分发，避免 top_k 候选集污染 + 权限边界模糊（详见 docs/.../2026-08-25-knowledge-tools-split.md）
 
   2. 路由机制：主 agent LLM 推理意图 → deepagents 原生 task/tool 调用委派
      - 用 TodoWrite 规划多步（参考 claude-code assembleToolPool）
@@ -28,10 +31,11 @@ Phase 3 目标：
 架构决策：
   - 混合入口：/chat 走主 agent 路由，/recommend /report /evaluation 直达专用端点
   - 各端点独立 session，不共享对话
-  - 通用知识 Q&A 走 query_knowledge tool（FastGPT KB 经 MCP 调用）
+  - 通用知识 Q&A 走 query_handbook（公开）+ query_transcript（个人）两个独立工具
   - 网页搜索走 web_search tool（tavily）
 
 参考文档：
   - docs/v2.0.0/notes/2026-07-27-设计决策问答记录.md 决策 10
   - docs/v2.0.0/notes/2026-07-28-设计决策补充说明.md 决策 10 补充
+  - docs/v2.0.0/notes/2026-08-25-knowledge-tools-split.md
 """

@@ -1,0 +1,54 @@
+{
+  "date": "2026-08-18",
+  "set": "report_math_live",
+  "mode": "live",
+  "judge": false,
+  "metrics": {
+    "total": 2,
+    "passed": 2,
+    "pass_rate": 1.0,
+    "latency_p50": 910805.0,
+    "latency_p95": 910805.0,
+    "ttft_p50": null,
+    "api_latency_p50": null,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "total": 0
+    },
+    "context_recall_avg": null,
+    "context_precision_avg": null,
+    "by_difficulty": {
+      "medium": {
+        "total": 2,
+        "passed": 2
+      }
+    }
+  },
+  "results": [
+    {
+      "case_id": "report_live_01",
+      "type": "report_math",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 910805.0,
+      "mode": "live",
+      "usage": {},
+      "detail": "students=37 failed=0 batch=True"
+    },
+    {
+      "case_id": "report_live_02",
+      "type": "report_math",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 722222.7,
+      "mode": "live",
+      "usage": {},
+      "detail": "students=37 failed=0 batch=False"
+    }
+  ]
+}

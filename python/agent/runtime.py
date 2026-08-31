@@ -37,6 +37,7 @@ document_repo: Any = None
 # Phase 2：report 产物存储与元数据；evaluation 评价档案
 minio_repo: Any = None
 report_artifact_repo: Any = None
+report_upload_repo: Any = None
 evaluation_repo: Any = None
 chat_session_repo: Any = None
 
@@ -47,7 +48,7 @@ async def init() -> None:
     global mysql_repo, redis_repo, course_vector_repo
     global main_agent, tool_registry
     global document_vector_repo, document_repo
-    global minio_repo, report_artifact_repo, evaluation_repo, chat_session_repo
+    global minio_repo, report_artifact_repo, report_upload_repo, evaluation_repo, chat_session_repo
 
     from ai.embedding_client import build_embedding_client
     from ai.llm_task_name import LLMTaskName
@@ -87,6 +88,8 @@ async def init() -> None:
         connect_timeout=_s.minio_connect_timeout,
     )
     report_artifact_repo = ReportArtifactRepository()
+    from storage.mysql.report_upload_repo import ReportUploadRepository
+    report_upload_repo = ReportUploadRepository()
     from storage.mysql.evaluation_repo import EvaluationRepository
     from storage.mysql.chat_session_repo import ChatSessionRepository
 
@@ -99,16 +102,19 @@ async def init() -> None:
         check_feasibility,
         code_interpreter,
         compute_weighted_grade,
+        dispatch_module,
         extract_profile,
         filter_hard_constraints,
         generate_reasons,
         get_current_time,
         image_generate,
+        image_generate_get,
         image_recognize,
         inspect_score_excels,
         list_available_skills,
         mindmap_generator,
-        query_knowledge,
+        query_handbook,
+        query_transcript,
         recommend_courses,
         render_report_batch,
         rerank_courses,
@@ -118,12 +124,14 @@ async def init() -> None:
         writing_assistant,
     )
     from tools.evaluation import get_academic_snapshot
+    from tools.evaluation.tool_wrappers import compute_radar_values, design_dimensions, generate_comment
     from tools.image import image_recognize
 
     tool_registry = ToolRegistry()
     tool_registry.register_many([
         list_available_skills,
         get_current_time,
+        dispatch_module,
         recommend_courses,
         extract_profile,
         search_courses,
@@ -135,14 +143,19 @@ async def init() -> None:
         writing_assistant,
         web_search,
         image_generate,
+        image_generate_get,
         code_interpreter,
         mindmap_generator,
         compute_weighted_grade,
-        query_knowledge,
+        query_handbook,
+        query_transcript,
         inspect_score_excels,
         render_report_batch,
         get_academic_snapshot,
         image_recognize,
+        design_dimensions,
+        compute_radar_values,
+        generate_comment,
     ])
     # 注册子包 tool（documents/）
     try:
@@ -158,12 +171,25 @@ async def init() -> None:
 
     main_agent = await build_main_agent()
 
+    # 2026-08-25：DocumentsPage 上传链路 —— DocumentIngestionService 在
+    # api/documents.py 模块级 new 时没传 repos，导致 vector_repo / embedding_client /
+    # document_repo 永远是 None，service.ingest() 的 Milvus/MySQL 写入段从未执行；
+    # 这里在 lifespan 启动后一次性把已构造好的 repos 注入 service 模块级单例。
+    from api.documents import service as _documents_service
+
+    _documents_service.set_repos(
+        vector_repo=document_vector_repo,
+        document_repo=document_repo,
+        embedding_client=document_vector_repo.embedding_client,
+    )
+
     logger.info(
         "runtime.init",
         supervisor=supervisor is not None,
         main_agent=main_agent is not None,
         tool_registry_tools=len(tool_registry.list_tools()),
         document_vector_repo=document_vector_repo is not None,
+        documents_service_repos_wired=_documents_service.vector_repo is not None,
     )
 
 

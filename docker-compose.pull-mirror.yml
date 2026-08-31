@@ -1,15 +1,24 @@
-# 当 Docker Hub / quay.io 直连失败时与本文件一并使用（DaoCloud 公共镜像代理示例）：
+# 国内镜像覆盖（默认启用）：绕开 registry-1.docker.io 被墙导致的构建/拉取超时。
+# - python-api 基础镜像 / mysql / redis / minio / milvus 走 DaoCloud（docker.m.daocloud.io）
+# - frontend node 基础镜像走 docker.1ms.run（DaoCloud 对 node 镜像曾返回 401，故单独换源）
+# 所有 up / build 命令统一带上本覆盖文件：
 #
-#   docker compose -f docker-compose.python.yml -f docker-compose.python.pull-mirror.yml --profile python up -d --build
+#   docker compose -f docker-compose.yml -f docker-compose.pull-mirror.yml up -d --build
 #
-# 亦可自行改前缀或配置 Docker Desktop 的 registry-mirrors，不以本仓库为唯一方案。
-# 覆盖文件中 etcd 仍为 quay.io 官方镜像：DaoCloud 对 quay/etcd 路径常返回 403。
+# 可直连 Docker Hub 时去掉本文件即可回退官方源；亦可自行改前缀或配置 Docker Desktop 的
+# registry-mirrors，不以本仓库为唯一方案。etcd 仍为 quay.io 官方镜像（DaoCloud 对
+# quay/etcd 路径常返回 403，quay.io 一般可直连）。
 
 services:
   python-api:
     build:
       args:
         PYTHON_IMAGE: docker.m.daocloud.io/library/python:3.12-slim
+
+  frontend:
+    build:
+      args:
+        NODE_BASE_IMAGE: docker.1ms.run/library/node:20-slim
 
   mysql:
     image: docker.m.daocloud.io/library/mysql:8.0

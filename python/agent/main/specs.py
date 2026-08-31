@@ -40,8 +40,11 @@ MAIN_AGENT_SPEC = AgentSpec(
     allowed_tools=(
         "list_available_skills",
         "get_current_time",
+        "dispatch_module",
         "recommend_courses",
-        "query_knowledge",
+        # 2026-08-25：手册 / 个人成绩单拆 2 个独立工具，候选集 100% 命中目标
+        "query_handbook",
+        "query_transcript",
         "parse_document",
         "chunk_document",
         "writing_assistant",

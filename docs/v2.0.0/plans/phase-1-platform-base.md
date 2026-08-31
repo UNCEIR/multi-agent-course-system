@@ -101,15 +101,15 @@
 **改动点**：
 
 1. **升级现有 `minio` 服务**（milvus 依赖 → 共享实例）：
-   - 暴露端口 `9000:9000`（API）+ `9001:9001`（console）
+   - 暴露端口 `9002:9002`（API）+ `9002:9002`（console）
    - `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY` 从 `.env` 读（`MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`，默认 `minioadmin`/`minioadmin`）
-   - 加 healthcheck：`curl -f http://localhost:9000/minio/health/live` 或 TCP 探活
-   - milvus 的 `MINIO_ADDRESS=minio:9000` 不变（共享实例）
+   - 加 healthcheck：`curl -f http://localhost:9002/minio/health/live` 或 TCP 探活
+   - milvus 的 `MINIO_ADDRESS=minio:9002` 不变（共享实例）
 
 2. **新增 5 个 FastGPT 服务**（官方 ghcr.io 镜像，Phase 1 不做二次开发源码构建）：
    - `fastgpt`：`ghcr.io/labring/fastgpt:v4.14.23`，端口 `3000:3000`，环境变量用 `x-share-db-config` + `x-app-env-config` + `x-service-env-config`（参考 `E:\Agent\FastGPT\docker-compose.yml`）
-   - **存储后端**：Phase 1 用 FastGPT **自带 minio**（`fastgpt-minio` 服务），避免共享现有 minio 实例影响 FastGPT 或 Milvus。`STORAGE_S3_ENDPOINT` 指向 `fastgpt-minio:9000`。Phase 3 集成时再评估是否复用共享 minio。
-   - > 对比方案：复用共享 minio（`minio:9000`）——被否掉，因为共享 minio 的 access_key 改动会同时影响 milvus 和 FastGPT，风险过大。
+   - **存储后端**：Phase 1 用 FastGPT **自带 minio**（`fastgpt-minio` 服务），避免共享现有 minio 实例影响 FastGPT 或 Milvus。`STORAGE_S3_ENDPOINT` 指向 `fastgpt-minio:9002`。Phase 3 集成时再评估是否复用共享 minio。
+   - > 对比方案：复用共享 minio（`minio:9002`）——被否掉，因为共享 minio 的 access_key 改动会同时影响 milvus 和 FastGPT，风险过大。
    - `fastgpt-mcp-server`：`ghcr.io/labring/fastgpt-mcp_server:v4.14.23`，端口 `3003:3000`，`FASTGPT_ENDPOINT=http://fastgpt:3000`
    - `fastgpt-mongo`：`mongo:6`，端口 `27017:27017`（或错开 `27018:27017` 避免宿主冲突），healthcheck `mongosh --eval 'db.runCommand({ping:1})'`
    - `fastgpt-pg`：`pgvector/pgvector:pg16`（自带 pgvector），端口 `5432:5432`（或错开 `5433:5432`），healthcheck `pg_isready`
@@ -127,7 +127,7 @@
 - `docker compose ps` 全 healthy
 - `curl http://localhost:8000/health` 仍返回 200（v1 不破）
 - `curl http://localhost:3000` FastGPT 主服务可达（TCP 探活）
-- `curl http://localhost:9001` MinIO console 可达
+- `curl http://localhost:9002` MinIO console 可达
 
 **回退**：FastGPT 服务起不来 → 加 `profiles: [fastgpt]` 隔离，python-api `depends_on` 去掉 FastGPT，Step 2-5 继续用 mock。
 
@@ -357,7 +357,7 @@
 ```python
 # MinIO（共享实例）
 minio_endpoint: str = "localhost"
-minio_port: int = 9000
+minio_port: int = 9002
 minio_access_key: str = "minioadmin"
 minio_secret_key: str = "minioadmin"
 minio_secure: bool = False
@@ -820,7 +820,7 @@ CREATE TABLE IF NOT EXISTS document_chunks (
 - [ ] `curl http://localhost:8000/api/v1/recommend` 验证 v1 召回仍工作（新库 + 新表 + 重新导入数据）
 
 ### Step 1：docker-compose 升级（FastGPT + MinIO 共享）
-- [ ] 升级现有 minio 服务（暴露 9000/9001 + access_key 从 .env 读 + healthcheck）
+- [ ] 升级现有 minio 服务（暴露 9002/9002 + access_key 从 .env 读 + healthcheck）
 - [ ] 新增 5 FastGPT 服务（fastgpt/mcp-server/mongo/pg/redis，官方 ghcr.io 镜像）
 - [ ] 配 FastGPT 健康检查（mongo/pg/redis 官方 + fastgpt/mcp TCP 探活）
 - [ ] python-api depends_on fastgpt-mcp-server healthy

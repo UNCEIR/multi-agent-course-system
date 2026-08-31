@@ -15,7 +15,7 @@ AI 图片生成（两段式链式调用）：提交任务（image_generate → t
    - [Load Shared Rules: fallback](../_shared/rules/fallback.md)
    - [Load Rules: no-fake](./rules/no-fake.md)
 2. Commands（两段式流程）：
-   - [Load Command: submit-task](./commands/submit-task.md)
+   - [Load Command: generate-deliver](./commands/generate-deliver.md)
    - [Load Command: poll-result](./commands/poll-result.md)
 3. Scripts（调用契约，按需引用）：
    - [Load Script: two-phase-example](./scripts/two-phase-example.md)

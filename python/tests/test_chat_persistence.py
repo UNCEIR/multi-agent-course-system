@@ -54,7 +54,7 @@ async def test_chat_persists_turn_and_injects_memory():
         client = TestClient(app)
         resp = client.post("/api/v1/chat", json={"message": "帮我记一下我偏好安静", "session_id": "s1", "user_id": "u1"})
     assert resp.status_code == 200
-    assert resp.json()["reply"] == "好的，已记录"
+    assert resp.json()["data"]["reply"] == "好的，已记录"
     persist.assert_awaited_once()
     # 注入消息确实作为首条 user 消息传入 agent
     input_msgs = agent.ainvoke.call_args.args[0]["messages"]

@@ -7,6 +7,7 @@
 --   document_records — v2 文档摄入 dataset 级元数据(源文档)
 --   document_chunks  — v2 文档摄入 chunk 级元数据(分块)
 --   report_artifacts — v2 Phase2 report(教师端成绩单)产物元数据
+--   report_uploads    — v2 report 上传批次元数据(输入侧，与知识库分表)
 --   evaluation_records — v2 Phase2 evaluation(教师端生成→学生端同步)评价档案
 --   chat_sessions/chat_messages/chat_memory_entries — v2 Phase2 chat 长期记忆
 -- source of truth: 本文件是建表唯一来源,代码层不建表只 CRUD
@@ -70,12 +71,35 @@ CREATE TABLE IF NOT EXISTS document_records (
     chunks_count INT DEFAULT 0,
     status VARCHAR(16) DEFAULT 'pending',
     error_message TEXT,
+    -- 2026-08-25：document 归属用户；手册用 'public'，个人成绩单用 user_id
+    -- 与 Milvus document_chunks.user_id 一致（同分区语义），过滤走 IN ['public', user_id]
+    user_id VARCHAR(128) NOT NULL DEFAULT 'public',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_doc_records_dataset_name (dataset_name),
     INDEX idx_doc_records_status (status),
+    INDEX idx_doc_records_user_id (user_id),
     INDEX idx_doc_records_created (created_at DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 2026-08-25：兼容已存在的 document_records（旧版没 user_id 列）；
+-- 用 INFORMATION_SCHEMA 检查列存在性后再 ALTER（避开 MySQL 8.0 < 8.0.29 不支持
+-- `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` 的兼容问题）。
+-- 用 PREPARE/EXECUTE 纯 SQL 而非 DELIMITER（init-file 模式不识别 DELIMITER 指令）。
+SET @col_exists := (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'document_records'
+      AND COLUMN_NAME = 'user_id'
+);
+SET @stmt := IF(
+    @col_exists = 0,
+    "ALTER TABLE document_records ADD COLUMN user_id VARCHAR(128) NOT NULL DEFAULT 'public' AFTER error_message, ADD INDEX idx_doc_records_user_id (user_id)",
+    "DO 0"  -- no-op
+);
+PREPARE stmt FROM @stmt;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- ------------------------------------------------------------ document_chunks
 CREATE TABLE IF NOT EXISTS document_chunks (
@@ -112,6 +136,35 @@ CREATE TABLE IF NOT EXISTS report_artifacts (
     INDEX idx_report_artifacts_batch (batch_id),
     INDEX idx_report_artifacts_student (student_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- ------------------------------------------------------------ report_uploads
+-- report 上传批次元数据（输入侧）：一次批量上传 = 一行。与 document_records（知识库）
+-- 按业务分表不混存；与 report_artifacts（输出侧，逐学生产物）粒度不同——本表记录
+-- 上传批次（来源 Excel 清单 + 归属 user_id + 状态机），artifacts 记录生成产物。
+-- 状态机：processing（已落盘，管线运行中）→ done | error
+CREATE TABLE IF NOT EXISTS report_uploads (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    batch_id VARCHAR(64) NOT NULL UNIQUE,                  -- 上传批次 id（rb_<hex>）
+    merged_batch_id VARCHAR(64) NOT NULL DEFAULT '',       -- 工具合并批次 b_xxx（done 后回填，供详情反查）
+    user_id VARCHAR(64) NOT NULL DEFAULT '',               -- 发起上传的教师 user_id（归属/列表过滤）
+    semester VARCHAR(128) NOT NULL DEFAULT '',             -- 学期（可选）
+    user_message TEXT,                                     -- 补充要求（可选，透传生成 Agent）
+    file_count INT NOT NULL DEFAULT 0,                     -- 上传文件数
+    file_names JSON,                                       -- 上传文件名清单（前端展示）
+    status VARCHAR(16) NOT NULL DEFAULT 'processing',      -- processing | done | error
+    error_message TEXT,                                    -- 失败原因（status=error 时）
+    students_ok INT NOT NULL DEFAULT 0,                    -- 成功生成份数（done 回填）
+    students_failed INT NOT NULL DEFAULT 0,                -- 失败份数（done 回填）
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_report_uploads_user (user_id, created_at DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- 兼容已存在的 report_uploads（旧版没有 merged_batch_id 列）：列存在性检查后 ALTER
+SET @col_merged := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'report_uploads' AND COLUMN_NAME = 'merged_batch_id');
+SET @stmt_merged := IF(@col_merged = 0, "ALTER TABLE report_uploads ADD COLUMN merged_batch_id VARCHAR(64) NOT NULL DEFAULT '' AFTER batch_id", "DO 0");
+PREPARE stmt_merged FROM @stmt_merged; EXECUTE stmt_merged; DEALLOCATE PREPARE stmt_merged;
+
+
 
 -- ------------------------------------------------------------ evaluation_records
 -- evaluation(教师端生成→学生端同步)评价档案：append 保留历史，学生端只读本人
@@ -173,4 +226,17 @@ CREATE TABLE IF NOT EXISTS chat_memory_entries (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uq_memory_dedup (user_id, kind, content_hash),
     INDEX idx_memory_entries_user (user_id, updated_at DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------ users
+-- 轻量认证用户表（Phase 3.5）：学号/工号唯一；角色 student | teacher
+-- 密码 sha256(盐 + 密码)；token 由 api/auth.py 签发（HMAC），业务接口维持 user_id 临时口径
+CREATE TABLE IF NOT EXISTS users (
+    user_id VARCHAR(64) PRIMARY KEY,
+    name VARCHAR(64) NOT NULL,
+    role VARCHAR(16) NOT NULL DEFAULT 'student',         -- student | teacher
+    password_hash VARCHAR(128) NOT NULL,
+    salt VARCHAR(32) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

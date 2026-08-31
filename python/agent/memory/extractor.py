@@ -46,6 +46,59 @@ def build_extract_llm():
     )
 
 
+class MemoryExtractWorker:
+    """跨会话记忆提取工作器（forked subagent 语义）。
+
+    独立 LLM 实例 + 独立校验/落库/水位推进，与主 agent 零共享
+    （无 checkpointer、无 tool、不读主 agent 状态）。由 maybe_extract 在
+    后台任务（asyncio.create_task）中调用，失败仅退避记录，绝不阻塞对话。
+    """
+
+    def __init__(self, llm=None):
+        self._llm = llm or build_extract_llm()
+
+    async def extract(
+        self,
+        *,
+        repo,
+        session_id: str,
+        user_id: str,
+        messages: list[dict],
+        previous_entries: list[dict],
+    ) -> bool:
+        """单次提取：LLM → Pydantic 校验 → upsert 全部 → 推进水位。成功返回 True。"""
+        previous_summary = (
+            "\n".join(f"- ({e['kind']}) {e['content']}" for e in previous_entries[:30]) or "（无）"
+        )
+        payload = {
+            "conversation": _messages_text(messages),
+            "previous_memory": previous_summary,
+        }
+        content = (
+            f"{_prompt()}\n\n<conversation>\n{payload['conversation']}\n</conversation>"
+            f"\n\n<previous-memory>\n{payload['previous_memory']}\n</previous-memory>"
+        )
+
+        try:
+            resp = await asyncio.wait_for(
+                self._llm.ainvoke([HumanMessage(content=content)]), timeout=60.0
+            )
+            raw = _extract_json(str(resp.content or ""))
+            if raw is None:
+                raise ValueError("输出不是合法 JSON")
+            parsed = MemoryExtractOutput.model_validate(raw)
+        except (ValidationError, ValueError, asyncio.TimeoutError, Exception) as exc:  # noqa: BLE001
+            logger.warning("memory extract failed: %s", str(exc)[:150])
+            repo.mark_extract_failure(session_id)
+            return False
+
+        for entry in parsed.entries:
+            repo.upsert_memory_entry(user_id, entry.kind, entry.content, session_id)
+        max_seq = messages[-1]["seq"] if messages else 0
+        repo.update_extracted_seq(session_id, max_seq)
+        return True
+
+
 def _messages_text(messages: list[dict], max_chars: int = 8000) -> str:
     """消息序列化为纯文本（供摘要请求；截断防超长）。"""
     lines = []
@@ -72,38 +125,8 @@ def _extract_json(text: str) -> dict | None:
         return None
 
 
-async def _run_extraction(repo, session_id: str, user_id: str, messages: list[dict], previous_entries: list[dict]) -> bool:
-    """单次提取：LLM → 校验 → upsert 全部 → 推进水位。成功返回 True。"""
-    from config import get_settings
-
-    llm = build_extract_llm()
-    previous_summary = "\n".join(f"- ({e['kind']}) {e['content']}" for e in previous_entries[:30]) or "（无）"
-    payload = {
-        "conversation": _messages_text(messages),
-        "previous_memory": previous_summary,
-    }
-    content = f"{_prompt()}\n\n<conversation>\n{payload['conversation']}\n</conversation>\n\n<previous-memory>\n{payload['previous_memory']}\n</previous-memory>"
-
-    try:
-        resp = await asyncio.wait_for(llm.ainvoke([HumanMessage(content=content)]), timeout=60.0)
-        raw = _extract_json(str(resp.content or ""))
-        if raw is None:
-            raise ValueError("输出不是合法 JSON")
-        parsed = MemoryExtractOutput.model_validate(raw)
-    except (ValidationError, ValueError, asyncio.TimeoutError, Exception) as exc:  # noqa: BLE001
-        logger.warning("memory extract failed: %s", str(exc)[:150])
-        repo.mark_extract_failure(session_id)
-        return False
-
-    for entry in parsed.entries:
-        repo.upsert_memory_entry(user_id, entry.kind, entry.content, session_id)
-    max_seq = messages[-1]["seq"] if messages else 0
-    repo.update_extracted_seq(session_id, max_seq)
-    return True
-
-
 async def maybe_extract(repo, *, session_id: str, user_id: str) -> bool:
-    """阈值触发式提取；返回是否执行了提取。匿名/未达标/退避中 → False。"""
+    """阈值触发式提取（forked subagent：独立 MemoryExtractWorker）；返回是否执行了提取。匿名/未达标/退避中 → False。"""
     from config import get_settings
 
     if not user_id:
@@ -122,4 +145,20 @@ async def maybe_extract(repo, *, session_id: str, user_id: str) -> bool:
         if len(messages) < threshold:
             return False
         previous = repo.list_memory_entries(user_id, limit=30, max_chars=3000)
-        return await _run_extraction(repo, session_id, user_id, messages, previous)
+        worker = MemoryExtractWorker()
+        ok = await worker.extract(
+            repo=repo,
+            session_id=session_id,
+            user_id=user_id,
+            messages=messages,
+            previous_entries=previous,
+        )
+        if ok:
+            # 提取成功后顺带执行 consolidation（同后台任务；失败仅告警不阻塞）
+            try:
+                from agent.memory.consolidation import ConsolidationWorker
+
+                await ConsolidationWorker().consolidate(repo=repo, user_id=user_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("memory consolidate failed: %s", str(exc)[:150])
+        return ok

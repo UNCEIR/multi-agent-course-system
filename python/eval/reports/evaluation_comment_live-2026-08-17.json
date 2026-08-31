@@ -1,0 +1,127 @@
+{
+  "date": "2026-08-17",
+  "set": "evaluation_comment_live",
+  "mode": "live",
+  "judge": false,
+  "metrics": {
+    "total": 6,
+    "passed": 6,
+    "pass_rate": 1.0,
+    "latency_p50": 67728.9,
+    "latency_p95": 77042.9,
+    "ttft_p50": null,
+    "api_latency_p50": 67728.8,
+    "tokens": {
+      "input": 90023,
+      "output": 20480,
+      "total": 110503
+    },
+    "context_recall_avg": null,
+    "context_precision_avg": null,
+    "by_difficulty": {
+      "medium": {
+        "total": 5,
+        "passed": 5
+      },
+      "easy": {
+        "total": 1,
+        "passed": 1
+      }
+    }
+  },
+  "results": [
+    {
+      "case_id": "eval_live_01",
+      "type": "evaluation_comment",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 74901.1,
+      "mode": "live",
+      "usage": {
+        "input_tokens": 18003,
+        "output_tokens": 4096
+      },
+      "api_latency_ms": 74612.2,
+      "detail": "本学期共修读 71 门课程，总学分 144.5，加权均分 85.85，优势科目为社会心理学；建议重点关注大学生就业创业指导的学习，整体学业表现平稳，望继续保持。"
+    },
+    {
+      "case_id": "eval_live_02",
+      "type": "evaluation_comment",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 65469.0,
+      "mode": "live",
+      "usage": {
+        "input_tokens": 18005,
+        "output_tokens": 4096
+      },
+      "api_latency_ms": 65468.9,
+      "detail": "本学期共修读 71 门课程，总学分 144.5，加权均分 85.85，优势科目为社会心理学；建议重点关注大学生就业创业指导的学习。老师相信你下个学期会做得更好，加油！"
+    },
+    {
+      "case_id": "eval_live_03",
+      "type": "evaluation_comment",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 77042.9,
+      "mode": "live",
+      "usage": {
+        "input_tokens": 18009,
+        "output_tokens": 4096
+      },
+      "api_latency_ms": 77042.8,
+      "detail": "本学期共修读 71 门课程，总学分 144.5，加权均分 85.85，优势科目为社会心理学；建议重点关注大学生就业创业指导的学习。建议制定针对性学习计划，逐步提升。"
+    },
+    {
+      "case_id": "eval_live_04",
+      "type": "evaluation_comment",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 67728.9,
+      "mode": "live",
+      "usage": {
+        "input_tokens": 18003,
+        "output_tokens": 4096
+      },
+      "api_latency_ms": 67728.8,
+      "detail": "本学期共修读 71 门课程，总学分 144.5，加权均分 85.85，优势科目为社会心理学；建议重点关注大学生就业创业指导的学习。该生学业基础扎实，具备继续深造的良好潜力。"
+    },
+    {
+      "case_id": "eval_live_05",
+      "type": "evaluation_comment",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 64886.7,
+      "mode": "live",
+      "usage": {
+        "input_tokens": 18003,
+        "output_tokens": 4096
+      },
+      "api_latency_ms": 64886.6,
+      "detail": "本学期共修读 71 门课程，总学分 144.5，加权均分 85.85，优势科目为社会心理学；建议重点关注大学生就业创业指导的学习，整体学业表现平稳，望继续保持。"
+    },
+    {
+      "case_id": "eval_live_06",
+      "type": "evaluation_comment",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 167.0,
+      "mode": "live",
+      "usage": {},
+      "api_latency_ms": 167.0,
+      "detail": "no_transcript_data"
+    }
+  ]
+}

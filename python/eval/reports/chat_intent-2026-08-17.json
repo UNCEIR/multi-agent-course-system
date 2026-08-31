@@ -1,0 +1,131 @@
+{
+  "date": "2026-08-17",
+  "set": "chat_intent",
+  "mode": "live",
+  "judge": false,
+  "metrics": {
+    "total": 5,
+    "passed": 1,
+    "pass_rate": 0.2,
+    "latency_p50": 23101.4,
+    "latency_p95": 228132.0,
+    "ttft_p50": 2180.6,
+    "api_latency_p50": 22870.3,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "total": 0
+    },
+    "context_recall_avg": null,
+    "context_precision_avg": null,
+    "by_difficulty": {
+      "easy": {
+        "total": 2,
+        "passed": 0
+      },
+      "medium": {
+        "total": 2,
+        "passed": 0
+      },
+      "hard": {
+        "total": 1,
+        "passed": 1
+      }
+    }
+  },
+  "results": [
+    {
+      "case_id": "intent_04",
+      "type": "chat_intent",
+      "difficulty": "easy",
+      "pass": false,
+      "failures": [
+        "tool_chain 期望 ['report'] 实得 []"
+      ],
+      "metrics": {},
+      "latency_ms": 18848.0,
+      "mode": "live",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "api_latency_ms": 18221.2,
+      "ttft_ms": 3314.7,
+      "detail": "用户提到要生成班级成绩单报告，并且已经上传了Excel文件。这匹配 `report-generation` 技能。我需要先读取该技能的 SKILL.md 文件了解具体流程。\n</think>\n\nLet"
+    },
+    {
+      "case_id": "intent_05",
+      "type": "chat_intent",
+      "difficulty": "medium",
+      "pass": false,
+      "failures": [
+        "tool_chain 期望 ['report'] 实得 ['query_knowledge']"
+      ],
+      "metrics": {},
+      "latency_ms": 23101.4,
+      "mode": "live",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "api_latency_ms": 22870.3,
+      "ttft_ms": 1886.7,
+      "detail": "用户请求生成上个月的道法（道德与法治）成绩期末报告单。这属于成绩报告生成任务，需要调用 report-generation 技能。\n\n让我先读取 report-generation 的 SKILL.m"
+    },
+    {
+      "case_id": "intent_06",
+      "type": "chat_intent",
+      "difficulty": "easy",
+      "pass": false,
+      "failures": [
+        "tool_chain 期望 ['evaluation'] 实得 ['query_knowledge']"
+      ],
+      "metrics": {},
+      "latency_ms": 32590.5,
+      "mode": "live",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "api_latency_ms": 32398.5,
+      "ttft_ms": 2673.5,
+      "detail": "用户需要为学生\"张三\"写学期总结评语。这属于评价寄语生成任务，应该使用 evaluation-writing 技能。\n\n让我先读取该技能的 SKILL.md 文件了解具体流程。\n</think>\n\n我"
+    },
+    {
+      "case_id": "intent_07",
+      "type": "chat_intent",
+      "difficulty": "medium",
+      "pass": false,
+      "failures": [
+        "tool_chain 期望 ['evaluation'] 实得 []"
+      ],
+      "metrics": {},
+      "latency_ms": 19861.3,
+      "mode": "live",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "api_latency_ms": 19594.1,
+      "ttft_ms": 2110.1,
+      "detail": "用户需要为班里进步大的同学生成鼓励寄语。这属于评价寄语生成的范畴，我应该先读取 evaluation-writing 技能的 SKILL.md 文件来了解具体流程。\n</think>\n\n用户需要为班里"
+    },
+    {
+      "case_id": "intent_20",
+      "type": "chat_intent",
+      "difficulty": "hard",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 228132.0,
+      "mode": "live",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "api_latency_ms": 227897.3,
+      "ttft_ms": 2180.6,
+      "detail": "用户有两个需求：\n1. 查看这学期选的课（需要查询知识库中的个人成绩单）\n2. 推荐一门不用考试的公选课（需要调用课程推荐）\n\n这两个任务可以并行执行。先查询知识库看选课情况，同时调用课程推荐工具推荐"
+    }
+  ]
+}

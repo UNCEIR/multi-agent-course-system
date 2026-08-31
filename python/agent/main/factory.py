@@ -7,6 +7,7 @@ checkpointer。这样每个场景可以拥有自己的 skills、memory 和 tool 
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -24,6 +25,17 @@ from .checkpointer import build_checkpointer
 from .specs import AgentSpec
 
 logger = structlog.get_logger()
+
+_SUMMARIZATION_PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "summarization.txt"
+
+
+def _load_summarization_prompt() -> str | None:
+    """读取决策 11 五字段 compaction 摘要模板；失败回退 None（deepagents 默认 prompt）。"""
+    try:
+        return _SUMMARIZATION_PROMPT_PATH.read_text(encoding="utf-8")
+    except OSError:
+        logger.warning("build_deep_agent.summarization_prompt_missing", path=str(_SUMMARIZATION_PROMPT_PATH))
+        return None
 
 
 async def build_deep_agent(
@@ -63,12 +75,22 @@ async def build_deep_agent(
             if settings.agent_compaction_trigger_messages
             else ("tokens", settings.agent_context_window_tokens - 13000)
         )
-        summarization = SummarizationMiddleware(
-            model=llm,
-            backend=backend,
-            trigger=trigger,
-            keep=("tokens", settings.agent_compaction_keep_tokens),
-        )
+        summary_prompt = _load_summarization_prompt()
+        if summary_prompt is not None:
+            summarization = SummarizationMiddleware(
+                model=llm,
+                backend=backend,
+                trigger=trigger,
+                keep=("tokens", settings.agent_compaction_keep_tokens),
+                summary_prompt=summary_prompt,
+            )
+        else:
+            summarization = SummarizationMiddleware(
+                model=llm,
+                backend=backend,
+                trigger=trigger,
+                keep=("tokens", settings.agent_compaction_keep_tokens),
+            )
         middleware = [summarization, SummarizationToolMiddleware(summarization)]
 
     logger.info(

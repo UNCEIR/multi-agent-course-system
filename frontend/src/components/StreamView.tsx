@@ -1,20 +1,27 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { Tag, Typography, Button, Space, Collapse, Card } from 'antd'
+'use client'
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  Button,
+  Card,
+  Collapse,
+  Space,
+  Spin,
+  Tag,
+  Typography,
+} from 'antd'
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   ClockCircleOutlined,
-  WarningOutlined,
   ReloadOutlined,
+  StopOutlined,
+  WarningOutlined,
   ExperimentOutlined,
 } from '@ant-design/icons'
-import { api } from '../services/api'
-import type {
-  SSEEvent,
-  StreamSegment,
-  StreamDonePayload,
-  Course,
-} from '../types'
+import { api } from '../lib/api'
+import { getWarningLevel } from '../lib/warningLevel'
+import type { StreamDonePayload, Course } from '../types'
 import CourseInlineCard from './CourseInlineCard'
 
 const { Text } = Typography
@@ -49,15 +56,23 @@ interface Props {
 
 export default function StreamView({ prompt, numItems, mode = 'pipeline', onDone, onRetry }: Props) {
   const [phase, setPhase] = useState<string>('start')
-  const [segments, setSegments] = useState<StreamSegment[]>([])
+  const [segments, setSegments] = useState<Array<{ course_id: string | null; course_name?: string; tokens: string[] }>>([])
   const [courseCards, setCourseCards] = useState<Map<string, Course>>(new Map())
   const [donePayload, setDonePayload] = useState<StreamDonePayload | null>(null)
   const [error, setError] = useState<{ code: string; message: string } | null>(null)
   const [isStreaming, setIsStreaming] = useState(true)
   const [warningCount, setWarningCount] = useState(0)
+
   const containerRef = useRef<HTMLDivElement>(null)
   const cursorRef = useRef<HTMLSpanElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+
+  // rAF 节流：用 ref 累积 token，避免每次 event 都触发 setState 浅拷贝整个 segments
+  // 数组。rAF 把多次累积合并为一次 flush，O(N) → O(1) per token（详见 A3 优化）。
+  const segmentsRef = useRef<Array<{ course_id: string | null; course_name?: string; tokens: string[] }>>([])
+  const courseMapRef = useRef<Map<string, Course>>(new Map())
+  const rafIdRef = useRef<number | null>(null)
+  const flushedRef = useRef(false)
 
   const scrollToBottom = useCallback(() => {
     if (containerRef.current) {
@@ -65,93 +80,114 @@ export default function StreamView({ prompt, numItems, mode = 'pipeline', onDone
     }
   }, [])
 
+  const flushSegments = useCallback(() => {
+    if (flushedRef.current) return
+    flushedRef.current = true
+    // 浅拷 ref 持有的数组 → state（保持引用一致以便 React diff 优化）
+    setSegments(segmentsRef.current.map((s) => ({ ...s, tokens: [...s.tokens] })))
+    setCourseCards(new Map(courseMapRef.current))
+    rafIdRef.current = null
+    // 滚动到底部
+    requestAnimationFrame(() => {
+      scrollToBottom()
+    })
+  }, [scrollToBottom])
+
+  const scheduleFlush = useCallback(() => {
+    flushedRef.current = false
+    if (rafIdRef.current !== null) return
+    rafIdRef.current = requestAnimationFrame(flushSegments)
+  }, [flushSegments])
+
+  // 取消按钮：用户主动中断流。AbortController.abort() 会被 useEffect cleanup 也调一次。
+  const handleStop = useCallback(() => {
+    abortRef.current?.abort()
+  }, [])
+
   useEffect(() => {
     const ac = new AbortController()
     abortRef.current = ac
-    setIsStreaming(true)
+    segmentsRef.current = []
+    courseMapRef.current = new Map()
+    // 重置组件状态：依赖项变化（prompt/numItems/mode）时重新触发流；
+    // 这是 React 官方允许的"effect 内重置 state"模式（effect 用于同步外部系统）。
+    /* eslint-disable react-hooks/set-state-in-effect */
     setSegments([])
     setCourseCards(new Map())
     setDonePayload(null)
     setError(null)
+    setIsStreaming(true)
     setPhase('start')
     setWarningCount(0)
+    /* eslint-enable react-hooks/set-state-in-effect */
 
     const uid = `user_${Date.now()}`
-    const body = { user_id: uid, prompt, num_items: numItems, scene: 'course_selection' as const }
+    const body = { user_id: uid, prompt, num_items: numItems, scene: 'course_selection' as const, mode }
 
-    let currentSegments: StreamSegment[] = []
-    const courseMap = new Map<string, Course>()
-
-    ;(async () => {
+    void (async () => {
       try {
-        const streamFn = mode === 'react' ? api.recommendReactStream : api.recommendStream
-        for await (const evt of streamFn(body)) {
+        for await (const evt of api.recommendStreamWithRetry(body, ac.signal)) {
           if (ac.signal.aborted) return
 
           switch (evt.event) {
             case 'phase': {
-              const pd = evt.data
+              const pd = evt.data as { phase: string; warning_count?: number }
               setPhase(pd.phase)
               if (pd.warning_count !== undefined) setWarningCount(pd.warning_count)
               break
             }
 
             case 'course_start': {
-              const sd = evt.data
+              const sd = evt.data as { course_id: string; course_name: string }
               if (sd.course_id && sd.course_name) {
-                currentSegments.push({
+                segmentsRef.current.push({
                   course_id: sd.course_id,
                   course_name: sd.course_name,
                   tokens: [],
                 })
+                scheduleFlush()
               }
-              setSegments([...currentSegments])
               break
             }
 
             case 'text': {
-              const td = evt.data
+              const td = evt.data as { course_id: string | null; token: string }
               const cid = td.course_id
-              if (cid) {
-                const seg = currentSegments.find((s) => s.course_id === cid)
-                if (seg) {
-                  seg.tokens.push(td.token)
-                } else {
-                  currentSegments.push({ course_id: cid, tokens: [td.token] })
-                }
+              const segs = segmentsRef.current
+              let seg = cid ? segs.find((s) => s.course_id === cid) : segs.find((s) => s.course_id === null)
+              if (!seg) {
+                seg = cid
+                  ? { course_id: cid, tokens: [td.token] }
+                  : { course_id: null, tokens: [td.token] }
+                segs.push(seg)
               } else {
-                let intro = currentSegments.find((s) => s.course_id === null)
-                if (!intro) {
-                  intro = { course_id: null, tokens: [] }
-                  currentSegments.push(intro)
-                }
-                intro.tokens.push(td.token)
+                seg.tokens.push(td.token)
               }
-              setSegments([...currentSegments])
-              scrollToBottom()
+              scheduleFlush()
               break
             }
 
-            case 'course_end': {
-              // course card will be populated when done event arrives with course data
+            case 'course_end':
+              // course card 会在 done 事件到达时填充
               break
-            }
 
             case 'done': {
-              const dd = evt.data
+              const dd = evt.data as StreamDonePayload
               for (const c of dd.courses) {
-                courseMap.set(c.course_id, c)
+                courseMapRef.current.set(c.course_id, c)
               }
-              setCourseCards(new Map(courseMap))
               setDonePayload(dd)
               setIsStreaming(false)
               onDone?.(dd)
+              // 强制 flush（rAF 在 done 时仍可能未触发）
+              flushSegments()
               scrollToBottom()
               return
             }
 
             case 'error': {
-              setError({ code: evt.data.code, message: evt.data.message })
+              const ed = evt.data as { code: string; message: string }
+              setError({ code: ed.code, message: ed.message })
               setIsStreaming(false)
               return
             }
@@ -167,8 +203,13 @@ export default function StreamView({ prompt, numItems, mode = 'pipeline', onDone
       }
     })()
 
-    return () => ac.abort()
-  }, [prompt, numItems, onDone, scrollToBottom])
+    return () => {
+      ac.abort()
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current)
+      }
+    }
+  }, [prompt, numItems, mode, onDone, scheduleFlush, flushSegments, scrollToBottom])
 
   const phaseDots = ['start', 'phase1', 'phase2', 'phase3']
   const completedPhases = (() => {
@@ -192,7 +233,7 @@ export default function StreamView({ prompt, numItems, mode = 'pipeline', onDone
           alignItems: 'center',
           gap: 0,
           padding: '10px 0 16px',
-          borderBottom: '1px solid #f0ece5',
+          borderBottom: '1px solid #EAF2FB',
           marginBottom: 4,
         }}
       >
@@ -200,14 +241,17 @@ export default function StreamView({ prompt, numItems, mode = 'pipeline', onDone
           const done = completedPhases.includes(p)
           const active = !done && i === completedPhases.length
           return (
-            <div key={p} style={{ display: 'flex', alignItems: 'center', flex: p === 'start' ? '0 0 auto' : 1 }}>
+            <div
+              key={p}
+              style={{ display: 'flex', alignItems: 'center', flex: p === 'start' ? '0 0 auto' : 1 }}
+            >
               <div
                 className={active && isStreaming ? 'phase-dot-active' : ''}
                 style={{
                   width: 10,
                   height: 10,
                   borderRadius: '50%',
-                  background: done ? '#2d6a4f' : active ? '#1e3a5f' : '#e8e0d5',
+                  background: done ? '#1FA88D' : active ? '#16365C' : '#CFE3F5',
                   transition: 'background 0.3s ease',
                   flexShrink: 0,
                 }}
@@ -217,7 +261,7 @@ export default function StreamView({ prompt, numItems, mode = 'pipeline', onDone
                   style={{
                     flex: 1,
                     height: 2,
-                    background: done ? '#2d6a4f' : '#e8e0d5',
+                    background: done ? '#1FA88D' : '#CFE3F5',
                     transition: 'background 1s ease',
                     marginLeft: i === 0 ? 6 : 0,
                     minWidth: 20,
@@ -228,14 +272,32 @@ export default function StreamView({ prompt, numItems, mode = 'pipeline', onDone
           )
         })}
         <Text type="secondary" style={{ fontSize: 11, marginLeft: 10, whiteSpace: 'nowrap', minWidth: 80 }}>
-          <ExperimentOutlined style={{ marginRight: 4, color: isStreaming ? '#1e3a5f' : '#2d6a4f' }} />
+          <ExperimentOutlined style={{ marginRight: 4, color: isStreaming ? '#16365C' : '#1FA88D' }} />
           {currentPhaseLabel}
         </Text>
+        {/* ── 取消按钮（路 2：暴露 AbortController UI） ── */}
+        {isStreaming && (
+          <Button
+            size="small"
+            type="default"
+            danger
+            icon={<StopOutlined aria-hidden="true" />}
+            onClick={handleStop}
+            style={{ marginLeft: 'auto' }}
+            aria-label="停止生成推荐"
+          >
+            停止
+          </Button>
+        )}
       </div>
 
-      {/* ── Streaming text area ── */}
+      {/* ── Streaming text area（路 2：role="status" aria-live="polite" 让屏幕阅读器朗读） ── */}
       <div
         ref={containerRef}
+        role="status"
+        aria-live="polite"
+        aria-busy={isStreaming}
+        aria-label="推荐流式生成区域"
         style={{
           flex: 1,
           minHeight: 300,
@@ -246,7 +308,10 @@ export default function StreamView({ prompt, numItems, mode = 'pipeline', onDone
       >
         {segments.length === 0 && isStreaming && (
           <div style={{ padding: '40px 0', textAlign: 'center' }}>
-            <Text type="secondary" style={{ fontSize: 14, fontStyle: 'italic' }}>
+            <Space size={6} aria-hidden="true">
+              <Spin size="small" />
+            </Space>
+            <Text type="secondary" style={{ fontSize: 14, fontStyle: 'italic', display: 'block', marginTop: 8 }}>
               正在分析你的选课需求...
             </Text>
           </div>
@@ -255,7 +320,6 @@ export default function StreamView({ prompt, numItems, mode = 'pipeline', onDone
         {segments.map((seg, si) => {
           const isIntro = seg.course_id === null
           const course = seg.course_id ? courseCards.get(seg.course_id) : null
-          const fullText = seg.tokens.join('')
 
           return (
             <div key={si} style={{ marginBottom: isIntro ? 0 : 4 }}>
@@ -290,7 +354,7 @@ export default function StreamView({ prompt, numItems, mode = 'pipeline', onDone
 
         {/* Blinking cursor while streaming */}
         {isStreaming && !error && (
-          <span ref={cursorRef} className="stream-cursor" />
+          <span ref={cursorRef} className="stream-cursor" aria-hidden="true" />
         )}
       </div>
 
@@ -298,19 +362,20 @@ export default function StreamView({ prompt, numItems, mode = 'pipeline', onDone
       {error && (
         <div
           className="card-slide-in"
+          role="alert"
           style={{
             margin: '8px 4px',
             padding: '16px 20px',
             borderRadius: 10,
-            background: '#fef2f2',
+            background: '#FDECEC',
             border: '1px solid #fecaca',
           }}
         >
-          <Space direction="vertical" size={4}>
+          <Space orientation="vertical" size={4}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <CloseCircleOutlined style={{ color: '#a52a2a', fontSize: 15 }} />
-              <Text strong style={{ color: '#991b1b', fontSize: 14 }}>请求失败</Text>
-              <Tag style={{ fontSize: 10, background: '#fee2e2', color: '#991b1b', border: 'none' }}>
+              <CloseCircleOutlined style={{ color: '#D64545', fontSize: 15 }} aria-hidden="true" />
+              <Text strong style={{ color: '#C0392B', fontSize: 14 }}>请求失败</Text>
+              <Tag style={{ fontSize: 10, background: '#fee2e2', color: '#C0392B', border: 'none' }}>
                 {error.code}
               </Tag>
             </span>
@@ -319,7 +384,7 @@ export default function StreamView({ prompt, numItems, mode = 'pipeline', onDone
           {onRetry && (
             <Button
               size="small"
-              icon={<ReloadOutlined />}
+              icon={<ReloadOutlined aria-hidden="true" />}
               onClick={onRetry}
               style={{ marginTop: 10 }}
             >
@@ -337,7 +402,7 @@ export default function StreamView({ prompt, numItems, mode = 'pipeline', onDone
             margin: '8px 4px 0',
             padding: '12px 18px',
             borderRadius: 10,
-            background: '#f0faf4',
+            background: '#E6F7F3',
             border: '1px solid #c6f0d7',
             display: 'flex',
             alignItems: 'center',
@@ -346,25 +411,25 @@ export default function StreamView({ prompt, numItems, mode = 'pipeline', onDone
           }}
         >
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <CheckCircleOutlined style={{ color: '#2d6a4f', fontSize: 14 }} />
-            <Text strong style={{ color: '#166534', fontSize: 13 }}>推荐完成</Text>
+            <CheckCircleOutlined style={{ color: '#1FA88D', fontSize: 14 }} aria-hidden="true" />
+            <Text strong style={{ color: '#147D64', fontSize: 13 }}>推荐完成</Text>
           </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#5c5c6e' }}>
-            <ClockCircleOutlined />
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#6B7A8D' }}>
+            <ClockCircleOutlined aria-hidden="true" />
             {donePayload.total_latency_ms.toFixed(0)} ms
           </span>
           {donePayload.courses.length > 0 && (
-            <Text style={{ fontSize: 12, color: '#5c5c6e' }}>
+            <Text style={{ fontSize: 12, color: '#6B7A8D' }}>
               {donePayload.courses.length} 门课程
             </Text>
           )}
           {warningCount > 0 && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#92400e' }}>
-              <WarningOutlined />
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#B9772E' }}>
+              <WarningOutlined aria-hidden="true" />
               {warningCount} 条选课提醒
             </span>
           )}
-          <Tag style={{ fontSize: 10, background: '#e8eef4', color: '#1e3a5f', border: 'none', marginLeft: 'auto' }}>
+          <Tag style={{ fontSize: 10, background: '#EAF2FB', color: '#16365C', border: 'none', marginLeft: 'auto' }}>
             {donePayload.experiment_group}
           </Tag>
         </div>
@@ -380,9 +445,9 @@ export default function StreamView({ prompt, numItems, mode = 'pipeline', onDone
                 key: 'warnings',
                 label: (
                   <Space>
-                    <WarningOutlined style={{ color: '#c88c3e' }} />
-                    <Text strong style={{ color: '#92400e' }}>选课可行性提醒</Text>
-                    <Tag style={{ background: '#fef3c7', color: '#92400e', border: 'none' }}>
+                    <WarningOutlined style={{ color: '#14B8A6' }} aria-hidden="true" />
+                    <Text strong style={{ color: '#B9772E' }}>选课可行性提醒</Text>
+                    <Tag style={{ background: '#fef3c7', color: '#B9772E', border: 'none' }}>
                       {donePayload.selection_warnings.length} 条
                     </Tag>
                   </Space>
@@ -390,33 +455,28 @@ export default function StreamView({ prompt, numItems, mode = 'pipeline', onDone
                 children: (
                   <div style={{ maxHeight: 340, overflow: 'auto' }}>
                     {donePayload.selection_warnings.map((w, i) => {
-                      const levelColors: Record<string, string> = {
-                        high: '#991b1b', medium: '#92400e', low: '#5c5c6e',
-                      }
-                      const levelBgs: Record<string, string> = {
-                        high: '#fef2f2', medium: '#fef3c7', low: '#f0ece5',
-                      }
-                      const levelLabels: Record<string, string> = {
-                        high: '高', medium: '中', low: '低',
-                      }
-                      const lv = String(w.level || '')
+                      const lvl = getWarningLevel(w.level)
                       const courseName = String(w.course_name || w.course_id || '')
                       const message = String(w.message || '')
                       return (
                         <Card key={i} size="small" style={{ marginBottom: 8 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                             <Text strong style={{ fontSize: 13 }}>{courseName}</Text>
-                            {lv && (
-                              <Tag style={{
-                                fontSize: 11, border: 'none',
-                                background: levelBgs[lv] || levelBgs.low,
-                                color: levelColors[lv] || levelColors.low,
-                              }}>
-                                {levelLabels[lv] || lv}
+                            {typeof w.level === 'string' && (
+                              <Tag
+                                style={{
+                                  fontSize: 11,
+                                  border: 'none',
+                                  background: lvl.bg,
+                                  color: lvl.color,
+                                }}
+                                aria-label={`风险等级：${lvl.label}`}
+                              >
+                                {lvl.label}
                               </Tag>
                             )}
                           </div>
-                          <Text style={{ fontSize: 13, color: '#5c5c6e' }}>{message}</Text>
+                          <Text style={{ fontSize: 13, color: '#6B7A8D' }}>{message}</Text>
                         </Card>
                       )
                     })}

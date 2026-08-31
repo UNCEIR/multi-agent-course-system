@@ -20,18 +20,47 @@ services:
       - MILVUS_PORT=19530
       # Phase 2：容器内走服务名访问共享 minio（密码统一 123456，与 mysql 一致）
       - MINIO_ENDPOINT=minio
-      - MINIO_PORT=9000
+      - MINIO_PORT=9002
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=12345678
       - MINIO_SECURE=false
     ports:
       - "8000:8000"
+    # 2026-08-31：持久化 .documents（report 本地兜底产物 / report_uploads / mindmaps）。
+    # 此前容器内本地兜底重建即丢，导致「生成 OK 但下载 404」；挂命名卷后重建不丢。
+    volumes:
+      - python_documents_data:/app/.documents
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
       milvus:
+        condition: service_healthy
+
+  # 路 5：frontend 容器化 — 与 python-api 同 docker 网络（service 名寻址），绕开 host proxy 502 bug
+  # 启动：`docker compose -f docker-compose.yml -f docker-compose.pull-mirror.yml --profile frontend up -d --build frontend`
+  # 关闭：`docker compose --profile frontend stop`
+  # ⚠️ host 上不要同时跑 `npm run dev`（端口冲突；且 SSE 流会被 docker desktop host → container:8000
+  #    转发层截断为空 body，前端报 network error）
+  frontend:
+    profiles: ["frontend"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # 默认走 docker.io；不可达时同 python-api 模式传 build-arg：
+        # NODE_BASE_IMAGE=docker.1ms.run/library/node:20-slim docker compose ... build --no-cache frontend
+        # ⚠️ 改 frontend/package.json 后必须 --no-cache 重 build（否则镜像里的 package.json 是旧版）
+        NODE_BASE_IMAGE: ${NODE_BASE_IMAGE:-node:20-slim}
+    environment:
+      # 容器内走 service 名直连 python-api（同 docker 网络，绕开 docker desktop host 转发层）
+      - API_PROXY_TARGET=http://python-api:8000
+      - NEXT_TELEMETRY_DISABLED=1
+    ports:
+      - "3001:3001"   # 容器内 `next dev -p 3001`（见 frontend/package.json scripts.dev），与端口映射对齐
+    depends_on:
+      python-api:
         condition: service_started
 
   mysql:
@@ -73,20 +102,28 @@ services:
     command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls=http://0.0.0.0:2379 --data-dir /etcd
     volumes:
       - etcd_data:/etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health", "--endpoints=http://127.0.0.1:2379"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   minio:
     image: minio/minio:RELEASE.2024-05-10T01-41-38Z
-    command: minio server /minio_data --console-address ":9001"
+    # --address ":9002"：S3 API 端口（Milvus / 业务读写都连这个）
+    # --console-address ":9003"：Web UI 端口（人看，浏览器访问）
+    # 宿主 9000 端口被占用，故 API 改 9002；这两个端口不能相同（API 与 UI 是不同的 HTTP server）
+    command: minio server /minio_data --address ":9002" --console-address ":9003"
     environment:
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=12345678
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9002:9002"  # API
+      - "9003:9003"  # Console / UI
     volumes:
       - minio_data:/minio_data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "curl", "-f", "http://localhost:9002/minio/health/live"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -94,21 +131,35 @@ services:
   milvus:
     image: milvusdb/milvus:v2.4.6
     command: ["milvus", "run", "standalone"]
+    # Milvus v2.4.6 镜像识别的环境变量必须带 MILVUS_ 前缀；
+    # 旧版 ETCD_ENDPOINTS / MINIO_ADDRESS 等不带前缀的变量被完全忽略。
+    # yaml 挂载（./milvus.yaml → /milvus/configs/milvus.yaml）优先级高于环境变量，
+    # 因此本块 env 主要起"显式声明 / 镜像默认值被覆盖后的可见性"作用。
     environment:
-      - ETCD_ENDPOINTS=etcd:2379
-      - MINIO_ADDRESS=minio:9000
-      - MINIO_ACCESS_KEY=minioadmin
-      - MINIO_SECRET_KEY=12345678
-    # Phase 2：env 覆盖 minio 凭据在 v2.4.6 不生效，用 yaml 挂载（凭据统一 12345678）
+      - MILVUS_ETCD_ENDPOINTS=etcd:2379
+      - MILVUS_MINIO_ADDRESS=minio
+      - MILVUS_MINIO_PORT=9002
+      - MILVUS_MINIO_ACCESSKEYID=minioadmin
+      - MILVUS_MINIO_SECRETACCESSKEY=12345678
+    # 仓库根目录 milvus.yaml（精简覆盖版）替代了原 ./python/configs/milvus.yaml；
+    # 仅覆盖与镜像默认不同的字段，其余走镜像默认。
     volumes:
-      - ./python/configs/milvus.yaml:/milvus/configs/milvus.yaml
+      - ./milvus.yaml:/milvus/configs/milvus.yaml
       - milvus_data:/var/lib/milvus
     ports:
       - "19530:19530"
       - "9091:9091"
     depends_on:
-      - etcd
-      - minio
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      # 9091 是 milvus metrics 端口，/healthz 是 v2.4.x 的 liveness 端点
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
 
 volumes:
   mysql_python_data:
@@ -116,3 +167,4 @@ volumes:
   milvus_data:
   minio_data:
   etcd_data:
+  python_documents_data:

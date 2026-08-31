@@ -11,7 +11,7 @@ import json
 import time
 
 import structlog
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from agent import runtime
 from agent.main.context import user_context
 from ai.llm_task_name import LLMTaskName
+from services.sse_event_buffer import EventBuffer, parse_last_event_id, sse_with_id
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -138,7 +139,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
 
 
 @router.post("/api/v1/chat/stream")
-async def chat_stream(req: ChatRequest):
+async def chat_stream(req: ChatRequest, raw: Request):
     """SSE 流式主 agent 会话。
 
     事件协议：
@@ -146,12 +147,21 @@ async def chat_stream(req: ChatRequest):
     - event: tool    → 工具调用阶段（data: {tool, status: start|end, session_id}）
     - event: done    → 结束（data: {reply, messages_count, session_id}）
     - event: error   → 结构化错误（data: {code, message, session_id}）
+
+    路 2 升级：每条事件携带 `id:` 字段（按 session_id 单调递增），
+    客户端可通过 `Last-Event-ID` HTTP header 续传。
     """
     agent = runtime.main_agent
     if agent is None:
         raise RuntimeError("main_agent 未初始化，请检查 runtime.init() 是否调用")
 
+    buf = EventBuffer(thread_id=f"chat:{req.session_id}")
+    last_event_id = parse_last_event_id(raw.headers.get("Last-Event-ID"))
+
     async def _generate():
+        # 续传：先回放 last_event_id 之后的事件
+        for buffered in await buf.replay_from(last_event_id):
+            yield sse_with_id(buffered.event, buffered.payload, buffered.event_id)
         config: RunnableConfig = {
             "configurable": {"thread_id": req.session_id, "user_id": req.user_id},
             "run_name": LLMTaskName.MAIN_AGENT_ROUTER.value,
@@ -202,7 +212,10 @@ async def chat_stream(req: ChatRequest):
                             if first_token_at is None:
                                 first_token_at = time.monotonic()
                             collected.append(str(token))
-                            yield _sse("text", {"token": str(token), "session_id": req.session_id})
+                            payload_obj = {"token": str(token), "session_id": req.session_id}
+                            payload = json.dumps(payload_obj, ensure_ascii=False)
+                            event_id = await buf.append("text", payload)
+                            yield sse_with_id("text", payload, event_id)
                     elif kind == "on_chat_model_end":
                         # LLM usage 监控回传（多轮工具循环聚合）
                         output = event.get("data", {}).get("output")
@@ -212,7 +225,20 @@ async def chat_stream(req: ChatRequest):
                     elif kind in ("on_tool_start", "on_tool_end"):
                         tool_name = event.get("name", "")
                         status = "start" if kind == "on_tool_start" else "end"
-                        yield _sse("tool", {"tool": tool_name, "status": status, "session_id": req.session_id})
+                        payload_obj: dict = {"tool": tool_name, "status": status, "session_id": req.session_id}
+                        # start 事件附带 args：供 runner 解析 dispatch_module.intent 等
+                        # 参数化工具的入参（v1 events API 的 data.input 是 kwargs dict）。
+                        # 解析失败回退空 dict，绝不阻塞流。
+                        if status == "start":
+                            try:
+                                data_input = (event.get("data") or {}).get("input")
+                                if isinstance(data_input, dict):
+                                    payload_obj["args"] = data_input
+                            except Exception:  # noqa: BLE001
+                                payload_obj["args"] = {}
+                        payload = json.dumps(payload_obj, ensure_ascii=False)
+                        event_id = await buf.append("tool", payload)
+                        yield sse_with_id("tool", payload, event_id)
 
             reply = "".join(collected)
             messages_count = len(collected)
@@ -231,38 +257,70 @@ async def chat_stream(req: ChatRequest):
                 from agent.memory.extractor import maybe_extract
 
                 asyncio.create_task(maybe_extract(repo, session_id=req.session_id, user_id=req.user_id))
-            yield _sse(
-                "done",
-                {
-                    "reply": reply,
-                    "messages_count": messages_count,
-                    "session_id": req.session_id,
-                    "usage": usage,
-                    "latency_ms": round((time.monotonic() - t0) * 1000, 1),
-                    "ttft_ms": round((first_token_at - t0) * 1000, 1) if first_token_at else None,
-                },
+            done_payload_obj = {
+                "reply": reply,
+                "messages_count": messages_count,
+                "session_id": req.session_id,
+                "usage": usage,
+                "latency_ms": round((time.monotonic() - t0) * 1000, 1),
+                "ttft_ms": round((first_token_at - t0) * 1000, 1) if first_token_at else None,
+                "last_event_id": None,  # 客户端可在 done 事件里读到当前 stream 的最终 event_id（用于重连）
+            }
+            done_payload = json.dumps(done_payload_obj, ensure_ascii=False)
+            done_event_id = await buf.append("done", done_payload)
+            done_payload_obj["last_event_id"] = done_event_id
+            done_payload = json.dumps(done_payload_obj, ensure_ascii=False)
+            yield sse_with_id("done", done_payload, done_event_id)
+        except asyncio.CancelledError:
+            # 客户端断开 / 用户主动 abort（uvicorn cancel scope）：
+            # 不要让 CancelledError 串透 deepagents / langgraph / langsmith 整条栈
+            # 在 stderr 喷一整页 traceback。StreamResponse 在被 cancel 后 yield 也送不出去，
+            # 所以这里只打 info 级日志，不再 yield error 事件。
+            logger.info(
+                "chat.stream_cancelled session_id=%s user_id=%s tokens=%d",
+                req.session_id,
+                req.user_id or "anonymous",
+                len(collected),
             )
         except Exception as exc:
             logger.error("chat.stream_error", session_id=req.session_id, error=str(exc))
-            yield _sse(
-                "error",
-                {"code": type(exc).__name__.upper(), "message": str(exc), "session_id": req.session_id},
-            )
+            err_payload_obj = {"code": type(exc).__name__.upper(), "message": str(exc), "session_id": req.session_id}
+            err_payload = json.dumps(err_payload_obj, ensure_ascii=False)
+            err_event_id = await buf.append("error", err_payload)
+            yield sse_with_id("error", err_payload, err_event_id)
         finally:
-            # 客户端断开也尽力落库（写纪律的 finally 兜底）
-            if repo is not None and req.user_id and not persisted:
-                try:
-                    from agent.memory.persistence import persist_turn
+            # 客户端断开也尽力落库（写纪律的 finally 兜底）。
+            # 注意：在 CancelledError 链下 `await` 自身会被打断，把 persist_turn 改成
+            # fire-and-forget（asyncio.create_task）才不会因为 disconnect 漏消息。
+            # 与 L259 的 `asyncio.create_task(maybe_extract(...))` 同样模式。
+            if (
+                repo is not None
+                and req.user_id
+                and not persisted
+                and collected
+            ):
+                from agent.memory.persistence import persist_turn
 
-                    await persist_turn(
-                        repo,
-                        session_id=req.session_id,
-                        user_id=req.user_id,
-                        user_msg=req.message,
-                        assistant_msgs=[{"content": "".join(collected), "role": "assistant"}],
+                reply_so_far = "".join(collected)
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None  # 极小概率：finally 在 loop 关闭后跑
+                if loop is not None:
+                    asyncio.create_task(
+                        persist_turn(
+                            repo,
+                            session_id=req.session_id,
+                            user_id=req.user_id,
+                            user_msg=req.message,
+                            assistant_msgs=[{"content": reply_so_far, "role": "assistant"}],
+                        )
                     )
-                except Exception:  # noqa: BLE001
-                    pass
+                    logger.info(
+                        "chat.persist_fire_and_forget session_id=%s tokens=%d",
+                        req.session_id,
+                        len(collected),
+                    )
 
     return StreamingResponse(
         _generate(),
@@ -313,3 +371,60 @@ async def _save_images(session_id: str, images: list[str]) -> list[str]:
         except Exception:  # noqa: BLE001
             continue
     return saved
+
+
+# ── 会话管理（Phase 3.5）：历史会话列表 / 消息回显 / 重命名 / 软删 ──────
+
+class RenameSessionRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+
+
+@router.get("/api/v1/chat/sessions")
+async def list_sessions(user_id: str):
+    """按 user_id 列出活跃会话（title 空时取首条 user 消息作显示名）。"""
+    repo = getattr(runtime, "chat_session_repo", None)
+    if repo is None:
+        return {"sessions": []}
+    return {"sessions": repo.list_sessions_by_user(user_id)}
+
+
+@router.get("/api/v1/chat/sessions/{session_id}/messages")
+async def list_session_messages(session_id: str, user_id: str):
+    """回显会话历史消息（归属校验：仅本人可读）。"""
+    repo = getattr(runtime, "chat_session_repo", None)
+    if repo is None:
+        return {"messages": []}
+    owner = repo.session_owner(session_id)
+    if owner is not None and owner != user_id:
+        raise HTTPException(status_code=403, detail="无权访问该会话")
+    return {"session_id": session_id, "messages": repo.list_messages(session_id, limit=500)}
+
+
+@router.post("/api/v1/chat/sessions/{session_id}/rename")
+async def rename_session(session_id: str, req: RenameSessionRequest, user_id: str):
+    """重命名会话（归属校验）。"""
+    repo = getattr(runtime, "chat_session_repo", None)
+    if repo is None:
+        raise HTTPException(status_code=503, detail="会话仓储不可用")
+    owner = repo.session_owner(session_id)
+    if owner is not None and owner != user_id:
+        raise HTTPException(status_code=403, detail="无权操作该会话")
+    ok = repo.rename_session(session_id, user_id, req.title)
+    if not ok:
+        raise HTTPException(status_code=404, detail="会话不存在或无权操作")
+    return {"status": "ok"}
+
+
+@router.delete("/api/v1/chat/sessions/{session_id}")
+async def close_session(session_id: str, user_id: str):
+    """软删会话（status=closed，保留记忆提取水位）。"""
+    repo = getattr(runtime, "chat_session_repo", None)
+    if repo is None:
+        raise HTTPException(status_code=503, detail="会话仓储不可用")
+    owner = repo.session_owner(session_id)
+    if owner is not None and owner != user_id:
+        raise HTTPException(status_code=403, detail="无权操作该会话")
+    ok = repo.close_session(session_id, user_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="会话不存在或无权操作")
+    return {"status": "ok"}

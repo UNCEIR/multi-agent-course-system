@@ -58,3 +58,39 @@ def test_sanitize_keeps_chinese_and_grades():
     text = _sanitize("道法A等，综合表现优秀。")
     assert "道法" in text
     assert "A" in text
+
+
+@pytest.mark.unit
+async def test_generate_includes_user_message():
+    """前端 user_message（补充要求）注入评语提示词，让该字段真正影响产物。"""
+    llm = MagicMock()
+    llm.ainvoke = AsyncMock(return_value=MagicMock(content="该生本学期表现优秀，望继续保持！"))
+    await generate_subjective_eval(STUDENT, llm=llm, user_message="评语写温暖一些，多用鼓励")
+    args = llm.ainvoke.await_args.args
+    content = args[0][0].content
+    assert "评语写温暖一些" in content
+    assert "多用鼓励" in content
+
+
+@pytest.mark.unit
+async def test_generate_empty_user_message_no_injection():
+    """user_message 为空 → 不额外拼接补充要求段。"""
+    llm = MagicMock()
+    llm.ainvoke = AsyncMock(return_value=MagicMock(content="好"))
+    await generate_subjective_eval(STUDENT, llm=llm, user_message="   ")
+    content = llm.ainvoke.await_args.args[0][0].content
+    assert "用户补充要求" not in content
+
+
+@pytest.mark.unit
+def test_apply_class_override():
+    """前端手动选择班级 → 批量覆盖学生 class；空值不覆盖。"""
+    from tools.report.render_report_batch import apply_class_override
+
+    students = [{"student_id": "1", "class": "四（7）班"}, {"student_id": "2", "class": ""}]
+    apply_class_override(students, " 四（7）班 ")
+    assert students[0]["class"] == "四（7）班"
+    assert students[1]["class"] == "四（7）班"
+
+    apply_class_override(students, "  ")
+    assert students[0]["class"] == "四（7）班"  # 空值不覆盖

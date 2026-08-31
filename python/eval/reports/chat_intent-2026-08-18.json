@@ -1,0 +1,102 @@
+{
+  "date": "2026-08-18",
+  "set": "chat_intent",
+  "mode": "live",
+  "judge": false,
+  "metrics": {
+    "total": 4,
+    "passed": 4,
+    "pass_rate": 1.0,
+    "latency_p50": 14501.6,
+    "latency_p95": 25653.7,
+    "ttft_p50": 10545.4,
+    "api_latency_p50": 14494.1,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "total": 0
+    },
+    "context_recall_avg": null,
+    "context_precision_avg": null,
+    "by_difficulty": {
+      "easy": {
+        "total": 2,
+        "passed": 2
+      },
+      "medium": {
+        "total": 2,
+        "passed": 2
+      }
+    }
+  },
+  "results": [
+    {
+      "case_id": "intent_04",
+      "type": "chat_intent",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 25653.7,
+      "mode": "live",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "api_latency_ms": 25455.4,
+      "ttft_ms": 22336.9,
+      "detail": "已为您路由到 **成绩单报告模块（report）** ✅\n\n您上传的 Excel 我这边已经收到了。请到 **`/report` 报告页面** 继续操作：\n\n1. 在页面中确认已上传的成绩 Excel"
+    },
+    {
+      "case_id": "intent_05",
+      "type": "chat_intent",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 14501.6,
+      "mode": "live",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "api_latency_ms": 14494.1,
+      "ttft_ms": 9606.4,
+      "detail": "已为您路由到**报告生成模块** 📋\n\n关于\"上个月道法成绩期末报告单\"的需求，请按以下方式继续操作：\n\n1. **跳转到 `/report` 页面**（成绩单批量生成专用页面）\n2. 在页面中**上"
+    },
+    {
+      "case_id": "intent_06",
+      "type": "chat_intent",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 12516.3,
+      "mode": "live",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "api_latency_ms": 12508.3,
+      "ttft_ms": 10340.9,
+      "detail": "已为您路由到**评价寄语模块（evaluation）**。\n\n请前往 **/evaluation 页面**继续操作：在该页面选择学生「张三」，即可基于他的成绩单数据生成个性化的学期总结评语（含雷达图评"
+    },
+    {
+      "case_id": "intent_07",
+      "type": "chat_intent",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 14241.1,
+      "mode": "live",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "api_latency_ms": 14234.1,
+      "ttft_ms": 10545.4,
+      "detail": "好的，我已为您将请求路由到**评价寄语模块**（evaluation）🎯\n\n**请前往 /evaluation 页面继续操作**，在那里您可以：\n\n1. **选择学生**：勾选班里进步明显的同学（支持"
+    }
+  ]
+}

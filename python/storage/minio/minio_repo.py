@@ -11,6 +11,7 @@ Phase: 2 (implemented)
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -23,7 +24,7 @@ class MinioRepository:
         self,
         *,
         endpoint: str = "localhost",
-        port: int = 9000,
+        port: int = 9002,
         access_key: str = "minioadmin",
         secret_key: str = "123456",
         secure: bool = False,
@@ -40,12 +41,16 @@ class MinioRepository:
         self._connect_timeout = connect_timeout
         self._local_root = local_root or (Path(__file__).resolve().parent.parent.parent / ".documents" / "reports")
         self._client = None
-        self._local_only = False
+        # 2026-08-31：本地兜底改为「30s 冷却」而非永久锁定——MinIO 恢复后自愈，
+        # 避免进程启动时 MinIO 未就绪导致整进程永久降级本地（生成 OK 但文件进不了 MinIO）。
+        self._local_until: float = 0.0
 
     # ── 懒加载客户端 ────────────────────────────────────────────────
     def _get_client(self):
-        """首次使用时创建 minio 客户端并探测可用性；失败 → 本地兜底模式。"""
-        if self._local_only:
+        """首次使用时创建 minio 客户端并探测可用性；失败 → 进入 30s 本地冷却（可自愈）。"""
+        import time as _time
+
+        if _time.time() < self._local_until:
             return None
         if self._client is None:
             try:
@@ -57,14 +62,14 @@ class MinioRepository:
                     secret_key=self._secret_key,
                     secure=self._secure,
                 )
-                # 探测：bucket 不存在则创建（幂等）；异常 → 本地兜底
+                # 探测：bucket 不存在则创建（幂等）；异常 → 本地冷却
                 if not self._client.bucket_exists(self._bucket):
                     self._client.make_bucket(self._bucket)
                 logger.info(f"minio_repo ready bucket={self._bucket} endpoint={self._endpoint}")
             except Exception as exc:  # noqa: BLE001
                 logger.warning("minio_repo fallback to local storage: %s", exc)
                 self._client = None
-                self._local_only = True
+                self._local_until = _time.time() + 30.0
         return self._client
 
     # ── 核心操作（统一寻址：先 MinIO 后本地）─────────────────────────
@@ -89,7 +94,7 @@ class MinioRepository:
                 return key
             except Exception as exc:  # noqa: BLE001
                 logger.warning("minio_repo upload failed (%s), falling back to local: %s", key, exc)
-                self._local_only = True
+                self._local_until = time.time() + 30.0
         local_path = self._local_root / key
         local_path.parent.mkdir(parents=True, exist_ok=True)
         local_path.write_bytes(data)
@@ -138,5 +143,7 @@ class MinioRepository:
     # ── 状态 ────────────────────────────────────────────────────────
     @property
     def is_local_only(self) -> bool:
-        """当前是否处于本地兜底模式。"""
-        return self._local_only
+        """当前是否处于本地兜底冷却期（冷却内不访问 MinIO，冷却后自动重试）。"""
+        import time as _time
+
+        return _time.time() < self._local_until

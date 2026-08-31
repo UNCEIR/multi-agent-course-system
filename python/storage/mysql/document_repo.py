@@ -31,6 +31,7 @@ class DocumentRepository(MySQLRepository):
         chunk_strategy: str = "auto",
         chunks_count: int = 0,
         status: str = "pending",
+        user_id: str = "public",
     ) -> None:
         if not self.ping():
             raise RuntimeError("MySQL is not available")
@@ -39,10 +40,12 @@ class DocumentRepository(MySQLRepository):
             """
             INSERT INTO document_records (
                 dataset_id, dataset_name, source_doc_name, storage_path,
-                file_type, file_size, chunk_strategy, chunks_count, status
+                file_type, file_size, chunk_strategy, chunks_count, status,
+                user_id
             ) VALUES (
                 :dataset_id, :dataset_name, :source_doc_name, :storage_path,
-                :file_type, :file_size, :chunk_strategy, :chunks_count, :status
+                :file_type, :file_size, :chunk_strategy, :chunks_count, :status,
+                :user_id
             )
             ON DUPLICATE KEY UPDATE
                 dataset_name = VALUES(dataset_name),
@@ -50,7 +53,8 @@ class DocumentRepository(MySQLRepository):
                 file_size = VALUES(file_size),
                 chunk_strategy = VALUES(chunk_strategy),
                 chunks_count = VALUES(chunks_count),
-                status = VALUES(status)
+                status = VALUES(status),
+                user_id = VALUES(user_id)
             """
         )
         with self._engine.begin() as conn:
@@ -66,6 +70,7 @@ class DocumentRepository(MySQLRepository):
                     "chunk_strategy": chunk_strategy,
                     "chunks_count": chunks_count,
                     "status": status,
+                    "user_id": user_id,
                 },
             )
 
@@ -134,16 +139,51 @@ class DocumentRepository(MySQLRepository):
             row = conn.execute(sql, {"dataset_id": dataset_id}).mappings().first()
         return dict(row) if row else None
 
-    def list_datasets(self, limit: int = 50) -> list[dict[str, Any]]:
+    def list_datasets(
+        self,
+        *,
+        limit: int = 50,
+        user_id: str | None = None,
+        include_public: bool = True,
+    ) -> list[dict[str, Any]]:
+        """列出文档数据集。
+
+        Args:
+            limit: 最大返回条数
+            user_id: 当指定时，过滤 user_id=user_id 的记录；如果 include_public=True，
+                同时返回 user_id='public' 的（手册类）。
+            include_public: 是否包含公共手册；与 user_id 一起过滤。
+                include_public=False 时只看 user_id 严格等于 user_id 的（个人数据集列表）。
+        """
         if not self.ping():
             return []
         assert self._engine is not None
-        sql = text(
-            "SELECT dataset_id, dataset_name, source_doc_name, file_type, chunks_count, status "
-            "FROM document_records ORDER BY created_at DESC LIMIT :limit"
-        )
+        if user_id is None:
+            # 老语义：列出全部（兼容上层无 user_id 的调用）
+            sql = text(
+                "SELECT dataset_id, dataset_name, source_doc_name, file_type, "
+                "chunks_count, status, user_id "
+                "FROM document_records ORDER BY created_at DESC LIMIT :limit"
+            )
+            params: dict[str, Any] = {"limit": limit}
+        else:
+            if include_public:
+                sql = text(
+                    "SELECT dataset_id, dataset_name, source_doc_name, file_type, "
+                    "chunks_count, status, user_id "
+                    "FROM document_records WHERE user_id IN ('public', :user_id) "
+                    "ORDER BY created_at DESC LIMIT :limit"
+                )
+            else:
+                sql = text(
+                    "SELECT dataset_id, dataset_name, source_doc_name, file_type, "
+                    "chunks_count, status, user_id "
+                    "FROM document_records WHERE user_id = :user_id "
+                    "ORDER BY created_at DESC LIMIT :limit"
+                )
+            params = {"user_id": user_id, "limit": limit}
         with self._engine.connect() as conn:
-            rows = conn.execute(sql, {"limit": limit}).mappings().all()
+            rows = conn.execute(sql, params).mappings().all()
         return [dict(row) for row in rows]
 
     def get_chunk_contents(self, chunk_ids: list[str]) -> dict[str, dict[str, Any]]:

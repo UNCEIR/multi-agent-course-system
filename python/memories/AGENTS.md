@@ -10,14 +10,15 @@
 - 四个业务智能体：chat（统一对话入口）/ recommend（公选课推荐）/ report（教师端成绩单批量生成）/ evaluation（教师端评价生成 → 学生端同步）
 - 工具注册走 ToolRegistry（`tools/registry.py`），能力原子化在 `tools/` 子包
 - 技能文档在 `skills/*/SKILL.md`，SkillsMiddleware 渐进式加载
-- 知识库：学生手册（public 分区）+ 个人成绩单（user 分区，脱敏），Milvus `document_chunks`
+- 知识库：学生手册（public 分区）+ 个人成绩单（user 分区，脱敏），Milvus `document_chunks`。
+  - 2026-08-25 重构后由两个独立工具服务：`query_handbook`（手册/公开） + `query_transcript`（个人成绩单/强权限隔离），取代旧 `query_knowledge`。
 
 ## 技能索引
 
 - `recommend-courses`：公选课个性化推荐（recommend_courses 一键工具）
 - `report-generation`：教师端成绩单批量生成（inspect_score_excels / render_report_batch）
 - `evaluation-writing`：学业评价（快照→维度→雷达→评语，反幻觉五层）
-- `knowledge-query`：知识库问答（query_knowledge）
+- `knowledge-query`：知识库问答；按问题域分发：`query_handbook`（手册/公开） / `query_transcript`（个人成绩单）
 - `web-search`：网页搜索（MCP 主路 + tavily 兜底）
 - `writing`：论文/报告写作（writing_assistant）
 - `image-generation`：图片生成（即梦 MCP）

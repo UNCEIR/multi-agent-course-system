@@ -155,17 +155,31 @@
 - **详细 plan**：`plans/phase-2-report-evaluation.md`（已生成，2026-08-12，含 report/evaluation 场景 + 主 agent 插件 MCP + 记忆机制 + 评估方针骨架 五交付面）+ `plans/phase2-coding-plan.md`（编码执行清单，2026-08-12，编码完成 2026-08-13）
 - **编码结果**：W-A~W-J 全部落地（report A-shell 四决策点/反幻觉五层/MCP 三服务器/chat 记忆/评估骨架），`pytest -m "not slow"` = 235 passed；docker 重建验收 + 端到端冒烟待执行
 
-### Phase 3：扩展 + PPT 场景
-- **目标**：TS MCP 桥接 + 通用知识 Q&A + 可靠性加固 + PPT 生成系统
-- **交付**：
-  - 二次开发 FastGPT `mcp_server`，Python MCP client 接入
-  - 主 agent 通用知识 Q&A（`query_knowledge` tool，学生手册 PDF 种子数据源）+ 网页搜索 MCP 工具（tavily）+ FastGPT MCP
-  - 可靠性加固（compaction、subagent 隔离、circuit breaker、checkpointing）
-  - **PPT 生成系统**（参考 OpenMAIC）：大学生课程小组 PPT 汇报场景，AI 生成 PPT 微课件自动生成系统（多 agent 协作，支持画布/动画/PPT，用户输入提示词选择类型如期末 PPT 课设/小组汇报）；`ppt_generate` 独立 Page 组件，DSL→PPTX 渲染（参考 OpenMAIC `pptxgenjs` + `lib/export/use-export-pptx.ts`）
-  - **图片生成系统**：`image_generate` 独立 Page 组件，经 MCP 调图片生成服务
-  - 记忆管理 Phase 3 待做：① 切 `RedisSaver`（**按决策 20 条件执行**：实例数 > 1 时才迁移 `langgraph-checkpoint-redis`，复用 v1 `redis_url`，自定义 namespace；单实例维持 SqliteSaver）；② summary_prompt 完全对齐决策 11 五字段；③ memory 提取用 forked subagent；④ consolidation；⑤ SSE 流式 `/chat`；⑥ 工具链路断裂兜底演示
-- **验证**：`/chat` 路由正确；MCP 调通 FastGPT app；compaction/circuit breaker 生效；PPT 生成可用；图片生成可用
-- **详细 plan**：`plans/phase-3-extensions.md`（待生成）
+### Phase 3：扩展收尾 + 前端统一开发 + PPT 场景 —— ✅ 本阶段范围编码完成（2026-08-16）
+- **目标**（2026-08-16 范围修订，见 `plans/phase-3-extensions.md`）：A 既有缺口修复 + B 前端架构迁移（Vite→Next.js）与四 Page + C 记忆管理深化；PPT/FastGPT/Java 数据服务后置后续 phase
+- **交付（已完成）**：
+  - A：`image_generate_get` 注册、`compute_weighted_grade` 实装、`RecommendationRequest.mode` 透传、evaluation 三函数 @tool 化、注册一致性测试锁死、eval oracle 采集脚本 + `evaluation_comment_live`/`report_math_live` 集、`_live_report_math` 端到端化、skill 引用修正
+  - B：前端迁移 **Next.js 16（App Router，React+TSX）**，六菜单导航（推荐/智能对话/报告/评价/知识库/监控），MainPage(chat SSE 流)/ReportPage/EvaluationPage(echarts 雷达)/DocumentsPage 四 Page，SSE 客户端层（lib/sse + lib/api），失效端点清零，`app/api/` BFF 预留（决策 22）
+  - C：summary_prompt 对齐决策 11 五字段、记忆提取 forked worker（MemoryExtractWorker）、consolidation（去重+LLM 合并）、checkpoint_backend 配置预留（决策 20，单实例维持 SqliteSaver）
+- **验证**：`pytest tests/ -m "not slow"` = **267 passed**；`frontend npm run build` 通过（六路由）；eval smoke 全量绿；真实 LLM 端测（live eval/真实对话/report PDF/evaluation 生成）因算力受限延后，算力允许时补跑
+- **详细 plan**：`plans/phase-3-extensions.md`（已生成）+ `plans/phase3-coding-plan.md`（W-A~W-F 完成）
+- **后续 phase 待办**（写入 §7 输入清单）：PPT 生成系统（`ppt_generate` DSL→PPTX + PPTGeneratePage + `skills/ppt-generation` 填充）、图片生成独立 Page、FastGPT 二次开发桥接（重新评估）、Java 数据服务（身份/鉴权/REST+MQ）、独立管理平台（React 栈）、RedisSaver 实际迁移（决策 20 条件）、LLM-as-judge 全量指标（Phase 4）
+
+#### Phase 3 真实端测兑现（2026-08-18，按 phase-3-extensions.md §1.4 试金石 ⏳ 项）
+
+> 兑现 phase-3-extensions.md 第 58 行"未来承诺"：上游资源到位后严格跑真实端测。范围只覆盖涉及 Phase 3 改动（新实装工具 / 记忆改造）的 eval 集，未改动的 `image_generate` / `web_search` 等不纳入。
+>
+> **入口切换**：原 `qwen3.5-flash` 算力余额不足，已切换至 `qwen3.8-flash`；docker 镜像 `--build-arg PYTHON_IMAGE=docker.m.daocloud.io/library/python:3.12-slim` 重建（registry-1.docker.io 不可达，改用 DaoCloud 镜像源，缓存复用 5/6 层）。
+>
+> **结果**：
+>
+> | eval 集 | 范围 / 与 Phase 3 关系 | 结果 | 报告 |
+> |---------|----------------------|------|------|
+> | `chat_intent`（仅 5 失败 case：`intent_04/05/06/07/20`） | 触发 main agent 工具链 + summarization 五字段 prompt 改造 | 1/5（仅 `intent_20` 通过；其余为既有意图路由语义，**与 Phase 3 改动无直接关联**） | `eval/reports/chat_intent-2026-08-17.json` |
+> | `evaluation_comment_live` | **直接调用** Phase 3 实装的 `design_dimensions` / `compute_radar_values` / `generate_comment` 三 @tool（含 `compute_weighted_grade` 公式 0.3+0.7+bonus） | **6/6 通过**（学生 3123003252 真实成绩单；4 类 comment_type 全绿；不存在用户正确返回 `no_transcript_data`） | `eval/reports/evaluation_comment_live-2026-08-17.json` |
+> | `report_math_live` | 端到端消费 `/api/v1/report` SSE；触发 `compute_weighted_grade` 与 `RecommendationRequest.mode` 透传链 | **2/2 通过**（37 学生 PDF 全部生成，无 failed_students） | `eval/reports/report_math_live-2026-08-18.json` |
+>
+> **结论**：Phase 3 试金石 #1（注册一致性 + compute_weighted_grade 实装）、#5（eval oracle 对齐 live 端测）、#10（验收回归 live 部分）三项 ⏳ 项已通过真实端测兑现。`chat_intent` 4 个 case 失败属于 chat 路由层既有行为，超出本 phase 编码范围，留待 Phase 4 chat_intent NLU 调优。
 
 ### Phase 4：深度增强（体现工程深度）
 - **目标**：端到端评测 + monitor 在线表现 + 检索指标驱动调优 + 多模态 + agent harness 深化 + 兜底演示

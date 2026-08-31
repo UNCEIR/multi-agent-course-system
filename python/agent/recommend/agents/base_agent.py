@@ -15,7 +15,9 @@ logger = structlog.get_logger()
 
 
 class BaseAgent(ABC):
-    def __init__(self, name: str, timeout: float = 30.0, max_retries: int = 5):
+    # max_retries 由 5 降为 2：上游 LLM 拥塞时，5 次重试会把单次故障放大到分钟级
+    # （远超前端耐心与 supervisor_global_timeout），且期间不发任何 SSE 事件。
+    def __init__(self, name: str, timeout: float = 30.0, max_retries: int = 2):
         self.name = name
         self.timeout = timeout
         self.max_retries = max_retries
@@ -40,6 +42,17 @@ class BaseAgent(ABC):
                 latency_ms=round(result.latency_ms, 1),
             )
             return result
+        except asyncio.CancelledError:
+            # P1 修复：CancelledError 在 Python 3.8+ 继承 BaseException 而非 Exception，
+            # 上面的 except Exception 捕获不到 → 上游取消（客户端断开 / gather 取消 / wait_for 超时）
+            # 时该 agent 完全静默、不留任何日志，排查时会误判成"卡住且无报错"。
+            latency_ms = (time.perf_counter() - start) * 1000
+            logger.warning(
+                "agent.cancelled",
+                agent=self.name,
+                latency_ms=round(latency_ms, 1),
+            )
+            raise  # 必须原样上抛，否则会破坏 gather / wait_for 的取消语义
         except Exception as exc:
             self._error_count += 1
             latency_ms = (time.perf_counter() - start) * 1000

@@ -2,9 +2,8 @@
 """加权成绩统计 tool — 复合加权计算。
 
 展示性评价 × 30% + 考试性评价 × 70%。
-Phase 2 实装完整功能，当前为 stub 骨架。
 
-Phase: 2 (stub — NotImplementedError)
+Phase: 2 (实装)
 """
 
 from __future__ import annotations
@@ -38,8 +37,16 @@ def compute_weighted_grade(
     Returns:
         包含 total、display_weighted、exam_weighted、bonus 的字典
     """
-    # Phase 2 实装完整逻辑
-    raise NotImplementedError(
-        f"compute_weighted_grade: Phase 2 实装。\n"
-        f"展示性评价：{display_eval}，考试性评价：{exam_eval}，加分：{bonus}"
-    )
+    display = max(0.0, min(float(display_eval), 100.0))
+    exam = max(0.0, min(float(exam_eval), 100.0))
+    bonus = max(0.0, min(float(bonus), 20.0))
+
+    display_weighted = round(display * 0.3, 2)
+    exam_weighted = round(exam * 0.7, 2)
+    total = round(display_weighted + exam_weighted + bonus, 2)
+    return {
+        "total": total,
+        "display_weighted": display_weighted,
+        "exam_weighted": exam_weighted,
+        "bonus": bonus,
+    }

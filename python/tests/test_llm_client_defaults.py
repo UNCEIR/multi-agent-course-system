@@ -24,6 +24,10 @@ def llm_settings():
     settings.llm_api_key = "default-key"
     settings.llm_base_url = "https://default.invalid/v1"
     settings.llm_model = "default-model"
+    # P0：LLM 请求级超时（缺失时会绕过全部业务层超时，导致 SSE 链路静默挂死）
+    settings.llm_timeout_seconds = 20.0
+    settings.llm_connect_timeout_seconds = 5.0
+    settings.llm_max_retries = 1
     with patch("ai.llm_client.get_settings", return_value=settings):
         yield settings
 
@@ -73,8 +77,21 @@ def test_enable_thinking_override(llm_settings):
         max_tokens=1024,
         enable_thinking=False,
     )
-    # extra_body 未含 enable_thinking（False 时不注入）
-    assert llm.extra_body is None or not llm.extra_body.get("enable_thinking")
+    # 关闭时显式注入 False（qwen3 省略该字段仍会走 thinking，耗时反而更长）
+    assert llm.extra_body.get("enable_thinking") is False
+
+
+@pytest.mark.unit
+def test_timeout_and_retries_applied(llm_settings):
+    """P0 回归：LLM 调用必须带显式 timeout 与受控重试。
+
+    缺失 timeout 时实际超时由 openai SDK 默认值决定（数百秒量级），会绕过
+    agent_timeout_* / supervisor_global_timeout，表现为链路挂死且无任何日志。
+    """
+    llm = build_chat_openai(temperature=0.1, max_tokens=1024)
+    # 字段名是 request_timeout（ChatOpenAI 无 timeout 字段，传 timeout= 会被静默忽略）
+    assert llm.request_timeout == 20.0  # 取自 settings.llm_timeout_seconds
+    assert llm.max_retries == 1  # 取自 settings.llm_max_retries
 
 
 @pytest.mark.unit

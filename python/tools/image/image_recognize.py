@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""图片识别 tool — 视觉模型直连（qwen3.7-plus，与文本模型同 key）。
+"""图片识别 tool — 视觉模型直连
 
 图片经 /chat/stream 的 images 附件落本地 → data URL 入参 → 视觉分析。
 失败 → 结构化 error + 熔断（失败计数）。

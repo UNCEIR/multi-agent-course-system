@@ -1,317 +1,263 @@
 # 大学校园多智能体平台（University Campus Multi-Agent Platform）
 
-- 面向大学生校园场景的多智能体平台：学生用自然语言描述选课偏好完成公选课推荐，适用于学生手册/个人成绩单知识库问答、成绩报告、评价寄语，图片生成，网页搜索，PPT生成，编程，生成脑图等校园业务场景。
+面向大学生校园场景的多智能体系统：公选课推荐、知识库问答（学生手册 / 个人成绩单）、成绩报告、评价寄语、图片生成、网页搜索、编程、脑图等。前端为 Next.js 门户（注册登录 → 智能体入口页聚合），后端为 FastAPI + deepagents 多智能体编排，会话与记忆按用户持久保存。
 
-## 快速启动
 
-默认在仓库根目录操作，Compose 文件为 `docker-compose.yml`。
 
-### 1. Python 环境
+### 1. 环境准备（仅首次）
 
-**首次创建 venv**
-
-```powershell
-# Windows
+```bash
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r .\python\requirements.txt
+python -m pip install -r python/requirements.txt
 ```
+
+配置 `python/.env`（Docker 只注入这一个；仓库根 `.env` 可选，先加载、后被 `python/.env` 覆盖）：
 
 ```bash
-# Linux/macOS
-python -m venv .venv && source .venv/bin/activate
-python -m pip install -r ./python/requirements.txt
+LLM_API_KEY=...
+LLM_BASE_URL=...
+LLM_MODEL=qwen3.8-flash
+EMBEDDING_PROVIDER=local|openai|dashscope_multimodal
 ```
 
-**日常进入 venv**
+### 2. 一键启动全部（后端 + 依赖 + 前端）
 
-```powershell
-# Windows
-.venv\Scripts\activate.bat
-```
+> **镜像源（默认 DaoCloud）**：`registry-1.docker.io` 通常被墙导致构建/拉取超时，仓库已内置
+> `docker-compose.pull-mirror.yml` 覆盖文件，把 python-api 基础镜像、mysql / redis / minio /
+> milvus / frontend node 镜像全部切到 DaoCloud（`docker.m.daocloud.io`）；etcd 保持 quay.io
+> 官方（DaoCloud 对 quay/etcd 常返回 403，quay.io 一般可直连）。所有 `up -d` / `--build` 命令
+> 统一带 `-f docker-compose.yml -f docker-compose.pull-mirror.yml`。若你的网络可直连 Docker Hub，
+> 去掉该覆盖文件即可回退官方源。
 
 ```bash
-# Linux/macOS
-. .venv/bin/activate
+docker compose -f docker-compose.yml -f docker-compose.pull-mirror.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.pull-mirror.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.pull-mirror.yml --profile frontend up -d --build frontend
 ```
 
-### 2. 配置 `.env`
+启动完成：前端 <http://localhost:3001> ｜ 后端 <http://127.0.0.1:8000/health>
 
-根目录 `.env` 与 `python/.env` 都会被加载（先根后 `python/`）；Docker 只注入 `python/.env`，本地与容器请保持关键项一致。
+> **前端必须走容器**。容器内用 `http://python-api:8000` 直连后端，绕开 docker desktop
+> host → container 转发层截断 SSE body 的 bug（表现为前端 network error、响应体为空）。
+> ⚠️ host 上不要同时跑 `npm run dev`，会与容器 3001 端口冲突。
 
-在 `python/.env` 中配置 LLM / Embedding，这边示例是走第三方的阿里云百炼平台：
-
-```env
-LLM_API_KEY=sk-xxxxxxxxxxxxxxxxxxx
-LLM_BASE_URL=https://llm-oe8ejw5pgtze0knw.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
-LLM_MODEL=your-model-name
-LLM_ENABLE_THINKING=true
-
-EMBEDDING_PROVIDER=dashscope_multimodal
-EMBEDDING_BASE_URL=https://llm-oe8ejw5pgtze0knw.cn-beijing.maas.aliyuncs.com/api/v1
-EMBEDDING_API_KEY=sk-xxxxxxxxxxxxxxxxxxx
-EMBEDDING_MODEL=your-embedding-model-name
-EMBEDDING_DIMENSION=xxxx
-MILVUS_DIMENSION=xxxx
-COURSE_MILVUS_COLLECTION=your-collection-name
-
-# 若MaaS 自定义域名证书 SAN 不匹配，本地/Docker 均需关闭 SSL 校验
-HTTPX_VERIFY_SSL=false
-```
-
-**协议注意**：LLM 走 OpenAI 兼容 `/compatible-mode/v1`；Embedding 走 DashScope 原生 `/api/v1`（`tongyi-embedding-vision-plus` 不支持 OpenAI `/embeddings`）。
-
-MySQL / Redis / Milvus 在 Compose 内已配好，一般无需写入 `.env`。
-
-### 3. Docker
-
-默认在仓库根目录操作，Compose 文件为 `docker-compose.yml`，已移除 profile 约束，`docker compose up -d` 一键启动。
-
-MySQL 宿主机端口为 **3307→3306**（避免占用本机 3306）；容器内应用仍连 `3306`。
-
-**日常启动**
+### 3. 单独重启某一个容器
 
 ```bash
-docker compose up -d
-docker compose ps
-docker compose logs --tail=80 python-api
-docker compose logs --tail=80 mysql
-docker compose logs --tail=80 redis
-docker compose logs --tail=80 milvus
+docker compose -f docker-compose.yml -f docker-compose.pull-mirror.yml up -d --build <service>  # 重建 + 重启（改了代码用它）
+docker compose restart <service>              # 只重启、不重建（容器假死 / 改了 compose 配置）
+docker compose stop <service>                 # 只停止
+docker compose logs -f --tail 100 <service>   # 跟踪日志
 ```
 
-**首次部署（拉镜像 + 构建 + 启动）**
+`<service>` 取值：`python-api`｜`frontend`｜`mysql`｜`redis`｜`milvus`｜`minio`｜`etcd`
+
+最常用的一条——**改了 `python/` 下任何代码后**：
 
 ```bash
-docker compose pull
-docker compose up -d --build
+docker compose -f docker-compose.yml -f docker-compose.pull-mirror.yml up -d --build python-api
 ```
 
-**修改后重建**
+> 改 `frontend/package.json`（engines / scripts / devDependencies）后要加 `--no-cache`；
+> 只改 `src/` 不必（docker 按 package.json 内容复用缓存层）。
 
-```bash
-docker compose up -d --build 容器名
-```
-
-### 4. 导入数据
+### 4. 数据导入（首次部署 / 需重置课程库）
 
 ```bash
 cd python
-python scripts/ingest_course_dataset.py --limit 20   # 先验证
-python scripts/ingest_course_dataset.py            # 全量约 500 门 × 4 chunk
+python scripts/ingest_course_dataset.py --limit 20   # 冒烟 20 门
+python scripts/ingest_course_dataset.py              # 全量 ~500 门
+python scripts/ingest_student_handbook.py            # 学生手册 → public 分区
+python scripts/ingest_transcript_desensitized.py --user-id <id> --name <姓名>
+cd ..
 ```
 
-数据源：`course_dataset_tools/output/course.csv` → MySQL + Milvus。
+> ⚠️ 课程库为空时推荐会退化：召回走 `_fallback_courses()` 返回两门硬编码示例课。
+> 验证数据量：`course_records` / `course_chunks` 两张表应有行。
 
-Milvus 向量缺失时可用 `python/scripts/backfill_milvus_vectors.py` 按 MySQL 差异补数。
-
-### 5. 接口测试
+### 5. 停止与清理
 
 ```bash
-curl http://localhost:8000/health
+docker compose up --profile frontend stop   # 只停前端
+docker compose up stop                      # 停全部（容器保留，可再 start）
+docker compose up down                      # 停并移除容器（数据卷保留）
 ```
 
-```powershell
-curl.exe -sS -X POST "http://localhost:8000/api/v1/recommend/stream" `
-  -H "Content-Type: application/json" `
-  --data-binary "@python/scripts/curl_recommend_payload.json"
-```
-
-示例 payload：`python/scripts/curl_recommend_payload.json`。
-
-### 6. 前端（可选）
+### 6. 测试
 
 ```bash
-cd frontend && npm install && npm run dev
+cd python   && python -m pytest tests/ -m "not slow" -v   # 后端单测（mock，不触真实 LLM）
+cd python   && python eval/runner.py --set chat_intent    # eval smoke（--live 需 API + 算力）
+cd frontend && npm test                                    # 前端 vitest
 ```
 
-访问 `http://localhost:5173`，`/api` 代理到 `http://localhost:8000`（可在 `frontend/.env.local` 用 `VITE_API_PROXY_TARGET` 覆盖）。
-
-### 7. 单元测试
+## 基本排查
 
 ```bash
-cd python
-python -m pytest tests/ -m "not slow" -v
+docker ps --format "table {{.Names}}\t{{.Status}}"   # 容器是否在跑（Unhealthy = 有 bug）
+curl -sS http://127.0.0.1:8000/health | head -c 200  # 后端 health（model 字段确认 LLM 配对）
+docker compose logs --tail 100 python-api                        # 后端最近日志
+netstat -ano | findstr :8000                          # 端口 8000 是否被占（PID 在最后一列）
 ```
 
-## 模块目录结构
+### SSE 流挂起 / 响应体为空（前端报 network error）
 
-```
-python/
-├─ ai/                              # LLM/Embedding 基础设施
-│  ├─ __init__.py
-│  ├─ llm_client.py                 # ChatOpenAI 工厂
-│  ├─ embedding_client.py           # Embedding 工厂
-│  ├─ llm_task_name.py              # LLM 调用场景枚举
-│  └─ tracing.py                    # LangSmith 配置激活
-│
-├─ agent/                           # v2 deepagents harness 预留
-│  └─ __init__.py
-│
-├─ agent/                             # 应用层（智能体与编排）
-│  ├─ __init__.py
-│  ├─ main.py                       # FastAPI 入口（薄层装配）
-│  ├─ runtime.py                    # 运行时单例容器
-│  ├─ recommend/                    # v1 推荐业务
-│  │  ├─ __init__.py
-│  │  ├─ supervisor.py              # 核心编排器
-│  │  ├─ graph.py                   # LangGraph 演示链路
-│  │  ├─ hard_constraint_filter.py  # 确定性硬约束过滤
-│  │  ├─ react_tools.py             # 7 个 ReAct 工具
-│  │  ├─ stream_token_markup_parser.py  # SSE token 标记解析
-│  │  └─ agents/                    # v1 的 5 个 Agent
-│  │     ├─ __init__.py
-│  │     ├─ base_agent.py
-│  │     ├─ student_profile_agent.py
-│  │     ├─ course_recall_agent.py
-│  │     ├─ course_rerank_agent.py
-│  │     ├─ course_feasibility_agent.py
-│  │     └─ recommendation_reason_agent.py
-│  ├─ report/                       # v2 预留
-│  ├─ evaluation/                   # v2 预留
-│  ├─ chat/                         # v2 预留
-│  ├─ documents/                    # v2 预留
-│  └─ ppt/                          # v2 预留
-│
-├─ api/                            # 路由层
-│  ├─ __init__.py
-│  ├─ recommend.py               # /api/v1/recommend*
-│  ├─ health.py                  # /health /metrics /experiments
-│  ├─ report.py                  # v2 预留
-│  ├─ evaluation.py              # v2 预留
-│  ├─ chat.py                    # v2 预留
-│  ├─ documents.py               # v2 预留
-│  └─ ppt.py                     # v2 预留
-│
-├─ tools/                           # v2 工具实现预留
-│  └─ __init__.py
-│
-├─ skills/                          # v2 Skills 注册预留
-│  └─ __init__.py
-│
-├─ storage/                         # 数据存储层
-│  ├─ __init__.py
-│  ├─ mysql/
-│  │  ├─ __init__.py
-│  │  ├─ base.py                    # MySQL 连接池 / ping
-│  │  └─ course_repo.py             # 课程 CRUD
-│  ├─ milvus/
-│  │  ├─ __init__.py
-│  │  └─ course_vector_repo.py      # Milvus 向量检索
-│  └─ redis/
-│     ├─ __init__.py
-│     ├─ feature_repo.py            # Redis 特征存储
-│     └─ recall_cache_repo.py       # 召回缓存
-│
-├─ experiment/                      # A/B 实验
-│  ├─ __init__.py
-│  └─ ab_test.py                    # 分桶 + Thompson Sampling
-│
-├─ observability/                   # 监控指标
-│  ├─ __init__.py
-│  └─ metrics.py                    # Agent 调用成功率/延迟
-│
-├─ models/                          # 全局数据契约
-│  ├─ __init__.py
-│  └─ schemas.py
-│
-├─ config/                          # 全局配置
-│  ├─ __init__.py
-│  └─ settings.py
-│
-├─ scripts/                         # 运维/数据导入工具
-│  ├─ ingest_course_dataset.py
-│  ├─ backfill_milvus_vectors.py
-│  ├─ bench_fetch_courses.py
-│  ├─ bench_stream_recommend.py
-│  ├─ post_recommend_local.py
-│  └─ poc_deepagents.py
-│
-├─ tests/                           # 测试
-│  ├─ conftest.py
-│  ├─ test_base_agent.py
-│  ├─ test_ab_test.py
-│  ├─ test_tracing.py
-│  ├─ test_stream_recommend.py
-│  ├─ test_supervisor_pipeline.py
-│  ├─ test_course_recall_cache.py
-│  ├─ test_hard_constraint_prompt_fallback.py
-│  ├─ test_stream_token_markup_parser.py
-│  └─ test_llm_integration_smoke.py
-│
-├─ Dockerfile                       # CMD: uvicorn agent.app:app
-├─ pytest.ini
-└─ requirements.txt
+特征：接口返回 **200**、没有 5xx，但响应体长时间为空，前端等到超时后报 network error。
+
+第一步看日志，**务必滤掉前端 15s 一次的 health 轮询噪声**，否则业务日志会被完全淹没：
+
+```bash
+docker compose logs python-api 2>&1 | grep -v "GET /health HTTP" | tail -80
 ```
 
-### 依赖方向
+第二步给 SSE 事件打相对时间戳，定位具体是哪一段没有输出：
+
+```bash
+start=$(date +%s)
+curl -sS -N --max-time 75 -X POST http://127.0.0.1:8000/api/v1/recommend/stream \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"debug","prompt":"想选好过的公选课，南校区，最好不要考试","num_items":5,"mode":"pipeline"}' \
+  | grep --line-buffered -E '"phase"|event: done' \
+  | while IFS= read -r line; do
+      now=$(date +%s); printf 'T+%03ds | %s\n' $((now-start)) "${line:0:130}"
+    done
+```
+
+排查要点：
+
+- **uvicorn 访问日志在响应完成后才打印**，挂起的 SSE 请求不会留痕，不能据此判断"接口没问题"。
+- 推荐链路正常应依次输出 `start → phase1_complete → phase15_complete → phase2_complete → phase3_start → … → done`。
+  若卡在 `start` 之后、`phase1_complete` 始终不出现，就是 phase1 的 `gather(画像, 召回)` 没完成。
+- 画像 agent 的关键日志是 `student_profile.llm_call.start / .done / .cancelled / .failed`，
+  其中 `.done` 的 `latency_ms` 直接给出 LLM 真实耗时（thinking 开启时常达 20~30s）。
+- 出现 `agent.cancelled` 表示该 agent 被上游取消（客户端断开 / `wait_for` 超时）。
+  注意 `asyncio.CancelledError` 在 Python 3.8+ 继承 `BaseException`，`except Exception` 捕获不到——
+  这正是"无任何报错却卡住"的常见成因，现已补日志。
+
+### localhost:3001 报 502 / network error / body 空
+
+docker desktop host → container:8000 转发层 bug（同步请求可能 502，SSE 长连接可能 body 被截断）。
+**走前端容器化可彻底绕开**：`frontend-1` 与 `python-api-1` 在同一 docker 网络内，
+用 service 名 `http://python-api:8000` 直达后端，不经过 host 转发层。
+
+```bash
+# 先关掉 host 上的 npm run dev
+Get-Process node | Where-Object { $_.CommandLine -match "next dev" } | Stop-Process -Force
+# 再启前端容器
+docker compose up --profile frontend up -d --build frontend
+```
+
+## 主要 API
+
+| 端点 | 说明 |
+|------|------|
+| `POST /api/v1/auth/register`、`/auth/login` | 注册 / 登录（HMAC token，业务接口维持 user_id 临时口径） |
+| `POST /api/v1/chat/stream` | 主智能体 SSE 会话（text/tool/done/error），多轮 + 记忆 + 跨会话恢复 |
+| `GET /api/v1/chat/sessions`、`/sessions/{id}/messages`、`/rename`、`DELETE` | 会话列表 / 历史回显 / 重命名 / 软删 |
+| `POST /api/v1/recommend/stream` | 推荐（mode=pipeline 默认 / react，SSE） |
+| `POST /api/v1/report`、`GET /api/v1/report/download` | 成绩单批量生成（SSE）+ token 下载 |
+| `POST /api/v1/evaluation`、`GET /api/v1/evaluation/me` | 评价寄语生成（SSE）/ 学生端本人查看 |
+| `POST /api/v1/documents/upload` | 文档摄入（file + dataset_name + chunk_strategy） |
+| `GET /health`、`/api/v1/metrics`、`/api/v1/experiments` | 健康 / 指标 / A-B 实验 |
+
+## 架构速览
+
+- 三层分离：`agent/`（编排）→ `tools/`（@tool 原子能力 + ToolRegistry 注册）→ `skills/`（SKILL.md 渐进式技能）
+- 主智能体：deepagents（checkpoint SqliteSaver + 记忆表 + compaction 五字段摘要）
+- 存储：MySQL（事实/会话/记忆/评价）、Milvus（向量，user_id 分区）、Redis（召回缓存）、MinIO（文档/报告产物）
+- 智能体隔离：checkpoint 独立 + 工具白名单 + ContextVar user_id 注入 + 存储分区
+
+## 目录结构
 
 ```
-agent/（应用层） →  ai/ + storage/ + experiment/ + observability/（基础设施层） →  config/ + models/（全局契约）
+mult-agent-university-system/
+├── python/                        # FastAPI 后端（agent.app:app）
+│   ├── agent/
+│   │   ├── app.py                 # 入口（lifespan 初始化 runtime）
+│   │   ├── runtime.py             # 单例容器（supervisor/仓储/ToolRegistry/main_agent）
+│   │   ├── main/                  # v2 deepagents 主智能体（factory/specs/subagents/context/checkpointer/prompts）
+│   │   ├── recommend/             # v1 推荐管线（supervisor 双模式 + 5 个 agent + 硬约束过滤）
+│   │   ├── report/                # 成绩报告编排（四决策点 + stream_report）
+│   │   ├── evaluation/            # 评价寄语编排（五层反幻觉直接管线）
+│   │   ├── documents/             # 文档摄入服务
+│   │   ├── memory/                # 记忆（注入/持久化/提取 worker/consolidation/prompts）
+│   │   └── ppt/                   # PPT 骨架（后续 phase）
+│   ├── api/                       # 路由层（auth/chat/recommend/report/evaluation/documents/health）
+│   ├── ai/                        # LLM/Embedding 工厂 + LLMTaskName + LangSmith tracing
+│   ├── auth/                      # HMAC token 签发/校验（轻量认证）
+│   ├── tools/                     # 10 个功能域 @tool 原子能力 + ToolRegistry/CircuitBreaker/MCPClient
+│   │   └── (system/chat/code/documents/evaluation/image/knowledge/mindmap/recommend/report)
+│   ├── skills/                    # 10 个 SKILL.md 技能 + _shared 共享规则
+│   ├── storage/                   # MySQL（base/user/chat_session/document/evaluation/report_artifact）+ Milvus + Redis + MinIO
+│   ├── config/                    # settings.py（双 .env 加载，lru_cache）
+│   ├── models/                    # Pydantic 契约
+│   ├── experiment/                # A/B 分桶
+│   ├── observability/             # 指标采集
+│   ├── eval/                      # 评估 runner + reports/
+│   ├── eval_sets/                 # 评估数据集（chat_intent/kb_retrieval/report_math/evaluation_comment/web_search/image_generate + live 集）
+│   ├── scripts/                   # 数据导入/采集/冒烟脚本
+│   ├── templates/                 # 报告 HTML 模板
+│   ├── tests/                     # pytest（单元 + API 流式断言 + fixtures）
+│   └── (memories/AGENTS.md        # 主智能体运行时长期记忆文件，勿与仓库指令文件混淆)
+├── frontend/                      # Next.js 16（App Router, React+TSX）
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── layout.tsx         # 根布局
+│   │   │   ├── (main)/            # 主导航布局 + 8 页面（route group 括号不影响 URL）
+│   │   │   │   ├── layout.tsx     # Header 导航 + App context + 15s 健康轮询
+│   │   │   │   ├── error.tsx      # (main) 路由级 ErrorBoundary
+│   │   │   │   ├── page.tsx       # 智能体入口 Hub（角色感知卡片）
+│   │   │   │   ├── chat/          # 智能对话（左侧会话栏 + SSE 流）
+│   │   │   │   ├── recommend/     # 推荐选课
+│   │   │   │   ├── report/        # 成绩报告
+│   │   │   │   ├── evaluation/    # 评价寄语（echarts 雷达）
+│   │   │   │   ├── documents/     # 知识库摄入
+│   │   │   │   ├── experiments/   # 实验中心（A/B + 架构对比）
+│   │   │   │   └── monitor/       # 系统监控
+│   │   │   ├── login/             # 登录/注册（独立 layout，不走 MainLayout）
+│   │   │   └── api/               # BFF 预留（未来 Java REST，当前为空）
+│   │   ├── lib/                   # api.ts 客户端 / sse.ts 消费器 / theme.ts 设计 token / api/{safeCall,useNotify,useApi}.ts
+│   │   ├── components/            # StreamView / CourseInlineCard / RadarChart / CourseFields（路 7 抽取的共享字段层）
+│   │   │   └── recommend/          # 路 1 拆出的 5 个推荐子组件 + constants
+│   │   ├── stores/                # zustand（auth 登录态 / session 会话，localStorage 持久）
+│   │   └── types/                 # 主类型（Course / API 响应）+ sse.ts（zod schema）
+│   ├── next.config.ts             # rewrites 代理 /api、/health → :8000（API_PROXY_TARGET 可覆盖；容器内默认 http://python-api:8000）
+│   ├── Dockerfile                 # 路 5：node:20-slim + ARG NODE_BASE_IMAGE；`--profile frontend up -d --build` 启；改 package.json 后需 `--no-cache` 重建
+│   └── package.json               # engines: ^20.9.0 || >=22.0.0；`dev` = `next dev -p 3001`（与 docker 端口映射对齐）
+├── sql/init-db.sql                # 唯一建表来源（course/chat_sessions/users/...）
+├── course_dataset_tools/          # 课程数据集生成（output/course.csv）
+├── docs/
+│   ├── v2.0.0/                    # 计划/决策（plan.md, notes/, plans/, rag-ingest.md, eval-system.md）
+│   │   └── frontend-architecture.md   # 前端架构详解（Next.js 16 App Router 挂载链路 + SSE 消费链路 + 错误反馈层 + 测试基建）
+│   └── notes/v2.0.0/              # 阶段复盘笔记（路 1~路 7 + Phase 3 live eval 兑现）
+├── docker-compose.yml             # python-api + mysql(3307) + redis + milvus + minio + etcd + frontend(profiles)
+└── AGENTS.md / CLAUDE.md          # 仓库指令与架构决策参考
 ```
 
-| 能力 | 位置 |
-| --- | --- |
-| 画像 + 硬约束提取 | `python/agent/recommend/agents/student_profile_agent.py` |
-| 召回（缓存/MySQL/Milvus） | `python/agent/recommend/agents/course_recall_agent.py` |
-| 硬约束过滤 | `python/agent/recommend/hard_constraint_filter.py` |
-| 编排 / SSE | `python/agent/recommend/supervisor.py` |
-| 重排 / 可行性 / 理由 | `python/agent/recommend/agents/course_*_agent.py` |
+## 前端架构（Next.js 16 App Router）
 
-## 数据与分块
+```
+URL: /
+  RootLayout (app/layout.tsx)             <html><body> + 字体 + globals.css
+    └─ MainLayout (app/(main)/layout.tsx) <App> + ConfigProvider + Header 导航
+        └─ HubPage (app/(main)/page.tsx)   角色感知卡片
 
-| 存储 | 内容 |
-| --- | --- |
-| MySQL `course_records` | 课程结构化字段（筛选、展示、容量判断） |
-| MySQL `course_chunks` | 每课 4 类 chunk 文本元数据 |
-| Milvus `course_chunks_real` | 1024 维向量 |
+URL: /chat | /recommend | /report | /evaluation | /documents | /experiments | /monitor
+  RootLayout
+    └─ MainLayout
+        └─ <PageName>Page (app/(main)/<name>/page.tsx)
 
-Chunk 类型：`basic`、`schedule_capacity`、`learning_profile`、`audience_tags`——避免整行 CSV 直接 embedding 导致语义混杂。
+URL: /login
+  RootLayout                                注意：login 不走 MainLayout
+    └─ LoginPage (app/login/page.tsx)        独立 ConfigProvider
+```
 
-热度 `popularity_level` 为 0–4 整数编码；改 schema 后需重新 ingest。
-
-## API
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `POST` | `/api/v1/recommend/stream` | 统一流式推荐入口（默认并行 Pipeline，可选 ReAct；`phase`/`text`/`done` 事件） |
-| `GET` | `/api/v1/metrics` | Agent / 业务指标 |
-| `GET` | `/api/v1/experiments` | 实验状态 |
-| `POST` | `/api/v1/experiments/{id}/outcome` | 记录实验结果 |
-| `GET` | `/health` | MySQL / Redis / Milvus / LLM / Embedding 探活 |
-
-## Docker 服务
-
-| 服务 | 端口 | 作用 |
-| --- | --- | --- |
-| `python-api` | 8000 | FastAPI |
-| `mysql` | 3307→3306 | 课程数据 |
-| `redis` | 6379 | 召回缓存 |
-| `milvus` | 19530 | 向量检索 |
-
-镜像拉取慢时可加 `-f docker-compose.python.pull-mirror.yml`。
-
-## 常见问题
-
-| 现象 | 处理 |
-| --- | --- |
-| LLM/Embedding 证书错误 | 设 `HTTPX_VERIFY_SSL=false` 并重建容器 |
-| 同 prompt 一直很快、无 embedding | Redis 缓存命中，换 prompt 或等 TTL |
-| 指定校区/分类仍不对 | 查 `hard_constraints` 与 Phase 1.5 日志；分类支持 domain 与正式类名模糊匹配 |
-| 推荐数少于 `num_items` | 硬约束/时间冲突过滤后候选不足，见 `requested_count_shortage` |
-| embedding 维度错误 | `EMBEDDING_DIMENSION` 与 Milvus collection 须一致（当前 1024） |
-| MySQL 连不上 | 宿主机用 **3307**，勿改成 3306 |
-
-排查：`docker compose ... logs --tail=80 python-api mysql`；应用层在 Repository / Recall / Supervisor 有结构化日志。
+完整挂载链路 + SSE 消费链路 + 错误反馈层 + 测试基建详见 **[docs/v2.0.0/frontend-architecture.md](docs/v2.0.0/frontend-architecture.md)**。
 
 ## 文档
 
-| 文档 | 说明 |
-| --- | --- |
-| `AGENTS.md` | 环境、测试、架构要点（开发必读） |
-| `docs/architecture.md` | 系统架构 |
-| `docs/code-walkthrough.md` | 代码导读 |
-| `docs/v2.0.0/notes/` | v2 设计决策与阶段复盘 |
-| `docs/interview-guide.md` | 面试讲法 |
-
-根目录 `docker-compose.yml`、Java/Go 为历史对照；大学校园多智能体平台主链路以 `python/` + `docker-compose.yml` + `frontend/` 为准。
+- `AGENTS.md` — 仓库指令（开发必读：命令/约束/契约）
+- `CLAUDE.md` — 详细架构与历史决策
+- `docs/v2.0.0/` — 计划、决策记录（notes/）、详细设计（plans/）
+- `docs/v2.0.0/frontend-architecture.md` — **前端架构详解**（Next.js 16 App Router 挂载链路 + SSE 消费链路 + 错误反馈层）
+- `docs/notes/v2.0.0/` — 各阶段复盘笔记（路 1~路 7 + Phase 3 live eval 兑现）

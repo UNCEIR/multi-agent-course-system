@@ -39,11 +39,19 @@ async def generate_subjective_eval(
     llm: BaseChatModel | None = None,
     *,
     timeout_seconds: float = 60.0,
+    user_message: str = "",
 ) -> str:
-    """生成综合评语；失败/超时 → ""（留空不阻塞）。"""
+    """生成综合评语；失败/超时 → ""（留空不阻塞）。
+
+    user_message：前端「补充要求」，注入评语提示词（如语气/重点），让该字段真正影响产物。
+    """
     llm = llm or build_subjective_llm()
     data = json.dumps(student, ensure_ascii=False, indent=2)
-    msg = HumanMessage(content=f"{_prompt()}\n\n学生成绩数据：\n```json\n{data}\n```")
+    content = f"{_prompt()}\n\n学生成绩数据：\n```json\n{data}\n```"
+    um = (user_message or "").strip()
+    if um:
+        content += f"\n\n用户补充要求（评语需体现，不得与成绩数据冲突）：{um}"
+    msg = HumanMessage(content=content)
     try:
         resp = await asyncio.wait_for(llm.ainvoke([msg]), timeout=timeout_seconds)
         text = str(resp.content or "").strip()

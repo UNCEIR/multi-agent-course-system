@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from typing import Any
 import structlog
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -70,7 +72,14 @@ class StudentProfileAgent(BaseAgent):
             name="student_profile",
             timeout=settings.agent_timeout_user_profile,
         )
-        self.llm = build_chat_openai(temperature=0.2, max_tokens=2048, task_name=LLMTaskName.STUDENT_PROFILE)
+        # 画像抽取属结构化抽取任务，无需深度推理。全局 LLM_ENABLE_THINKING=true 会使
+        # qwen3 先产出长思考链，实测该调用从 ~3s 膨胀到 ~27s，是 phase1 空窗的主因。
+        self.llm = build_chat_openai(
+            temperature=0.2,
+            max_tokens=2048,
+            task_name=LLMTaskName.STUDENT_PROFILE,
+            enable_thinking=False,
+        )
 
     async def _execute(self, **kwargs: Any) -> StudentProfileResult:
         student_id: str = kwargs["user_id"]
@@ -113,7 +122,38 @@ class StudentProfileAgent(BaseAgent):
                 )
             ),
         ]
-        response = await self.llm.ainvoke(messages)
+        # 补全日志（P1）：此前该调用前后无任何日志，上游挂起时整条链路静默，
+        # phase1 的 gather 会一直等待且不留痕迹，极易被误判为"卡在 recall"。
+        logger.info(
+            "student_profile.llm_call.start",
+            student_id=student_id,
+            prompt_len=len(prompt),
+        )
+        started = time.perf_counter()
+        try:
+            response = await self.llm.ainvoke(messages)
+        except asyncio.CancelledError:
+            logger.warning(
+                "student_profile.llm_call.cancelled",
+                student_id=student_id,
+                latency_ms=round((time.perf_counter() - started) * 1000, 1),
+            )
+            raise
+        except Exception as exc:
+            logger.error(
+                "student_profile.llm_call.failed",
+                student_id=student_id,
+                error=type(exc).__name__,
+                detail=str(exc)[:300],
+                latency_ms=round((time.perf_counter() - started) * 1000, 1),
+            )
+            raise
+        logger.info(
+            "student_profile.llm_call.done",
+            student_id=student_id,
+            latency_ms=round((time.perf_counter() - started) * 1000, 1),
+            content_len=len(str(response.content)),
+        )
         data = self._parse_json(response.content)
         if not data:
             logger.warning("student_profile.llm_fallback", student_id=student_id)

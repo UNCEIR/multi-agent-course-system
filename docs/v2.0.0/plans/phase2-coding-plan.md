@@ -54,7 +54,7 @@ W-A 基建 ──┬─→ W-B report 解析合并 ─→ W-C 模板与填充 �
 | A5 | LLMTaskName | `python/ai/llm_task_name.py` | +`REPORT_HTML_FILL`/`REPORT_SUBJECTIVE_EVAL`/`EVALUATION_DIMENSION_DESIGN`/`VISION_ANALYZE` |
 | A6 | llm_client 扩展 | `python/ai/llm_client.py` | `_create_chat_openai` 加 `model/base_url/api_key/enable_thinking` 可选覆盖（None=取 settings）；`build_chat_openai` 透传；**默认行为零变化**（写回归测试断言） |
 | A7 | MinIO 访问层 | `python/storage/minio/__init__.py` + `minio_repo.py` | `ensure_bucket/upload/download/exists/delete`；连接探测 3s 超时；本地兜底 `python/.documents/reports/<batch_id>/`（统一寻址函数 `locate(key)`） |
-| A8 | docker-compose + env | `docker-compose.yml`、`.env.example` | minio 暴露 9000/9001；python-api env 注入 `MINIO_*`（从 .env 读）；`.env.example` 补 MINIO/TAVILY/JIMENG/E2B 占位 |
+| A8 | docker-compose + env | `docker-compose.yml`、`.env.example` | minio 暴露 9002/9002；python-api env 注入 `MINIO_*`（从 .env 读）；`.env.example` 补 MINIO/TAVILY/JIMENG/E2B 占位 |
 
 **验证**：
 ```bash
@@ -269,7 +269,7 @@ cd python && python -m pytest tests/test_eval_runner.py -v        # 断言器单
 | H1 | 补测试 | 详细计划 §3 Step 8/9/10 的 19 个测试文件随各工作流验证命令逐一落齐（W-B×2 / W-C×2 / W-D×3 / W-E×1 / W-F×3 / W-G×2 / W-I×5 / W-J×1）；另有 `tests/test_llm_client_defaults.py`（A6 默认行为回归）与 `tests/test_report_contract.py`（B6 别名映射）各工作流未覆盖、单独补建（合计 21） |
 | H2 | 全量回归 | `cd python; python -m pytest tests/ -m "not slow" -v` 全绿 |
 | H3 | 既有功能回归 | `test_stream_recommend.py`/`test_documents_upload.py`/`test_agent_factory.py` 全绿 |
-| H4 | Docker 验收 | `docker compose up -d --build` 全 healthy（minio 9000/9001 可访问、milvus 带凭据起） |
+| H4 | Docker 验收 | `docker compose up -d --build` 全 healthy（minio 9002/9002 可访问、milvus 带凭据起） |
 | H5 | 端到端冒烟（有库/凭据环境） | report 真实样本全链（分类→PDF/HTML→下载）；evaluation（摄入→生成→`/me` 读取）；chat 插件（web_search MCP 真连、image_recognize 真图冒烟验证 qwen3-vl-plus多模态）；chat 多轮 → 查库验证消息落盘 + 记忆提取；`eval/runner.py --live` 首批断言通过 |
 | H6 | 文档收尾 | 更新 `docs/v2.0.0/plan.md`（Phase 2 状态 ✅ + 本文件索引）；`CLAUDE.md` 核心文件表同步；本文件状态改 ✅ |
 

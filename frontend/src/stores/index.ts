@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { RecommendationResponse, AgentResult } from '../types'
+import type { RecommendationResponse } from '../types'
 
 interface RecommendJob {
   id: string

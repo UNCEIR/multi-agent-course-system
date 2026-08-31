@@ -23,13 +23,17 @@ class Settings(BaseSettings):
     debug: bool = False
     llm_api_key: str = ""
     llm_base_url: str = ""
-    llm_model: str = "qwen3.6-max-preview"
+    llm_model: str = "qwen3.8-flash"
     llm_temperature: float = 0.7
     llm_max_tokens: int = 4096
-    llm_enable_thinking: bool = True
+    llm_enable_thinking: bool = False
 
     redis_url: str = "redis://localhost:6379/0"
     feature_ttl_seconds: int = 86400
+    # ── Phase 3 路 2：SSE Last-Event-ID 续传 ──
+    # Redis 环形缓冲每个 thread_id 缓存的事件条数；超过会被 LTRIM 裁剪。
+    # Redis 不可用时降级为不缓存（不影响正常生成）。
+    sse_event_buffer_size: int = 100
     course_recall_cache_enabled: bool = True
     course_recall_cache_ttl_seconds: int = 900
     course_recall_cache_lock_ttl_seconds: int = 5
@@ -70,10 +74,20 @@ class Settings(BaseSettings):
     embedding_timeout_seconds: float = 30.0
     httpx_verify_ssl: bool = True
 
+    # LLM 请求级超时（P0 修复）：不设置则沿用 openai SDK 默认值（数百秒量级），
+    # 会绕过全部 agent_timeout_* / supervisor_global_timeout，表现为链路挂死且无任何日志。
+    # 约束：llm_timeout_seconds 必须 < 对应 agent 的 timeout，否则 wait_for 会先触发，
+    # 抛 asyncio.CancelledError（BaseException，except Exception 捕获不到）→ 取消路径静默。
+    llm_timeout_seconds: float = 20.0  # 单次 LLM 请求总超时（覆盖 qwen 生成 2048 tokens 的正常耗时）
+    llm_connect_timeout_seconds: float = 5.0  # 建连超时，快速失败
+    llm_max_retries: int = 1  # 传输层重试次数（原为 openai SDK 默认 2）
+
     ab_test_enabled: bool = True
     ab_test_default_bucket_count: int = 100
 
-    agent_timeout_user_profile: float = 15.0
+    # 注意：agent 超时必须 > llm_timeout_seconds + 重试退避，否则 wait_for 会先于 LLM 请求
+    # 超时触发，抛出 CancelledError（静默无日志）。profile = 单次 20s + 退避 + 1 次重试 ≈ 21~30s。
+    agent_timeout_user_profile: float = 35.0
     agent_timeout_product_recall: float = 10.0
     agent_timeout_product_rerank: float = 15.0
     agent_timeout_marketing_copy: float = 20.0
@@ -83,8 +97,9 @@ class Settings(BaseSettings):
     memory_dir: str = ""  # 长期记忆目录（AGENTS.md 所在目录，默认 <repo_root>/python/memories）
     skills_dir: str = ""  # skill 技能文档目录（默认 <repo_root>/python/skills）
     checkpoint_sqlite_path: str = ""  # SqliteSaver 持久路径（默认 <repo_root>/python/.checkpoint.db）
+    checkpoint_backend: str = "sqlite"  # 决策 20：sqlite（默认，单实例）/ redis（仅实例数 > 1 时启用）
 
-    agent_context_window_tokens: int = 128000  # 模型上下文窗口（qwen3.6-max-preview ≈ 128K）
+    agent_context_window_tokens: int = 128000  # 模型上下文窗口（qwen3.8-flash ≈ 128K）
     agent_compaction_trigger_tokens: int | None = None  # None 时用 context_window-13000
     agent_compaction_keep_tokens: int = 20000  # 决策 11: keepRecentTokens=20000
     agent_compaction_trigger_messages: int | None = 8  # demo 用 messages 触发（生产置 None 走 token 阈值）
@@ -101,7 +116,7 @@ class Settings(BaseSettings):
 
     # ── Phase 2：MinIO（report artifact 存储，本地兜底）─────────────
     minio_endpoint: str = "localhost"
-    minio_port: int = 9000
+    minio_port: int = 9002
     minio_access_key: str = "minioadmin"
     minio_secret_key: str = "12345678"
     minio_secure: bool = False
@@ -116,6 +131,8 @@ class Settings(BaseSettings):
     report_render_concurrency: int = 4  # 渲染并发（WeasyPrint 同步：asyncio.to_thread + Semaphore）
     report_llm_fill_concurrency: int = 4  # LLM 填表/综合评语并发
     report_student_timeout_seconds: float = 60.0  # 单学生全链超时
+    report_llm_fill_enabled: bool = True  # True=LLM 填表主路（慢，37 人约 12~15min）；False=确定性 Jinja2 直填（快 ~10x）
+    report_stream_timeout_seconds: float = 600.0  # 整批报告生成死线（兜底，杜绝 SSE 无限挂起）
 
     # ── Phase 2：evaluation（教师端生成 → 学生端同步）──────────────
     evaluation_radar_axis_count: int = 5  # 雷达轴数（硬约束：维度提案必须恰为 N 个）
@@ -152,6 +169,11 @@ class Settings(BaseSettings):
     memory_extract_max_messages: int = 200  # 单批提取最大消息数（oldest-first 分批推进）
     memory_extract_retry_after_seconds: int = 600  # 提取失败退避间隔
     memory_entries_per_user_limit: int = 50  # 新会话注入的记忆条目上限（总字符 ≤2000）
+    memory_consolidate_threshold_per_kind: int = 15  # 单 kind 记忆条目数超限触发 LLM 合并（consolidation）
+
+    # ── Phase 3.5：轻量认证（HMAC token；业务接口维持 user_id 临时口径）──
+    auth_token_secret: str = "campus-dev-secret"  # token 签名密钥（生产必须 .env 覆盖）
+    auth_token_ttl_seconds: int = 7 * 24 * 3600  # token 有效期（默认 7 天）
 
     model_config = SettingsConfigDict(
         env_file=_env_file_candidates(),

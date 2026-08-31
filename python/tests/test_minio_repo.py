@@ -16,7 +16,7 @@ from storage.minio.minio_repo import MinioRepository
 def _repo(tmp_path, **kwargs):
     return MinioRepository(
         endpoint="localhost",
-        port=9000,
+        port=9002,
         access_key="minioadmin",
         secret_key="123456",
         bucket="report-artifacts",

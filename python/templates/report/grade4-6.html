@@ -22,6 +22,36 @@
     th {
       background-color: #f2f2f2;
     }
+
+    /* 学生综合评价：划线格子（作文纸样式），每行文字落在横线上，LLM 填写的评语天然对齐 */
+    .comment-section {
+      margin-top: 14px;
+      break-inside: avoid;
+    }
+    .comment-section h3 {
+      margin: 0 0 6px;
+      font-size: 15px;
+      font-weight: bold;
+    }
+    .comment-box {
+      border: 1px solid #000;
+      padding: 4px 6px;
+    }
+    .comment-lines {
+      margin: 0;
+      line-height: 32px;
+      min-height: 128px; /* 4 行划线 */
+      background-image: repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent 31px,
+        #000 31px,
+        #000 32px
+      );
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
   </style>
 </head>
 
@@ -77,15 +107,17 @@
     
     
     
+ <tr><td colspan="2">过程性评价</td><td colspan="2"><span class="fill" data-slot="信息|过程性评价|grade"></span></td><td colspan="2">过程性评价</td><td colspan="2"><span class="fill" data-slot="劳动|过程性评价|grade"></span></td><td colspan="2">过程性评价</td><td colspan="2"><span class="fill" data-slot="综实|过程性评价|grade"></span></td></tr><tr><td rowspan="2">展示性评价</td><td>必选</td><td colspan="2"><span class="fill" data-slot="信息|必选|grade"></span></td><td rowspan="2">展示性评价</td><td>必选</td><td colspan="2"><span class="fill" data-slot="劳动|必选|grade"></span></td><td rowspan="2">展示性评价</td><td>必选</td><td colspan="2"><span class="fill" data-slot="综实|必选|grade"></span></td></tr><tr><td>自选</td><td colspan="2"><span class="fill" data-slot="信息|自选|grade"></span></td><td>自选</td><td colspan="2"><span class="fill" data-slot="劳动|自选|grade"></span></td><td>自选</td><td colspan="2"><span class="fill" data-slot="综实|自选|grade"></span></td></tr><tr><td colspan="3">综合性评价</td><td><span class="fill" data-slot="信息|综合性评价|grade"></span></td><td colspan="3">综合性评价</td><td><span class="fill" data-slot="劳动|综合性评价|grade"></span></td><td colspan="3">综合性评价</td><td><span class="fill" data-slot="综实|综合性评价|grade"></span></td></tr>
   </table>
 
  
 
 
- <tr><td colspan="2">过程性评价</td><td colspan="2"><span class="fill" data-slot="信息|过程性评价|grade"></span></td><td colspan="2">过程性评价</td><td colspan="2"><span class="fill" data-slot="劳动|过程性评价|grade"></span></td><td colspan="2">过程性评价</td><td colspan="2"><span class="fill" data-slot="综实|过程性评价|grade"></span></td></tr><tr><td rowspan="2">展示性评价</td><td>必选</td><td colspan="2"><span class="fill" data-slot="信息|必选|grade"></span></td><td rowspan="2">展示性评价</td><td>必选</td><td colspan="2"><span class="fill" data-slot="劳动|必选|grade"></span></td><td rowspan="2">展示性评价</td><td>必选</td><td colspan="2"><span class="fill" data-slot="综实|必选|grade"></span></td></tr><tr><td>自选</td><td colspan="2"><span class="fill" data-slot="信息|自选|grade"></span></td><td>自选</td><td colspan="2"><span class="fill" data-slot="劳动|自选|grade"></span></td><td>自选</td><td colspan="2"><span class="fill" data-slot="综实|自选|grade"></span></td></tr><tr><td colspan="3">综合性评价</td><td><span class="fill" data-slot="信息|综合性评价|grade"></span></td><td colspan="3">综合性评价</td><td><span class="fill" data-slot="劳动|综合性评价|grade"></span></td><td colspan="3">综合性评价</td><td><span class="fill" data-slot="综实|综合性评价|grade"></span></td></tr>
 <div class="comment-section">
   <h3>学生综合评价</h3>
-  <p class="fill" data-slot="comment"></p>
+  <div class="comment-box">
+    <p class="fill comment-lines" data-slot="comment"></p>
+  </div>
 </div>
 </body>
 </html>

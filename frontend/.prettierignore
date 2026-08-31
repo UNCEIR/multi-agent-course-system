@@ -1,0 +1,13 @@
+# 排除非源码目录
+node_modules
+.next
+out
+build
+dist
+coverage
+*.lock
+package-lock.json
+# AGENTS.md 是项目方维护的引导文件，不要被格式化覆盖
+AGENTS.md
+# CLAUDE.md 同理
+CLAUDE.md

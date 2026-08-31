@@ -21,9 +21,10 @@ class _FakeRow(dict):
 
 
 class _FakeResult:
-    def __init__(self, rows=None, first_row=None):
+    def __init__(self, rows=None, first_row=None, rowcount=1):
         self.rows = rows or []
         self.first_row = first_row
+        self.rowcount = rowcount
 
     def mappings(self):
         return self
@@ -113,4 +114,40 @@ def test_ping_false_graceful(repo):
     repo.ping = MagicMock(return_value=False)
     assert repo.list_messages("s1") == []
     assert repo.list_memory_entries("u1") == []
+
+
+@pytest.mark.unit
+def test_list_sessions_by_user_returns_rows(repo):
+    """按用户列会话：返回 active 会话（含 display_title 由 SQL 子查询决定）。"""
+    row = _FakeRow(
+        session_id="s1", title="", message_count=4,
+        created_at=None, updated_at=None, display_title="帮我选课",
+    )
+    repo._engine.connect = MagicMock(return_value=_FakeConn(_FakeResult(rows=[row])))
+    sessions = repo.list_sessions_by_user("u1")
+    assert sessions[0]["session_id"] == "s1"
+    assert sessions[0]["display_title"] == "帮我选课"
+
+
+@pytest.mark.unit
+def test_session_owner_returns_owner(repo):
+    row = _FakeRow(user_id="u1")
+    repo._engine.connect = MagicMock(return_value=_FakeConn(_FakeResult(first_row=row)))
+    assert repo.session_owner("s1") == "u1"
+
+
+@pytest.mark.unit
+def test_rename_session_updates(repo):
+    repo._engine.begin = MagicMock(return_value=_FakeConn())
+    ok = repo.rename_session("s1", "u1", "新标题")
+    assert ok is True
+    assert "新标题" in str(repo._engine.begin.return_value.executed)
+
+
+@pytest.mark.unit
+def test_close_session_sets_closed(repo):
+    repo._engine.begin = MagicMock(return_value=_FakeConn())
+    ok = repo.close_session("s1", "u1")
+    assert ok is True
+    assert "status = 'closed'" in str(repo._engine.begin.return_value.executed)
     assert repo.count_unextracted("s1") == 0

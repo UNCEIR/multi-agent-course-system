@@ -85,6 +85,7 @@ class RecommendationRequest(BaseModel):
     query: str = ""
     prompt: str = ""
     device_type: str = "web"
+    mode: str = Field(default="pipeline", pattern="^(pipeline|react)$", description="推荐模式：pipeline（默认，并行）/ react（ReAct，失败自动兜底 pipeline）")
 
 
 class RecommendationResponse(BaseModel):

@@ -13,8 +13,12 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import UploadFile
+import structlog
 
 from tools.documents import chunk_document, parse_document
+
+
+logger = structlog.get_logger()
 
 
 class DocumentIngestionService:
@@ -117,6 +121,7 @@ class DocumentIngestionService:
                 chunk_strategy=strategy,
                 chunks_count=len(chunks),
                 status="ok",
+                user_id=user_id,  # 2026-08-29 修复：之前漏传 → 默认值 "public"，个人成绩单误写到 public 分区
             )
             meta_chunks = [
                 {
@@ -140,3 +145,97 @@ class DocumentIngestionService:
             "status": "ok",
             "user_id": user_id,
         }
+
+    async def ingest_many(
+        self,
+        files: list[UploadFile],
+        dataset_name: str,
+        chunk_strategy: str = "auto",
+        user_id: str = "public",
+        student_name: str | None = None,
+        max_file_bytes: int = 10 * 1024 * 1024,
+    ) -> list[dict[str, Any]]:
+        """批量摄入（1~5 份）；每文件一份独立 dataset。
+
+        - 任一文件抛错 → 该文件返回 {status: "error", filename, error}；其余继续。
+        - 文件大小超 max_file_bytes → 跳过该文件，返回 {status: "error", error: "file_too_large", file_size}。
+        - 文件名重复 → 自动加 -1/-2 后缀避免 dataset_dir 冲突。
+        - 空列表 / dataset_name 空 → 抛 ValueError（前端应在调用前拦截）。
+        """
+        if not dataset_name.strip():
+            raise ValueError("dataset_name 不能为空")
+        if not files:
+            return []
+
+        results: list[dict[str, Any]] = []
+        # 同名文件计数：用于自动 -1/-2 后缀
+        seen_counts: dict[str, int] = {}
+        for file in files:
+            original_name = Path(file.filename or "document").name
+            if not original_name:
+                original_name = "document"
+            # 文件大小校验（必须在落盘 / 解析前判断，避免传大文件把磁盘打爆）
+            try:
+                # 1.0.x 版本 fastapi starlette 的 UploadFile.size 不一定存在；
+                # 通过 spool 临时文件 stat 兜底
+                spool = getattr(file, "file", None)
+                if spool is not None and hasattr(spool, "tell") and hasattr(spool, "seek"):
+                    spool.seek(0, 2)  # SEEK_END
+                    file_size = spool.tell()
+                    spool.seek(0)
+                else:
+                    file_size = 0
+            except Exception:  # noqa: BLE001
+                file_size = 0
+
+            if file_size > max_file_bytes:
+                results.append(
+                    {
+                        "dataset_id": None,
+                        "filename": original_name,
+                        "file_size": file_size,
+                        "chunks_count": 0,
+                        "status": "error",
+                        "error": "file_too_large",
+                        "max_file_bytes": max_file_bytes,
+                    }
+                )
+                continue
+
+            # 文件名去重
+            stem = Path(original_name).stem
+            suffix = Path(original_name).suffix
+            count = seen_counts.get(stem + suffix, 0)
+            seen_counts[stem + suffix] = count + 1
+            filename = original_name if count == 0 else f"{stem}-{count}{suffix}"
+
+            try:
+                result = await self.ingest(
+                    file,
+                    dataset_name=dataset_name,
+                    chunk_strategy=chunk_strategy,
+                    user_id=user_id,
+                    student_name=student_name,
+                )
+                # 给每条结果补 filename 方便前端展示
+                result["filename"] = filename
+                results.append(result)
+            except Exception as exc:  # noqa: BLE001
+                # 坏文件不让整批回滚；记录后继续
+                logger.warning(
+                    "document.ingest_failed filename=%s error=%s",
+                    filename,
+                    exc,
+                )
+                results.append(
+                    {
+                        "dataset_id": None,
+                        "filename": filename,
+                        "file_size": file_size,
+                        "chunks_count": 0,
+                        "status": "error",
+                        "error": type(exc).__name__,
+                        "message": str(exc),
+                    }
+                )
+        return results

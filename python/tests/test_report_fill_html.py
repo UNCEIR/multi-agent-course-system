@@ -154,3 +154,18 @@ async def test_fill_one_llm_template_mangled_raises(template):
     mangled = fill_with_jinja2(template, STUDENT).replace("<table>", "<tablex>")
     with pytest.raises(FillValidationError):
         await fill_one_llm(template, STUDENT, llm=_fake_llm(mangled), retries=0)
+
+
+@pytest.mark.unit
+async def test_fill_html_disabled_uses_jinja2_without_llm():
+    """report_llm_fill_enabled=False → 确定性直填，不触发 LLM（37 人从 12~15min 降到 ~2min）。"""
+    from unittest.mock import patch
+
+    from tools.report.render_report_batch import _fill_html
+
+    template = '<span class="fill" data-slot="student|name"></span>'
+    with patch("tools.report.render_report_batch.fill_one_llm", new=AsyncMock()) as mock_llm:
+        html, err = await _fill_html(False, template, STUDENT)
+    assert "陈烨" in html
+    assert err is None
+    mock_llm.assert_not_awaited()

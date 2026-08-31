@@ -102,16 +102,20 @@ def _assert_one(kind: str, a: dict, output: dict) -> tuple[bool, str]:
         return (hit >= min_recall), f"recall@{a.get('k', 5)}={hit:.2f}"
     if kind == "count_ge":
         items = _dig(output, field)
-        if not isinstance(items, list):
-            return False, f"count_ge {field} 非列表"
-        want = int(a.get("value", 0))
-        return (len(items) >= want), f"count_ge {field}={len(items)} < {want}"
+        want = float(a.get("value", 0))
+        if isinstance(items, list):
+            return (len(items) >= want), f"count_ge {field}={len(items)} < {want}"
+        if isinstance(items, (int, float)):
+            return (float(items) >= want), f"count_ge {field}={items} < {want}"
+        return False, f"count_ge {field} 非列表/数字"
     if kind == "count_le":
         items = _dig(output, field)
-        if not isinstance(items, list):
-            return False, f"count_le {field} 非列表"
-        want = int(a.get("value", 0))
-        return (len(items) <= want), f"count_le {field}={len(items)} > {want}"
+        want = float(a.get("value", 0))
+        if isinstance(items, list):
+            return (len(items) <= want), f"count_le {field}={len(items)} > {want}"
+        if isinstance(items, (int, float)):
+            return (float(items) <= want), f"count_le {field}={items} > {want}"
+        return False, f"count_le {field} 非列表/数字"
     if kind == "is_error":
         got = bool(_dig(output, field))
         want = bool(a.get("value", True))
@@ -196,6 +200,19 @@ def execute_case(case: dict, *, live: bool, judge: bool) -> dict:
             "pass": ok, "failures": failures, "metrics": metrics,
             "latency_ms": round((time.perf_counter() - t0) * 1000, 1), "mode": "smoke",
         }
+    try:
+        return _execute_live_case(case, t0)
+    except Exception as exc:  # noqa: BLE001
+        # API 不可用/外部依赖异常 → 结构化失败，不 crash 整个 runner
+        return {
+            "case_id": case["case_id"], "type": case["type"], "difficulty": case.get("difficulty", ""),
+            "pass": False, "failures": [f"live 执行异常: {str(exc)[:120]}"], "metrics": {},
+            "latency_ms": round((time.perf_counter() - t0) * 1000, 1), "mode": "live",
+            "usage": {},
+        }
+
+
+def _execute_live_case(case: dict, t0: float) -> dict:
     if case["type"] == "kb_retrieval":
         output = _live_kb(case["input"]["query"], case["input"].get("top_k", 5))
         ok, failures = run_assertions(case, output)
@@ -240,17 +257,17 @@ def execute_case(case: dict, *, live: bool, judge: bool) -> dict:
             "detail": str(output.get("reply", ""))[:100],
         }
     if case["type"] == "report_math":
-        output = _live_report_math()
+        output = _live_report_math(case)
         ok, failures = run_assertions(case, output)
         return {
             "case_id": case["case_id"], "type": case["type"], "difficulty": case.get("difficulty", ""),
             "pass": ok, "failures": failures, "metrics": {},
             "latency_ms": round((time.perf_counter() - t0) * 1000, 1), "mode": "live",
             "usage": {},
-            "detail": f"students={output.get('students_count', 0)} failed={output.get('failed_count', 0)} subject={output.get('subject', '')}",
+            "detail": f"students={output.get('students_count', 0)} failed={output.get('failed_count', 0)} batch={bool(output.get('batch_id'))}",
         }
     if case["type"] == "evaluation_comment":
-        output = _live_evaluation()
+        output = _live_evaluation(case)
         ok, failures = run_assertions(case, output)
         return {
             "case_id": case["case_id"], "type": case["type"], "difficulty": case.get("difficulty", ""),
@@ -258,7 +275,7 @@ def execute_case(case: dict, *, live: bool, judge: bool) -> dict:
             "latency_ms": round((time.perf_counter() - t0) * 1000, 1), "mode": "live",
             "usage": output.get("usage", {}),
             "api_latency_ms": output.get("latency_ms"),
-            "detail": str(output.get("comment", ""))[:100],
+            "detail": str(output.get("comment", "") or output.get("error", ""))[:100],
         }
     return {
         "case_id": case["case_id"], "type": case["type"], "difficulty": case.get("difficulty", ""),
@@ -282,30 +299,14 @@ def _smoke_output(case: dict) -> dict:
     - 其余类型：断言自引用填充（验证断言器与报告管道，不验证数据自洽）
     """
     t = case["type"]
-    if t == "evaluation_comment":
-        return {"comment": case["input"]["comment"]}
-    if t == "chat_intent":
-        return {"tool_chain": case.get("expected", {}).get("tool_chain", [])}
-    if t == "kb_retrieval":
-        return {"hit_chunk_ids": case.get("expected", {}).get("chunk_ids", [])}
-    if t == "web_search":
-        out: dict = {}
-        for a in case.get("assertions", []):
-            if a["kind"] == "count_ge":
-                out["results"] = ["r"] * int(a.get("value", 0))
-            elif a["kind"] == "contains":
-                out["joined"] = a.get("value", "")
-        return out
-    if t == "image_generate":
-        out: dict = {}
-        for a in case.get("assertions", []):
-            if a["kind"] in ("count_ge", "count_le"):
-                out["image_urls"] = ["u"] * int(a.get("value", 0))
-            elif a["kind"] == "is_error":
-                out["error"] = bool(a.get("value", True))
-        return out
-
     out: dict = {}
+    if t == "evaluation_comment":
+        out["comment"] = (case.get("input") or {}).get("comment", "")
+    if t == "chat_intent":
+        out["tool_chain"] = case.get("expected", {}).get("tool_chain", [])
+    if t == "kb_retrieval":
+        out["hit_chunk_ids"] = case.get("expected", {}).get("chunk_ids", [])
+
     for a in case.get("assertions", []):
         kind = a["kind"]
         field = a.get("field", "")
@@ -317,9 +318,18 @@ def _smoke_output(case: dict) -> dict:
         elif kind == "numeric":
             _set_dig(out, field, value)
         elif kind == "reference":
+            # evaluation_comment 的 comment 已由 input 构造（保留幻觉反例语义），不覆盖
+            if t == "evaluation_comment" and field == "comment":
+                continue
             _set_dig(out, field, f"文本包含数字 {value[0] if value else 0}")
         elif kind == "recall":
             _set_dig(out, field, value)
+        elif kind == "count_ge":
+            _set_dig(out, field, value)
+        elif kind == "count_le":
+            _set_dig(out, field, value)
+        elif kind == "is_error":
+            _set_dig(out, field, bool(value))
         elif kind == "tool_chain":
             out["tool_chain"] = value
     return out
@@ -327,12 +337,27 @@ def _smoke_output(case: dict) -> dict:
 
 def _live_kb(query: str, top_k: int) -> dict:
     import asyncio
+    import json as _json
 
+    from agent import runtime
     from tools.knowledge.query_knowledge import query_knowledge
 
-    result = asyncio.run(query_knowledge.ainvoke({"query": query, "top_k": top_k}))
+    async def _run() -> str:
+        if runtime.document_vector_repo is None:
+            await runtime.init()
+        return await query_knowledge.ainvoke({"query": query, "top_k": top_k})
+
+    result = asyncio.run(_run())
     text = str(result)
-    ids = re.findall(r"chunk_id[=:]\s*[\"']?([\w:]+)", text)
+    ids: list[str] = []
+    try:
+        data = _json.loads(text)
+        for m in data.get("matches", []) or []:
+            cid = m.get("chunk_id")
+            if cid:
+                ids.append(str(cid))
+    except _json.JSONDecodeError:
+        ids = re.findall(r"chunk_id[=:]\s*[\"']?([\w:]+)", text)
     return {"hit_chunk_ids": ids}
 
 
@@ -388,6 +413,9 @@ def _live_chat(inputs: dict, case_id: str = "") -> dict:
     """真实 chat 链路（/chat/stream）→ 工具调用序列 + 回复（LLM 实际路由即真值）。
 
     每 case 独立 session_id（避免续轮污染上下文）。
+    dispatch_module 路由工具按 args.intent 映射为模块名（"report"/"evaluation"/...），
+    这样 eval 期望的 `tool_chain: ["report"]` 与实际链路对齐；dispatch_module 自身从
+    tool_chain 里过滤掉（避免双重计数）。
     """
     import httpx
     import uuid
@@ -398,34 +426,50 @@ def _live_chat(inputs: dict, case_id: str = "") -> dict:
     body = {"message": message, "session_id": session_id, "user_id": user_id}
     if inputs.get("images"):
         body["images"] = list(inputs["images"])
+    with httpx.stream("POST", f"{BASE}/api/v1/chat/stream", json=body, timeout=280) as resp:
+        return _parse_chat_stream_events(resp.iter_lines())
+
+
+def _parse_chat_stream_events(lines) -> dict:
+    """SSE 行迭代器 → {tool_chain, reply, usage, latency_ms, ttft_ms}。
+
+    暴露为模块级纯函数便于单测（mock SSE 流）。
+    噪音过滤：read_file/write_file/edit_file/list_available_skills/get_current_time
+    + tavily_* (web_search MCP 子事件) + execute_code (e2b 实现细节)。
+    dispatch_module 路由按 args.intent 映射为模块名，自身过滤掉。
+    """
     tools: list[str] = []
     reply = ""
     usage: dict = {}
     latency_ms: float | None = None
     ttft_ms: float | None = None
-    with httpx.stream("POST", f"{BASE}/api/v1/chat/stream", json=body, timeout=280) as resp:
-        event = ""
-        for line in resp.iter_lines():
-            if not line:
-                continue
-            if line.startswith("event: "):
-                event = line[7:].strip()
-            elif line.startswith("data: ") and event:
-                try:
-                    data = json.loads(line[6:])
-                except json.JSONDecodeError:
-                    data = {}
-                if event == "tool" and data.get("status") == "start":
-                    tools.append(str(data.get("tool", "")))
-                elif event == "text":
-                    reply += str(data.get("token", ""))
-                elif event == "done":
-                    usage = data.get("usage", {}) or {}
-                    latency_ms = data.get("latency_ms")
-                    ttft_ms = data.get("ttft_ms")
-                event = ""
-    # 过滤噪音：skill 渐进披露读文件 / 系统工具 / 工具内部调用的 MCP 子事件
-    # （tavily_* = web_search 内部；execute_code = code_interpreter 的 e2b 实现细节）
+    event = ""
+    for line in lines:
+        if not line:
+            continue
+        if line.startswith("event: "):
+            event = line[7:].strip()
+        elif line.startswith("data: ") and event:
+            try:
+                data = json.loads(line[6:])
+            except json.JSONDecodeError:
+                data = {}
+            if event == "tool" and data.get("status") == "start":
+                tool_name = str(data.get("tool", ""))
+                args = data.get("args") or {}
+                if tool_name == "dispatch_module":
+                    intent = args.get("intent") if isinstance(args, dict) else None
+                    if intent:
+                        tools.append(str(intent))
+                    continue
+                tools.append(tool_name)
+            elif event == "text":
+                reply += str(data.get("token", ""))
+            elif event == "done":
+                usage = data.get("usage", {}) or {}
+                latency_ms = data.get("latency_ms")
+                ttft_ms = data.get("ttft_ms")
+            event = ""
     noise = {"read_file", "write_file", "edit_file", "list_available_skills", "get_current_time"}
     tools = [t for t in tools if t not in noise and not t.startswith("tavily_") and t != "execute_code"]
     return {
@@ -437,43 +481,89 @@ def _live_chat(inputs: dict, case_id: str = "") -> dict:
     }
 
 
-def _live_report_math() -> dict:
-    """真实 report 确定性管线（工具层，真实样本）→ 断言用输出。"""
+def _live_report_math(case: dict) -> dict:
+    """真实 report 端到端链路（POST /api/v1/report，真实样本）→ 断言用输出。
+
+    消费 SSE：progress/student_done/student_error/done。done 事件含
+    batch_id/students/failed_students；未收到 done（error 或超时）→ 结构化失败。
+    与 eval-system.md 的 "report_math → /api/v1/report 端到端" 口径一致。
+    """
+    import httpx
+
     from pathlib import Path
 
-    from tools.report.contract import canonical_subject
-    from tools.report.merge_students import assert_integrity, merge_files
-    from tools.report.parse_score_excels import parse_workbook
+    fixtures = Path(__file__).resolve().parent.parent / "tests" / "fixtures"
+    candidates = sorted(fixtures.glob("*.xlsx"))
+    if not candidates:
+        return {"batch_id": "", "students_count": 0, "failed_count": 1, "has_batch_id": False, "students": [], "error": "no_fixture"}
+    sample = candidates[0]
 
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    xlsx = [p for p in repo_root.iterdir() if p.suffix == ".xlsx"]
-    if not xlsx:
-        return {"subject": "", "students_count": 0, "integrity_errors": ["无样本"]}
-    pf = parse_workbook(xlsx[0])
-    merged = merge_files([pf])
-    errors = assert_integrity(merged, 1)
-    grades = pf.students[0].grades if pf.students else {}
+    fields = {"semester": case["input"].get("semester", ""), "user_message": case["input"].get("user_message", "")}
+    files = [("files", (sample.name, sample.read_bytes(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))]
+    batch_id = ""
+    students: list[dict] = []
+    failed_students: list[dict] = []
+    error = ""
+    t0 = time.perf_counter()
+    with httpx.stream("POST", f"{BASE}/api/v1/report", data=fields, files=files, timeout=600) as resp:
+        if resp.status_code >= 400:
+            return {"batch_id": "", "students_count": 0, "failed_count": 1, "has_batch_id": False, "students": [], "error": f"http_{resp.status_code}"}
+        event = ""
+        for line in resp.iter_lines():
+            if not line:
+                continue
+            if line.startswith("event: "):
+                event = line[7:].strip()
+            elif line.startswith("data: ") and event:
+                try:
+                    data = json.loads(line[6:])
+                except json.JSONDecodeError:
+                    data = {}
+                if event == "student_done":
+                    students.append(data)
+                elif event == "student_error":
+                    failed_students.append(data)
+                elif event == "done":
+                    batch_id = str(data.get("batch_id", ""))
+                    students = list(data.get("students", [])) or students
+                    failed_students = list(data.get("failed_students", [])) or failed_students
+                elif event == "error":
+                    error = str(data.get("code", "") or data.get("message", ""))
+                event = ""
     return {
-        "subject": canonical_subject(pf.subject),
-        "students_count": len(merged.students),
-        "integrity_errors": errors,
-        "failed_count": len(errors),
-        **{k: v for k, v in grades.items()},
+        "batch_id": batch_id,
+        "has_batch_id": bool(batch_id),
+        "students": students,
+        "students_count": len(students),
+        "failed_count": len(failed_students),
+        "error": error,
+        "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
     }
 
 
-def _live_evaluation() -> dict:
-    """真实 evaluation 链路（/api/v1/evaluation）→ 评语/雷达/核验状态。"""
+def _live_evaluation(case: dict) -> dict:
+    """真实 evaluation 链路（/api/v1/evaluation）→ 评语/雷达/核验状态。
+
+    按 case.input 参数化 target_user_id/comment_type；输出含 comment_length，
+    无成绩单时返回 error=no_transcript_data（层①终止，不空跑 LLM）。
+    """
     import httpx
 
-    body = {"target_user_id": "3123003252", "comment_type": "semester_summary", "generated_by": "eval-live"}
+    body = {
+        "target_user_id": case["input"].get("target_user_id", "3123003252"),
+        "comment_type": case["input"].get("comment_type", "semester_summary"),
+        "generated_by": "eval-live",
+    }
     comment = ""
     comment_status = ""
     radar_count = 0
     usage: dict = {}
+    error = ""
     latency_ms: float | None = None
     t0 = time.perf_counter()
     with httpx.stream("POST", f"{BASE}/api/v1/evaluation", json=body, timeout=280) as resp:
+        if resp.status_code >= 400:
+            return {"comment": "", "comment_status": "", "radar_count": 0, "usage": {}, "latency_ms": 0, "error": f"http_{resp.status_code}"}
         event = ""
         for line in resp.iter_lines():
             if not line:
@@ -491,11 +581,17 @@ def _live_evaluation() -> dict:
                     radar = data.get("radar", {}) or {}
                     radar_count = len(radar.get("dimensions", []))
                     usage = data.get("usage", {}) or {}
+                elif event == "error":
+                    error = str(data.get("code", "") or data.get("message", ""))
                 event = ""
     return {
         "comment": comment,
         "comment_status": comment_status,
+        "status_ok": comment_status in ("llm", "rule"),
+        "not_empty": bool(comment.strip()),
         "radar_count": radar_count,
+        "comment_length": len(comment),
+        "error": error,
         "usage": usage,
         "latency_ms": round((time.perf_counter() - t0) * 1000, 1) if latency_ms is None else latency_ms,
     }

@@ -14,6 +14,8 @@ def mock_settings(tmp_path):
     settings.memory_dir = ""
     settings.skills_dir = ""
     settings.checkpoint_sqlite_path = str(tmp_path / "checkpoint.db")
+    settings.checkpoint_backend = "sqlite"
+    settings.redis_url = "redis://localhost:6379/0"
     with patch("agent.main.backend.get_settings", return_value=settings), patch(
         "agent.main.checkpointer.get_settings", return_value=settings
     ):
@@ -39,3 +41,31 @@ async def test_build_checkpointer_returns_async_sqlite_saver(mock_settings, tmp_
     checkpointer = await build_checkpointer()
     assert isinstance(checkpointer, AsyncSqliteSaver)
     await checkpointer.conn.close()
+
+
+@pytest.mark.asyncio
+async def test_build_checkpointer_default_backend_sqlite(mock_settings, tmp_path):
+    """默认 checkpoint_backend=sqlite：走 AsyncSqliteSaver，行为不变。"""
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+    from agent.main.checkpointer import build_checkpointer
+
+    mock_settings.checkpoint_backend = "sqlite"
+    mock_settings.checkpoint_sqlite_path = str(tmp_path / "default.db")
+    checkpointer = await build_checkpointer()
+    assert isinstance(checkpointer, AsyncSqliteSaver)
+    await checkpointer.conn.close()
+
+
+@pytest.mark.asyncio
+async def test_build_checkpointer_redis_without_dependency_raises(mock_settings):
+    """checkpoint_backend=redis 且依赖未安装 → 显式 RuntimeError（不静默回退）。"""
+    import importlib.util
+
+    from agent.main.checkpointer import build_checkpointer
+
+    if importlib.util.find_spec("langgraph.checkpoint.redis") is not None:
+        pytest.skip("langgraph-checkpoint-redis 已安装，无法测缺失分支")
+    mock_settings.checkpoint_backend = "redis"
+    with pytest.raises(RuntimeError, match="langgraph-checkpoint-redis"):
+        await build_checkpointer()

@@ -88,8 +88,8 @@ def test_evaluation_me_only_own_data():
         resp_a = client.get("/api/v1/evaluation/me", params={"user_id": "stu1"})
         resp_b = client.get("/api/v1/evaluation/me", params={"user_id": "stu2"})
     assert resp_a.status_code == 200
-    assert len(resp_a.json()["items"]) == 1
-    assert resp_a.json()["items"][0]["target_user_id"] == "stu1"
-    assert resp_b.json()["items"] == []
+    assert len(resp_a.json()["data"]["items"]) == 1
+    assert resp_a.json()["data"]["items"][0]["target_user_id"] == "stu1"
+    assert resp_b.json()["data"]["items"] == []
     # repo 始终按请求 user_id 过滤，不存在跨用户返回
     assert repo.list_by_user.call_count == 2

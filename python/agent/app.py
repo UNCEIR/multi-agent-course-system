@@ -33,7 +33,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent import runtime
-from api import recommend, health, chat, documents, report, evaluation
+from api import recommend, health, chat, documents, report, evaluation, auth
 from config import get_settings
 
 logger = structlog.get_logger()
@@ -68,6 +68,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# 统一响应信封：非流式 /api/v1/* JSON → {code, success, data, msg}（BaseResult）
+# 需在 CORS 之后注册（更外层先收到 CORS 处理后的响应，封装时保留其头）。
+from api.envelope import ApiEnvelopeMiddleware
+
+app.add_middleware(ApiEnvelopeMiddleware)
 
 # 注册路由
 app.include_router(health.router)
@@ -76,6 +81,7 @@ app.include_router(chat.router)
 app.include_router(documents.router)
 app.include_router(report.router)
 app.include_router(evaluation.router)
+app.include_router(auth.router)
 
 
 def _assert_startup_config() -> None:

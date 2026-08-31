@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agent.memory.extractor import maybe_extract
+from agent.memory.extractor import MemoryExtractWorker, maybe_extract
 from agent.memory.injector import inject_memory_entries
 from agent.memory.persistence import persist_turn
 
@@ -140,6 +140,45 @@ async def test_extract_bad_output_marks_failure():
     ):
         assert await maybe_extract(repo, session_id="s1", user_id="u1") is False
     assert repo.last_extracted == 0  # 水位未动
+
+
+@pytest.mark.unit
+async def test_worker_isolated_from_main_agent():
+    """MemoryExtractWorker 独立可用：不依赖主 agent/checkpointer，直接调用可完成提取。"""
+    repo = _FakeRepo()
+    llm = MagicMock()
+    llm.ainvoke = AsyncMock(
+        return_value=MagicMock(content='{"entries": [{"kind": "decision", "content": "选课优先校区"}]}')
+    )
+    worker = MemoryExtractWorker(llm=llm)
+    ok = await worker.extract(
+        repo=repo,
+        session_id="s9",
+        user_id="u9",
+        messages=[{"role": "user", "content": "帮我选课", "seq": 3}],
+        previous_entries=[],
+    )
+    assert ok is True
+    assert repo.entries == [{"kind": "decision", "content": "选课优先校区"}]
+    assert repo.last_extracted == 3
+
+
+@pytest.mark.unit
+async def test_worker_failure_marks_failure_and_no_watermark():
+    """worker 失败：标记失败、水位不动（下轮可重试），不抛异常（forked 隔离）。"""
+    repo = _FakeRepo()
+    llm = MagicMock()
+    llm.ainvoke = AsyncMock(return_value=MagicMock(content="坏输出"))
+    worker = MemoryExtractWorker(llm=llm)
+    ok = await worker.extract(
+        repo=repo,
+        session_id="s9",
+        user_id="u9",
+        messages=[{"role": "user", "content": "x", "seq": 5}],
+        previous_entries=[],
+    )
+    assert ok is False
+    assert repo.last_extracted == 0
 
 
 @pytest.mark.unit
