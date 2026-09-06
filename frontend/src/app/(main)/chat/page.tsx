@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { Button, Card, Dropdown, Empty, Input, List, Space, Spin, Tag, Typography } from 'antd'
 import {
   SendOutlined,
-  ToolOutlined,
   RobotOutlined,
   UserOutlined,
   ReloadOutlined,
@@ -18,6 +17,9 @@ import { api } from '../../../lib/api'
 import { useAuthStore } from '../../../stores/auth'
 import { useSessionStore } from '../../../stores/session'
 import { useNotify } from '../../../lib/api/useNotify'
+import AgentActivityTimeline, { type ToolActivity } from '../../../components/AgentActivityTimeline'
+import MarkdownContent from '../../../components/MarkdownContent'
+import type { AgentTreeNode } from '../../../types/sse'
 
 const { TextArea } = Input
 const { Text } = Typography
@@ -25,9 +27,10 @@ const { Text } = Typography
 interface ChatItem {
   role: 'user' | 'assistant'
   content: string
-  tools: Array<{ name: string; status: 'start' | 'end' }>
+  tools: ToolActivity[]
   usage?: Record<string, unknown>
   latency_ms?: number | null
+  agentTree?: AgentTreeNode[]
   error?: string
 }
 
@@ -159,7 +162,7 @@ export default function ChatPage() {
       const ac = new AbortController()
       const body = { message: content, session_id: sessionId, user_id: user.user_id }
       try {
-        for await (const evt of api.chatStream(body, ac.signal)) {
+        for await (const evt of api.chatStreamWithRetry(body, ac.signal)) {
           if (evt.event === 'text') {
             const token = evt.data.token
             setItems((prev) => {
@@ -170,13 +173,18 @@ export default function ChatPage() {
             })
           } else if (evt.event === 'tool') {
             const tool = evt.data.tool
+            const result = evt.data.result
             setItems((prev) => {
               const next = [...prev]
               const last = next[next.length - 1]
               if (last && last.role === 'assistant') {
                 const exist = last.tools.find((t) => t.name === tool)
-                if (exist) exist.status = evt.data.status
-                else last.tools.push({ name: tool, status: evt.data.status })
+                if (exist) {
+                  exist.status = evt.data.status
+                  if (result) exist.result = result
+                } else {
+                  last.tools.push({ name: tool, status: evt.data.status, result })
+                }
               }
               return next
             })
@@ -187,6 +195,7 @@ export default function ChatPage() {
               if (last && last.role === 'assistant') {
                 last.usage = evt.data.usage
                 last.latency_ms = evt.data.latency_ms
+                if (evt.data.agent_tree) last.agentTree = evt.data.agent_tree
               }
               return next
             })
@@ -415,20 +424,21 @@ export default function ChatPage() {
                       {item.role === 'user' ? '我' : '助手'}
                     </Text>
                   </Space>
-                  <div
-                    style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#33475C' }}
-                  >
-                    {item.content}
-                  </div>
-                  {item.tools.length > 0 && (
-                    <Space size={4} wrap style={{ marginTop: 8 }}>
-                      {item.tools.map((t, i) => (
-                        <Tag
-                          key={i}
-                          icon={<ToolOutlined />}
-                          color={t.status === 'end' ? 'green' : 'processing'}
-                        >
-                          {t.name}
+                  {item.role === 'user' ? (
+                    <div
+                      style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#33475C' }}
+                    >
+                      {item.content}
+                    </div>
+                  ) : (
+                    <MarkdownContent content={item.content} />
+                  )}
+                  {item.tools.length > 0 && <AgentActivityTimeline tools={item.tools} />}
+                  {item.agentTree && item.agentTree.length > 0 && (
+                    <Space size={4} wrap style={{ marginTop: 4 }}>
+                      {item.agentTree.map((n, i) => (
+                        <Tag key={i} icon={<RobotOutlined />} color="geekblue">
+                          {n.name} · {n.status}
                         </Tag>
                       ))}
                     </Space>

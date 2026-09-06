@@ -61,20 +61,54 @@ def _to_data_url(image_url: str) -> str | None:
     return None
 
 
+_CHART_KEYWORDS = ("成绩", "趋势", "图", "图表", "柱状", "折线", "雷达", "统计")
+
+_STRUCTURED_PROMPT = """请把图片内容识别为结构化 JSON（只输出 JSON，不要多余文字）：
+{{
+  "chart_type": "line|bar|radar|table|other",
+  "series": [{{"name": "系列名", "points": [{{"x": "标签", "y": 数值}}]}}],
+  "trend": "上升|下降|波动|平稳",
+  "confidence": 0.0~1.0,
+  "summary": "一句话总结"
+}}
+若图片不是图表/成绩单，chart_type=other，series=[]。
+识别结果必须严格基于图片内容，看不清的字段写 null，禁止编造。
+"""
+
+
 @tool(args_schema=ImageRecognizeInput)
 async def image_recognize(image_url: str, question: str = "") -> str:
-    """识别/分析图片内容（视觉模型直连）。"""
+    """识别/分析图片内容（视觉模型直连；成绩/图表类结构化输出，可溯源引用图片）。
+
+    Phase 4（E1）：涉及成绩/趋势/图表 → 结构化 JSON {chart_type, series, trend,
+    confidence, summary} + 附 source_image（原始图片，供前端核对/引用）。
+    """
     data_url = _to_data_url(image_url)
     if data_url is None:
         return json.dumps({"isError": True, "code": "IMAGE_FETCH_FAILED", "message": "图片获取失败"}, ensure_ascii=False)
     try:
         llm = _build_vision_llm()
+        structured = any(kw in (question or "") for kw in _CHART_KEYWORDS)
+        text = (_STRUCTURED_PROMPT if structured else "请详细描述这张图片的内容。") + (f"\n补充问题：{question}" if question else "")
         content = [
-            {"type": "text", "text": question or "请详细描述这张图片的内容。"},
+            {"type": "text", "text": text},
             {"type": "image_url", "image_url": {"url": data_url}},
         ]
         resp = await llm.ainvoke([HumanMessage(content=content)])
-        return str(resp.content or "")
+        raw = str(resp.content or "")
+        if structured:
+            try:
+                data = json.loads(raw[raw.find("{") : raw.rfind("}") + 1])
+            except (ValueError, TypeError):
+                data = None
+            if not isinstance(data, dict):
+                return json.dumps(
+                    {"isError": True, "code": "VISION_UNSTRUCTURED", "message": "识别结果非结构化 JSON，拒绝引用", "source_image": image_url},
+                    ensure_ascii=False,
+                )
+            data["source_image"] = image_url  # 可溯源
+            return json.dumps(data, ensure_ascii=False)
+        return raw
     except Exception as exc:  # noqa: BLE001
         logger.warning("vision analyze failed: %s", exc)
-        return json.dumps({"isError": True, "code": "VISION_FAILED", "message": str(exc)[:200]}, ensure_ascii=False)
+        return json.dumps({"isError": True, "code": "VISION_FAILED", "message": str(exc)[:200], "source_image": image_url}, ensure_ascii=False)

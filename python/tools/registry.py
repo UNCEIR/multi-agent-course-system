@@ -9,9 +9,12 @@ Phase: 1 (implemented, MCP 懒加载待 Phase 3)
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from .circuit_breaker import CircuitBreaker
+
+logger = logging.getLogger(__name__)
 
 
 class ToolRegistry:
@@ -27,6 +30,16 @@ class ToolRegistry:
         self._breakers: dict[str, CircuitBreaker] = {}
         self._failure_threshold = failure_threshold
         self._recovery_timeout = recovery_timeout
+        self._internal: set[str] = set()  # Phase 4 D10（M7）：受控暴露工具（仅系统显式触发）
+
+    # M6（Phase 4 D5）：description 硬门槛检查点（warning 级，不阻断注册）
+    _DESC_SIGNALS = ("何时用", "何时不用", "边界", "不要", "请用")
+
+    def _validate_description(self, name: str, desc: str) -> None:
+        """description 结构校验：缺「做什么/边界/消歧」信号时告警，便于意图消歧排查。"""
+        missing = [s for s in self._DESC_SIGNALS if s not in desc]
+        if missing and len(desc) < 60:
+            logger.warning("tool_description_missing_usage_clause tool=%s missing=%s", name, missing)
 
     def register(self, tool: Any) -> None:
         """注册一个 tool。
@@ -36,6 +49,7 @@ class ToolRegistry:
         """
         name = getattr(tool, "name", None) or tool.__name__
         self._tools[name] = tool
+        self._validate_description(name, getattr(tool, "description", "") or "")
         self._allowlist.add(name)
         self._breakers[name] = CircuitBreaker(
             failure_threshold=self._failure_threshold,
@@ -78,6 +92,17 @@ class ToolRegistry:
     def is_allowed(self, name: str) -> bool:
         """检查 tool 是否在 allowlist 中。"""
         return name in self._allowlist
+
+    def mark_internal(self, name: str) -> None:
+        """标注工具为内部编排/敏感工具（Phase 4 D10 / M7）：默认不对模型可见可调，仅系统显式触发。
+
+        当前无敏感工具需标记（dispatch_module 本就是 main_agent 路由工具）；该方法与
+        is_internal 提供受控暴露的注册点，供后续敏感 skill/工具（成绩单写库/审批等）接入。
+        """
+        self._internal.add(name)
+
+    def is_internal(self, name: str) -> bool:
+        return name in self._internal
 
     def call(self, name: str, *args, **kwargs) -> Any:
         """通过对应熔断器调用已注册的 tool。

@@ -1,6 +1,6 @@
 ---
 name: writing
-description: 辅助学生完成论文写作、报告撰写、方案设计等写作任务（多体裁/多风格，对话式协作）。当用户需要写作、论文、报告、读后感时使用。
+description: 辅助学生完成论文写作、报告撰写、方案设计等写作任务（多体裁/多风格，对话式协作）。当用户需要写作、论文、报告、读后感时使用。 何时不用：数据/事实类问题先用 knowledge-query / web-search 核实再写，写作不编造数据。
 allowed_tools: [writing_assistant]
 ---
 

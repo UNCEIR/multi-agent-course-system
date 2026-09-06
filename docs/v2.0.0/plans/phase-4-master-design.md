@@ -7,6 +7,7 @@
 > - 代码 grep 的 Phase 4 预留项：`eval/runner.py --judge` 占位、`observability/metrics.py` 内存收集（注释"swap to Prometheus"）、`requirements.txt` 已含 prometheus-client、kb_retrieval 标注待重写、BFF（决策 22）预留
 >
 > 版本：2026-09-01（v1.2：v1.1 按 4 份初评修正；v1.2 按 2 份复评收敛——metrics 契约体 / agent_tree 字段级契约与数据来源 / 前端 res.text 消费 / tool result 脱敏；评审决议与已核实代码事实见 `notes/2026-09-01-phase4-review-fixes.md`；编码清单见 `plans/phase4-coding-plan.md`）
+> 执行状态：✅ 2026-09-01 已按编码清单实装，验证截至 pytest 全绿 + runner 非 live 断言式；live/judge 真实评估留待后续
 >
 > 范围排除：**FastGPT 插件市场 / FastGPT KB 桥接一律不进入本设计**（决策：Phase 4 以 deepagents 原生能力 + 自有 MCP 客户端实现同等能力）。
 
@@ -242,5 +243,8 @@ P2 及以下项**不静默消失**，统一登记，后续阶段按需排期：
 - monitor 调优自动联动：仅人工确认后改配置，不自动改生产；
 - judge 历史看板（P2 指标看板扩展）；
 - checkpoint 中断后重试恢复演示脚本；
-- openai 引用 ID 清单（`details_json` + `<referenced-*>`）落地到工具结果字段；
+- openai 引用 ID 清单（`details_json` + `<referenced-*>`）落地到工具结果字段 → **v1.3 已落地**（`_format_tool_result` 输出 `referenced`，见编码计划 D11）；
+- **skill 渐进式加载（索引/正文分离 + hasRead 门控 + 加载期校验）= deepagents 原生能力**（`deepagents/middleware/skills.py` progressive disclosure），Phase 1-3 已在用，Phase 4 无需移植（决策记录，v1.3）；
+- **M7 disable-model-invocation → v1.3 已提供注册点**（`ToolRegistry.mark_internal`，见编码计划 D10），当前无敏感工具需标记；
+- **skills description 意图消歧 → v1.3 已落地**：10 个 `SKILL.md` 补「何时不用」边界 + `tests/test_skills_manifest.py` 加载期校验（见编码计划 D9）；
 - pi `retainedTail` → 本项目 `first_kept_message_id` 的语义映射（已在上表说明，勿再引入双命名）。

@@ -23,7 +23,7 @@ async def inject_memory_entries(repo, *, session_id: str, user_id: str) -> str |
     from config import get_settings
 
     settings = get_settings()
-    entries = repo.list_memory_entries(user_id, limit=settings.memory_entries_per_user_limit, max_chars=2000)
+    entries = repo.list_memory_entries(user_id, limit=settings.memory_entries_per_user_limit, max_chars=2000, agent_name="main_agent")
     if not entries:
         return None
     lines = "\n".join(f"- {e['content']}" for e in entries)

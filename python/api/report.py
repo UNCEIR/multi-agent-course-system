@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import structlog
+from agent import runtime
 import uuid
 from fastapi import APIRouter, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
@@ -80,6 +81,9 @@ async def report(
                     event_id = await buf.append(event, payload)
                     yield sse_with_id(event, payload, event_id)
                     if event in ("done", "error"):
+                        _metrics = getattr(runtime, "metrics_collector", None)
+                        if _metrics is not None:
+                            _metrics.record_agent_call("report_agent", event == "done", 0.0, "" if event == "done" else str(data)[:120])
                         break
                 except asyncio.TimeoutError:
                     if task.done():

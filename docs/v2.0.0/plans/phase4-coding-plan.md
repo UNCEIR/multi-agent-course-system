@@ -2,7 +2,7 @@
 
 > 本文档是 `plans/phase-4-master-design.md`（总设计）的**编码执行清单**：按工作流拆解为文件级任务，带依赖顺序与验证命令。编码时以本文件为任务主索引，设计细节（指标定义/表结构/事件协议）回查总设计。
 > 日期：2026-09-01（v1.2：v1.1 已按 4 份初评修正；v1.2 再按 2 份复评收敛——A0 流式 usage 落库 / A4 fallback 前缀检测 / metrics 契约体 / agent_tree 字段级契约 / zod strip 注释，评审决议见 `notes/2026-09-01-phase4-review-fixes.md`）
-> 状态：⏳ 待执行（P0 两项 + P1 四组 + P2 增强）
+> 状态：✅ 编码完成（2026-09-01）——P0-A/B + P1-C/D/E/F + P2-G 全部实装；验证截至 **pytest `not slow` 全绿（449 passed）+ runner 非 live 断言式 smoke 全过 + 前端 lint/test/build 三件套**；`--live` 与 `--judge` 真实评估按用户要求留待后续（代码已就绪，未跑真实调用）
 > 范围排除：FastGPT 相关（插件市场/KB 桥接）不进入任何工作流；`app/api/` BFF 仅预留不实装。
 
 ## 一、概览
@@ -105,6 +105,9 @@ cd python && python eval/runner.py --set evaluation_comment     # smoke 自检
 | D6 | 每 agent 记忆点 | `sql/init-db.sql`、`python/storage/mysql/chat_session_repo.py`、`python/agent/memory/{injector,extractor,consolidation}.py`、`python/agent/main/specs.py` | `chat_memory_entries.agent_name VARCHAR(64) NOT NULL DEFAULT 'main_agent'`；**迁移明细**：INFORMATION_SCHEMA 守卫查列 → ADD COLUMN → DROP 旧 `uq_memory_dedup (user_id, kind, content_hash)` → ADD UNIQUE `(user_id, agent_name, kind, content_hash)`；存量回填 DEFAULT 'main_agent'；**repo 四方法**带 agent_name：`upsert_memory_entry / list_memory_entries / delete_memory_entries / replace_memory_entries`（SELECT/DELETE 按 user_id+agent_name 过滤）；injector/extractor/consolidation 作用域按 agent_name；`AgentSpec.name` 初始化（subagents 用 spec.name）；`test_chat_session_repo_sql.py` 断言迁移与唯一键 |
 | D7 | 类型化 LLM 错误码 | `python/ai/llm_client.py`、`python/api/chat.py` | `LLMError(code, message)` 异常类；`TypedChatOpenAI(ChatOpenAI)` 子类（在 `build_chat_openai` 内构造），LLM 异常统一包 `LLMError(code)`（provider/stream/auth/model_validation/…）；`api/chat.py:287` 现 `code=type(exc).__name__.upper()` → 改 `getattr(exc, "code", type(exc).__name__.upper())`；SSE error 事件携带结构化 code |
 | D8 | 测试 | `tests/test_tool_middleware.py`（新）、`tests/test_tool_registry_consistency.py`（扩展）、`tests/test_llm_client_defaults.py`（扩展）、`tests/test_chat_session_repo_sql.py`（扩展） | middleware 钩子 block/记账、失败上限 ≥3、描述点名+硬门槛、agent 记忆点隔离、LLMError code 映射 |
+| D9 | skills manifest 加载期校验 | `python/skills/*/SKILL.md`、`tests/test_skills_manifest.py`（新，v1.3 补） | 校验每个 SKILL.md frontmatter：name/description 必填、desc ≤1024、含「何时用/何时不用」消歧信号；**10 个技能 description 已补「何时不用」边界**（对齐 pi B 节） |
+| D10 | disable-model-invocation（M7） | `python/tools/registry.py`（v1.3 补） | `mark_internal(name)` / `is_internal(name)` 受控暴露注册点（当前无敏感工具需标记，供后续成绩单写库/审批等接入）；工具横切钩子可据此 block |
+| D11 | 引用 ID 清单 | `python/tools/knowledge/_common.py`（v1.3 补） | `_format_tool_result` 输出加 `referenced` 字段（chunk_id/source_doc_name/page_number 清单），幻觉兜底引用可核对（对齐总设计 §8 M9 补充） |
 
 **验证**：
 ```bash

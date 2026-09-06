@@ -1,6 +1,6 @@
 ---
 name: evaluation-writing
-description: 根据学生成绩数据（知识库成绩单，user 分区隔离）生成个性化学业评价（雷达图评价体系 + 评语），教师端生成后同步学生端。当需要生成评语、教师寄语、学业评价时使用。
+description: 根据学生成绩数据（知识库成绩单，user 分区隔离）生成个性化学业评价（雷达图评价体系 + 评语），教师端生成后同步学生端。当需要生成评语、教师寄语、学业评价时使用。 何时不用：仅查成绩数值时请用 knowledge-query（query_transcript）；评语生成是教师端专属，学生端不触发。
 allowed_tools: [get_academic_snapshot, design_dimensions, compute_radar_values, generate_comment]
 ---
 

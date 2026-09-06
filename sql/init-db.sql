@@ -218,15 +218,37 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 CREATE TABLE IF NOT EXISTS chat_memory_entries (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     user_id VARCHAR(64) NOT NULL,
+    agent_name VARCHAR(64) NOT NULL DEFAULT 'main_agent',  -- Phase 4 D6：每 agent 独立记忆点
     kind VARCHAR(16) NOT NULL DEFAULT 'fact',            -- preference | fact | decision
     content TEXT NOT NULL,
     content_hash CHAR(32) NOT NULL,                      -- NFKC 归一后 md5（精确去重键）
     source_session_id VARCHAR(64) NOT NULL DEFAULT '',
+    expires_at DATETIME NULL,                        -- 记忆过期时间（NULL=永不过期；preference/decision 默认 30 天 TTL）
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_memory_dedup (user_id, kind, content_hash),
-    INDEX idx_memory_entries_user (user_id, updated_at DESC)
+    UNIQUE KEY uq_memory_dedup (user_id, agent_name, kind, content_hash),
+    INDEX idx_memory_entries_user (user_id, agent_name, updated_at DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- 兼容旧库（无 agent_name 列 / 旧唯一键）：列存在性 + 索引存在性守卫后迁移
+SET @col_agent_name := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'chat_memory_entries' AND COLUMN_NAME = 'agent_name');
+SET @stmt_add_agent := IF(@col_agent_name = 0, "ALTER TABLE chat_memory_entries ADD COLUMN agent_name VARCHAR(64) NOT NULL DEFAULT 'main_agent' AFTER user_id", "DO 0");
+PREPARE stmt_add_agent FROM @stmt_add_agent; EXECUTE stmt_add_agent; DEALLOCATE PREPARE stmt_add_agent;
+SET @has_old_uniq := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'chat_memory_entries' AND INDEX_NAME = 'uq_memory_dedup' AND COLUMN_NAME = 'content_hash' AND NOT EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS s2
+        WHERE s2.TABLE_SCHEMA = DATABASE() AND s2.TABLE_NAME = 'chat_memory_entries' AND s2.INDEX_NAME = 'uq_memory_dedup' AND s2.COLUMN_NAME = 'agent_name'));
+SET @stmt_drop_uniq := IF(@has_old_uniq > 0, "ALTER TABLE chat_memory_entries DROP INDEX uq_memory_dedup", "DO 0");
+PREPARE stmt_drop_uniq FROM @stmt_drop_uniq; EXECUTE stmt_drop_uniq; DEALLOCATE PREPARE stmt_drop_uniq;
+SET @has_new_uniq := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'chat_memory_entries' AND INDEX_NAME = 'uq_memory_dedup' AND COLUMN_NAME = 'agent_name');
+SET @stmt_add_uniq := IF(@has_new_uniq = 0, "ALTER TABLE chat_memory_entries ADD UNIQUE KEY uq_memory_dedup (user_id, agent_name, kind, content_hash)", "DO 0");
+PREPARE stmt_add_uniq FROM @stmt_add_uniq; EXECUTE stmt_add_uniq; DEALLOCATE PREPARE stmt_add_uniq;
+-- 兼容旧库（无 expires_at 列）：列存在性守卫后迁移
+SET @col_expires := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'chat_memory_entries' AND COLUMN_NAME = 'expires_at');
+SET @stmt_add_exp := IF(@col_expires = 0, "ALTER TABLE chat_memory_entries ADD COLUMN expires_at DATETIME NULL AFTER source_session_id", "DO 0");
+PREPARE stmt_add_exp FROM @stmt_add_exp; EXECUTE stmt_add_exp; DEALLOCATE PREPARE stmt_add_exp;
 
 -- ------------------------------------------------------------ users
 -- 轻量认证用户表（Phase 3.5）：学号/工号唯一；角色 student | teacher
@@ -239,4 +261,28 @@ CREATE TABLE IF NOT EXISTS users (
     salt VARCHAR(32) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- ------------------------------------------------------------ chat_session_compactions
+-- 会话压缩摘要落库（Phase 4 P0-A）：短期 checkpoint 塞满时 compact 汇总，自包含行。
+-- 业务闭环：SummarizationSyncMiddleware 触发压缩 → 写后同步落库 → 读路径注入上下文。
+CREATE TABLE IF NOT EXISTS chat_session_compactions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL,
+    session_id VARCHAR(64) NOT NULL,
+    summary MEDIUMTEXT NOT NULL,                          -- 压缩摘要（双模板：首轮六节 / 增量 update）
+    prev_compaction_id BIGINT NULL,                       -- 上一次压缩行 id（增量合并链）
+    first_kept_message_id BIGINT NOT NULL DEFAULT 0,      -- 保留的首条消息 seq（续读水位）
+    tokens_before INT NOT NULL DEFAULT 0,                 -- 压缩前 token 估算
+    tokens_after INT NOT NULL DEFAULT 0,                  -- 压缩后 token 估算
+    reserve_tokens INT NOT NULL DEFAULT 0,                -- 预留窗口（window-reserve 决策用）
+    keep_recent_tokens INT NOT NULL DEFAULT 0,            -- 保留最近 token 数
+    model VARCHAR(64) NOT NULL DEFAULT '',                -- 触发时模型（catalog 查询）
+    reason VARCHAR(16) NOT NULL DEFAULT 'threshold',      -- threshold | overflow | manual | fallback
+    status VARCHAR(16) NOT NULL DEFAULT 'ok',             -- ok | failed | aborted | fallback
+    usage_json JSON NULL,                                 -- 压缩 LLM 调用 usage（成本记账）
+    details_json JSON NULL,                               -- 扩展细节（引用 ID 清单等，Phase 4 预留）
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_compactions_session (user_id, session_id, created_at DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import structlog
+from agent import runtime
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
@@ -73,6 +74,9 @@ async def evaluation(req: EvaluationRequest, raw: Request):
                     event_id = await buf.append(event, payload)
                     yield sse_with_id(event, payload, event_id)
                     if event in ("done", "error"):
+                        _metrics = getattr(runtime, "metrics_collector", None)
+                        if _metrics is not None:
+                            _metrics.record_agent_call("evaluation_agent", event == "done", 0.0, "" if event == "done" else str(data)[:120])
                         break
                 except asyncio.TimeoutError:
                     if task.done():

@@ -75,6 +75,7 @@
 | report_math.jsonl | report_math | numeric 正确率 / reference | 真实样本派生 |
 | evaluation_comment.jsonl | evaluation_comment | reference 数值核验 / faithfulness(4) | 真实成绩单派生 |
 | kb_retrieval.jsonl | kb_retrieval | recall@k / context precision·recall | 手册真实 chunk 标注 |
+| image_recognize.jsonl | image_recognize | contains / is_error（结构化 chart/table + 取图失败/非结构化拒绝容错） | 手写 |
 
 ## 4. 运行与报告
 
@@ -95,3 +96,7 @@ cd python && python scripts/import_langsmith_dataset.py --set <name>
 3. 检索类 case 必须带 `reference.contexts`（否则 context 指标不可算）
 4. LLM-as-judge 类 case 必须带 `reference.answer` + `judge.rubric`
 5. `case_id` 全局唯一（`<type>_<seq>`）
+
+## 幻觉演示集（Phase 4 F2）
+
+evaluation_comment.jsonl 追加 `eval_comment_11`（自算统计被拦：全班平均非本学生数据源）与 `eval_comment_12`（引用缺失拒绝：无历史数据支撑'连续两学期进步'）。非 live 断言式即验证 reference 核验拦截。

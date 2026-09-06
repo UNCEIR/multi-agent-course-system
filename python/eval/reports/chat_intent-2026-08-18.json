@@ -40,7 +40,7 @@
       "latency_ms": 25653.7,
       "mode": "live",
       "usage": {
-        "input_tokens": 0,
+        "input_tokens": 0, 
         "output_tokens": 0
       },
       "api_latency_ms": 25455.4,

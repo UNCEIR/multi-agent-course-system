@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""评价维度提案 — 反幻觉分层第②层（LLM 设计体系，代码校验）。
+"""评价维度提案 — 反幻觉分层第2层（LLM 设计体系，代码校验）。
 
 - LLM 输出必须为结构化 JSON（Pydantic 硬校验）：dimensions[] + overall_theme
 - 维度数必须恰为 evaluation_radar_axis_count（默认 5）

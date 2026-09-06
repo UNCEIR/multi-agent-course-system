@@ -1,6 +1,6 @@
 ---
 name: ppt-generation
-description: 根据课程内容或主题，自动生成 PPT 课件（期末PPT课设/小组汇报/课堂展示等类型），多 agent 协作。当用户需要生成 PPT、课件、汇报材料时使用。
+description: 根据课程内容或主题，自动生成 PPT 课件（期末PPT课设/小组汇报/课堂展示等类型），多 agent 协作。当用户需要生成 PPT、课件、汇报材料时使用。 何时不用：简单问答或短文写作请用 writing 或直接对话；PPT 生成是多 agent 重任务，别当通用问答用。
 allowed_tools: [web_search]
 ---
 

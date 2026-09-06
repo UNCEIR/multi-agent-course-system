@@ -1,6 +1,6 @@
 ---
 name: web-search
-description: 通过互联网搜索获取实时信息（tavily MCP 主路，熔断自动降级直连 SDK）。当用户需要实时信息、最新新闻、外部资料时使用。
+description: 通过互联网搜索获取实时信息（tavily MCP 主路，熔断自动降级直连 SDK）。当用户需要实时信息、最新新闻、外部资料时使用。 何时不用：校园制度/个人成绩请用 knowledge-query（内部知识库），不要用外网搜索代替内部数据。
 allowed_tools: [web_search]
 ---
 

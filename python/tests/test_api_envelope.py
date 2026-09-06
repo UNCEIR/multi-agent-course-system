@@ -119,3 +119,26 @@ def test_health_probe_not_enveloped():
     assert resp.status_code == 200
     body = resp.json()
     assert "code" not in body  # 未封装
+
+
+@pytest.mark.api
+def test_enveloped_json_content_length_matches_body():
+    """信封包装后 Content-Length 必须等于实际 body 长度（回归）。
+
+    2026-09-05：envelope 拷贝内层响应 headers 时保留了旧 content-length，新信封 body
+    长度不同 → h11 LocalProtocolError / 客户端 200 空 body（IncompleteRead），
+    chat sessions/messages 等所有非流式 JSON 端点受影响。
+    """
+    from fastapi.testclient import TestClient
+
+    from agent.app import app
+
+    client = TestClient(app)
+    resp = client.get("/api/v1/health")
+    assert resp.status_code == 200
+    cl = resp.headers.get("content-length")
+    if cl is not None:
+        assert int(cl) == len(resp.content), f"content-length {cl} != body {len(resp.content)}"
+    body = resp.json()
+    assert body["code"] == 200
+    assert body["success"] is True

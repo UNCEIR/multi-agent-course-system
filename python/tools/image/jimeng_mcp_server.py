@@ -60,6 +60,7 @@ def _tools() -> list[Tool]:
                 "properties": {
                     "task_id": {"type": "string", "description": "提交任务返回的 task_id"},
                     "attempt": {"type": "integer", "description": "当前查询次数（从 1 起，用于退避计算）"},
+                    "need_base64": {"type": "boolean", "description": "true=请求 base64 图片字节直存（默认，无外部 24h URL 依赖）；false=返回 24h 签名 URL"},
                 },
                 "required": ["task_id"],
             },
@@ -84,9 +85,27 @@ async def _handle_submit(args: dict) -> dict:
                 "retryable": exc.retryable, "request_id": exc.request_id}
 
 
+def _normalize_base64_images(raw: list) -> tuple[list[str], list[str]]:
+    """binary_data_base64 元素可能是 dict（{binary_data_base64, image_format}）或裸 base64 串。"""
+    b64s: list[str] = []
+    formats: list[str] = []
+    for item in raw:
+        if isinstance(item, dict):
+            b64 = str(item.get("binary_data_base64") or "")
+            fmt = str(item.get("image_format") or "png").lower()
+        else:
+            b64 = str(item or "")
+            fmt = "png"
+        if b64:
+            b64s.append(b64)
+            formats.append(fmt)
+    return b64s, formats
+
+
 async def _handle_get(args: dict) -> dict:
     task_id = str(args["task_id"])
     attempt = int(args.get("attempt", 1))
+    need_base64 = bool(args.get("need_base64", True))
     from config import get_settings
 
     s = get_settings()
@@ -94,16 +113,22 @@ async def _handle_get(args: dict) -> dict:
         # 内置退避等待：本次调用 ≈ 一次有效查询（避免 agent 忙轮询）
         if attempt > 1:
             await asyncio.sleep(jimeng_client.poll_interval(attempt - 1))
-        result = jimeng_client.query_task(task_id)
+        # need_base64=true → return_url=false，服务端回 binary_data_base64（直存、无 URL 过期依赖）
+        result = jimeng_client.query_task(task_id, req_json={"return_url": not need_base64})
         status = result["status"]
         if status == "done":
-            return {
+            payload: dict = {
                 "status": "done",
-                "image_urls": result["image_urls"],
-                "binary_data_base64": result["binary_data_base64"],
                 "next_poll_after_seconds": 0,
                 "attempts_left": 0,
             }
+            b64s, formats = _normalize_base64_images(result.get("binary_data_base64") or [])
+            if b64s:
+                payload["images_base64"] = b64s
+                payload["image_formats"] = formats
+            if result.get("image_urls"):
+                payload["image_urls"] = result["image_urls"]
+            return payload
         if status in ("not_found", "expired"):
             return {"status": status, "image_urls": [], "next_poll_after_seconds": 0,
                     "attempts_left": 0, "message": f"任务 {status}，请重新提交"}

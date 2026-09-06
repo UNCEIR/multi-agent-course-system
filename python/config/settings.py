@@ -99,9 +99,11 @@ class Settings(BaseSettings):
     checkpoint_sqlite_path: str = ""  # SqliteSaver 持久路径（默认 <repo_root>/python/.checkpoint.db）
     checkpoint_backend: str = "sqlite"  # 决策 20：sqlite（默认，单实例）/ redis（仅实例数 > 1 时启用）
 
-    agent_context_window_tokens: int = 128000  # 模型上下文窗口（qwen3.8-flash ≈ 128K）
+    # Phase 4：context_window 语义改为「缺省，被 model_catalog 覆盖」；get_model_meta(model) 优先
+    agent_context_window_tokens: int = 128000  # 缺省上下文窗口（qwen3.8-flash ≈ 128K）
     agent_compaction_trigger_tokens: int | None = None  # None 时用 context_window-13000
     agent_compaction_keep_tokens: int = 20000  # 决策 11: keepRecentTokens=20000
+    agent_compaction_reserve_tokens: int = 16384  # Phase 4：窗口预留（window - reserve 触发压缩）
     agent_compaction_trigger_messages: int | None = 8  # demo 用 messages 触发（生产置 None 走 token 阈值）
 
     supervisor_max_retries: int = 2
@@ -165,10 +167,13 @@ class Settings(BaseSettings):
     e2b_sandbox_timeout: int = 300  # sandbox 保活 TTL 秒（每次执行后刷新）
 
     # ── Phase 2：chat 长期记忆（pi 机制移植）───────────────────────
-    memory_extract_threshold_messages: int = 20  # 消息数达阈值触发跨会话记忆提取
-    memory_extract_max_messages: int = 200  # 单批提取最大消息数（oldest-first 分批推进）
+    memory_extract_threshold_messages: int = 10  # 消息数达阈值触发跨会话记忆提取（≈5 轮；每轮 user+assistant 各算一条，可配）
+    memory_extract_max_messages: int = 400  # 单批提取最大消息数（oldest-first 分批推进）
     memory_extract_retry_after_seconds: int = 600  # 提取失败退避间隔
-    memory_entries_per_user_limit: int = 50  # 新会话注入的记忆条目上限（总字符 ≤2000）
+    memory_extract_min_interval_seconds: int = 60  # 信号即时提取的同 user 最小间隔（0=关闭限频）
+    memory_extract_disclosure_signal_enabled: bool = False  # 弱披露组信号开关（默认关，避免噪声）
+    memory_entry_ttl_days: int = 30  # preference/decision 记忆 TTL（天）；fact 永不过期；0=不过期（到期仅不注入，consolidation 顺带清理）
+    memory_entries_per_user_limit: int = 200  # 新会话注入的记忆条目上限（总字符 ≤2000）
     memory_consolidate_threshold_per_kind: int = 15  # 单 kind 记忆条目数超限触发 LLM 合并（consolidation）
 
     # ── Phase 3.5：轻量认证（HMAC token；业务接口维持 user_id 临时口径）──

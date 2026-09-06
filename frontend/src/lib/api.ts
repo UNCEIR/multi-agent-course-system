@@ -60,7 +60,8 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 async function getHealth(): Promise<HealthResponse> {
   const res = await fetch('/health', { cache: 'no-store' })
   if (!res.ok) throw new Error(`Health check failed: ${res.status}`)
-  return res.json()
+  // /health 后端返回统一信封 {code, success, data, msg}，与其它 /api/v1 端点一致
+  return unwrapEnvelope<HealthResponse>(await res.json())
 }
 
 interface ChatRequestBody {
@@ -108,7 +109,14 @@ export const api = {
 
   getExperiments: () => request<Record<string, ExperimentInfo>>('/experiments'),
 
-  getMetrics: () => request<MetricsResponse>('/metrics'),
+  getMetrics: () => request<MetricsResponse>('/api/v1/metrics'),
+
+  /** Phase 4 C2：/metrics Prometheus 文本（不走信封，供抓取/调试）。 */
+  async getPrometheusText(): Promise<string> {
+    const res = await fetch('/metrics')
+    if (!res.ok) throw new Error(`prometheus fetch failed: ${res.status}`)
+    return res.text()
+  },
 
   recordOutcome: (experimentId: string, group: string, success: boolean) =>
     request<{ status: string }>(

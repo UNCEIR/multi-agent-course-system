@@ -21,7 +21,7 @@ from langchain_core.messages import HumanMessage
 
 from ai.llm_client import build_chat_openai
 from ai.llm_task_name import LLMTaskName
-from agent.memory.extractor import MemoryEntry, MemoryExtractOutput
+from agent.memory.extractor import MemoryEntry, MemoryExtractOutput, memory_expires_at, memory_ttl_days
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,15 @@ class ConsolidationWorker:
 
         settings = get_settings()
         threshold = int(getattr(settings, "memory_consolidate_threshold_per_kind", 15))
-        entries = repo.list_memory_entries(user_id, limit=1000, max_chars=10**6)
+        ttl_days = memory_ttl_days(settings)
+        # 顺带物理清理已过期条目（避免过期记忆长期滞留/被挤出视野）
+        purge = getattr(repo, "delete_expired", None)
+        if purge is not None:
+            try:
+                purge(user_id, agent_name="main_agent")
+            except Exception as exc:  # noqa: BLE001 —— 清理失败仅告警，不影响合并
+                logger.warning("memory delete_expired failed: %s", str(exc)[:150])
+        entries = repo.list_memory_entries(user_id, limit=1000, max_chars=10**6, agent_name="main_agent")
         stats: dict = {"deduped": 0, "merged_kinds": []}
 
         by_kind: dict[str, list[dict]] = {}
@@ -83,7 +91,7 @@ class ConsolidationWorker:
                 seen.add(key)
                 keep.append(e)
             if dup_contents:
-                repo.delete_memory_entries(user_id, dup_contents)
+                repo.delete_memory_entries(user_id, dup_contents, agent_name="main_agent")
             by_kind[kind] = keep
 
         # 2) LLM 相似合并（仅超限 kind）
@@ -99,6 +107,8 @@ class ConsolidationWorker:
                 user_id,
                 delete_contents=[e["content"] for e in items],
                 upsert_entries=[(kind, content) for content in merged],
+                upsert_expires=[memory_expires_at(kind, ttl_days) for _ in merged],
+                agent_name="main_agent",
             )
             stats["merged_kinds"].append(kind)
         return stats

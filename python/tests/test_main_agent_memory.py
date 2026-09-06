@@ -33,7 +33,7 @@ async def test_main_agent_delegates_to_shared_factory():
         result = await build_main_agent(tools=[])
 
     assert result is compiled
-    build.assert_awaited_once_with(MAIN_AGENT_SPEC, tools=[])
+    build.assert_awaited_once_with(MAIN_AGENT_SPEC, tools=[], subagents=None)
 
 
 @pytest.mark.asyncio

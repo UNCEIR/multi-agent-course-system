@@ -1,6 +1,6 @@
 ---
 name: image-generation
-description: 根据提示词生成图片（即梦 4.0，经自建 MCP server 两段式异步任务），产物转存后返回链接。当用户需要生成图片、配图、插画时使用。
+description: 根据提示词生成图片（即梦 4.0，经自建 MCP server 两段式异步任务），产物转存后返回链接。当用户需要生成图片、配图、插画时使用。 何时不用：识别/分析图片内容时请用 image_recognize；图片生成是外部付费链路，无明确需求别触发。
 allowed_tools: [image_generate, image_generate_get]
 ---
 

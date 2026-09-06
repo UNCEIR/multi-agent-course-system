@@ -7,6 +7,8 @@ SQLite 参数绑定行为与 MySQL 一致（同为 DBAPI 位置/命名绑定，e
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 from sqlalchemy import create_engine, text
 
@@ -16,11 +18,15 @@ DDL = """
 CREATE TABLE chat_memory_entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id VARCHAR(64) NOT NULL,
+    agent_name VARCHAR(64) NOT NULL DEFAULT 'main_agent',
     kind VARCHAR(16) NOT NULL DEFAULT 'fact',
     content TEXT NOT NULL,
     content_hash CHAR(32) NOT NULL,
     source_session_id VARCHAR(64) NOT NULL DEFAULT '',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    expires_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (user_id, agent_name, kind, content_hash)
 )
 """
 
@@ -160,3 +166,49 @@ def test_delete_memory_entries_nfkc_normalized(sqlite_repo):
         ).mappings().first()["c"]
     assert hit == 0
     assert quiet == 1  # 无关条目不受影响
+
+@pytest.mark.unit
+def test_memory_entries_agent_name_isolation(sqlite_repo):
+    """Phase 4 D6：同一用户不同 agent 的记忆点互相隔离（唯一键含 agent_name）。"""
+    # SQLite 不支持 MySQL ON DUPLICATE，直接播种（唯一键含 agent_name 允许同内容跨 agent）
+    with sqlite_repo._engine.begin() as conn:
+        for agent, content in (("main_agent", "主 agent 偏好"), ("report_agent", "子 agent 偏好"), ("main_agent", "同义条目"), ("report_agent", "同义条目")):
+            conn.execute(
+                text(
+                    "INSERT INTO chat_memory_entries (user_id, agent_name, kind, content, content_hash) "
+                    "VALUES ('u1', :agent, 'fact', :content, :hash)"
+                ),
+                {"agent": agent, "content": content, "hash": __import__("hashlib").md5(content.encode("utf-8")).hexdigest()},
+            )
+    main_rows = sqlite_repo.list_memory_entries("u1", agent_name="main_agent")
+    report_rows = sqlite_repo.list_memory_entries("u1", agent_name="report_agent")
+    assert {r["content"] for r in main_rows} == {"主 agent 偏好", "同义条目"}
+    assert {r["content"] for r in report_rows} == {"子 agent 偏好", "同义条目"}
+
+
+# ── 记忆过期（TTL）：默认隐藏过期、include_expired 可见、delete_expired 物理清理 ──
+@pytest.mark.unit
+def test_expired_hidden_and_purged(sqlite_repo):
+    """过期条目默认隐藏；include_expired 可见；delete_expired 物理清理（SQLite 引擎）。"""
+    repo = sqlite_repo
+    with repo._engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO chat_memory_entries (user_id, agent_name, kind, content, content_hash, source_session_id, expires_at) "
+                "VALUES (:uid, 'main_agent', 'preference', :c1, 'e1', 's1', :exp1), "
+                "(:uid, 'main_agent', 'fact', :c2, 'e2', 's1', NULL)"
+            ),
+            {"uid": "u2", "c1": "过期偏好", "exp1": "2000-01-01 00:00:00", "c2": "永不过期事实"},
+        )
+    # 默认读取：过期条目被隐藏
+    active = repo.list_memory_entries("u2", agent_name="main_agent")
+    assert [e["content"] for e in active] == ["永不过期事实"]
+    # include_expired=True：能看到过期条目（供合并/审计）
+    all_rows = repo.list_memory_entries("u2", agent_name="main_agent", include_expired=True)
+    assert len(all_rows) == 2
+    # 物理清理过期条目
+    deleted = repo.delete_expired("u2", agent_name="main_agent")
+    assert deleted == 1
+    active_after = repo.list_memory_entries("u2", agent_name="main_agent", include_expired=True)
+    assert [e["content"] for e in active_after] == ["永不过期事实"]
+

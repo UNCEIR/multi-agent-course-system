@@ -15,17 +15,17 @@ class _FakeRepo:
         self.entries: list[dict] = []
         self.deleted: list[str] = []
 
-    def list_memory_entries(self, user_id, limit=50, max_chars=2000):
+    def list_memory_entries(self, user_id, limit=50, max_chars=2000, agent_name="main_agent"):
         return list(self.entries[:limit])
 
-    def upsert_memory_entry(self, user_id, kind, content, source_session_id=""):
+    def upsert_memory_entry(self, user_id, kind, content, source_session_id="", agent_name="main_agent"):
         self.entries.append({"kind": kind, "content": content, "source_session_id": source_session_id})
 
-    def delete_memory_entries(self, user_id, contents):
+    def delete_memory_entries(self, user_id, contents, agent_name="main_agent"):
         self.deleted.extend(contents)
         self.entries = [e for e in self.entries if e["content"] not in contents]
 
-    def replace_memory_entries(self, user_id, delete_contents, upsert_entries):
+    def replace_memory_entries(self, user_id, delete_contents, upsert_entries, agent_name="main_agent", upsert_expires=None):
         self.deleted.extend(delete_contents)
         self.entries = [e for e in self.entries if e["content"] not in delete_contents]
         for kind, content in upsert_entries:

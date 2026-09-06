@@ -37,6 +37,10 @@ class QueryTranscriptInput(BaseModel):
 async def query_transcript(query: str, top_k: int = 3) -> str:
     """检索当前登录用户的个人成绩单（私有分区，仅本人可见）。
 
+    何时用：学生问"我修过哪些课 / 某科成绩 / 绩点"等个人学业问题。
+    何时不用：学校公开制度（奖学金、转专业、毕业学分要求）请用 query_handbook
+    （public 分区）；本人个人数据在公开手册里查不到，公开制度也不要用本工具。
+
     - 未登录（user_id 为空）或 user_id=public → 返回 "需要登录" 错误，不查任何分区
     - 隔离：只查 user_ids=[user_id]，绝不查其他用户；不允许调用方传 user_id
     - 默认 top_k=3（个人查询精度优先，避免公开手册 chunk 污染）

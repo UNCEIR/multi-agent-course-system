@@ -10,7 +10,7 @@ evaluation 直接管线，但 main agent 之前没有路由工具，导致教师
 返回 JSON 字符串，结构：
   {
     "module": "report" | "evaluation" | "ppt" | "image_generate",
-    "hint": "前端跳转 /report 或后端拉起 /api/v1/report SSE 的提示文本",
+    "hint": "该模块的执行方式提示：report/evaluation 指向已挂载的子 agent（用 task 委派走 SKILL.md 流程），ppt/image_generate 指向独立页面",
     "payload": {<传给模块的原始参数透传，如学期/学科/学生名单>}
   }
 
@@ -28,10 +28,22 @@ from pydantic import BaseModel, Field
 
 
 _MODULE_HINTS: dict[str, str] = {
-    "report": "请引导用户到 /report 页面或后端拉起 POST /api/v1/report SSE 上传多科 Excel → 批量生成逐学生报告。",
-    "evaluation": "请引导用户到 /evaluation 页面或后端拉起 POST /api/v1/evaluation SSE 生成学期/评语/鼓励类寄语。",
-    "ppt": "请引导用户到 /ppt 页面（在 PPT 独立页面有完整拖拽/预览交互，chat 内不生成 PPT）。",
-    "image_generate": "请引导用户到 /image-generate 页面（在图片生成独立页面有模型选择/参考图/批量上传等交互）。",
+    "report": (
+        "目标模块 report：已挂载 report_agent 子 agent（skills=/skills/report-generation/）。"
+        "用户已提供可访问的多科 Excel（一科一文件）时，调用 task(subagent_type='report_agent', description=...) "
+        "委派子 agent 按 SKILL.md 流程 解析合并→选模板→逐学生填表→渲染 PDF/HTML，返回下载链接；"
+        "未提供文件则引导到 /report 页面上传。"
+    ),
+    "evaluation": (
+        "目标模块 evaluation：已挂载 evaluation_agent 子 agent（skills=/skills/evaluation-writing/，五层反幻觉流程）。"
+        "调用 task(subagent_type='evaluation_agent', description=<目标学生 user_id + 评语类型>) "
+        "委派子 agent 读取 SKILL.md 按 快照→维度→雷达→评语引用核验→落库 执行，返回评语与雷达画像；学生端不触发。"
+    ),
+    "ppt": "请引导用户到 /ppt 页面（在 PPT 独立页面有完整拖拽/预览交互，chat 内不生成 PPT；可先委派 ppt_agent 规划课件结构）。",
+    "image_generate": (
+        "目标模块 image_generate：主 agent 已在工具白名单持有 image_generate / image_generate_get，"
+        "无需跳页——直接按 image-generation SKILL.md 两段式流程调用（提交 task → 轮询 get → done 返回持久化链接）。"
+    ),
 }
 
 
@@ -61,7 +73,8 @@ def dispatch_module(intent: str, payload: dict | None = None) -> str:
     - 学生提到"做 PPT / 制作课件"→ ppt
     - 学生提到"生成图片/画一张"→ image_generate
 
-    调用后请用一段自然语言告诉用户：目标模块是哪个 + 让用户在对应页面继续操作。
+    调用后按 hint 继续：report/evaluation 模块用 task(subagent_type=...) 委派子 agent
+    按各自 SKILL.md 流程真实执行；ppt/image_generate 引导用户到独立页面。
     """
     payload = payload or {}
     return json.dumps(

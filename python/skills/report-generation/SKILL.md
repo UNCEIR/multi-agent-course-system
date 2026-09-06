@@ -1,6 +1,6 @@
 ---
 name: report-generation
-description: 根据批量学科成绩 Excel（一科一文件），生成逐学生期末成绩报告单（PDF/HTML 下载链接 + LLM 综合评价）。当教师需要生成成绩单、期末报告、班级成绩汇总时使用。
+description: 根据批量学科成绩 Excel（一科一文件），生成逐学生期末成绩报告单（PDF/HTML 下载链接 + LLM 综合评价）。当教师需要生成成绩单、期末报告、班级成绩汇总时使用。 何时不用：个人成绩查询请用 knowledge-query（query_transcript）；成绩单生成是教师端批量任务，勿当个人查询用。
 allowed_tools: [inspect_score_excels, render_report_batch]
 ---
 
