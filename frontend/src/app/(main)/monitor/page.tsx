@@ -29,6 +29,7 @@ const { Text, Title } = Typography
 export default function MonitorPage() {
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null)
+  const [promText, setPromText] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -39,6 +40,12 @@ export default function MonitorPage() {
       const [h, m] = await Promise.all([api.health(), api.getMetrics()])
       setHealth(h)
       setMetrics(m)
+      try {
+        const text = await api.getPrometheusText()
+        setPromText(text.slice(0, 2000))
+      } catch {
+        setPromText(null)
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '获取监控数据失败')
     } finally {
@@ -81,6 +88,17 @@ export default function MonitorPage() {
           刷新
         </Button>
       </div>
+
+      {promText && (
+        <Card
+          style={{ marginBottom: 20, border: '1px solid #E8E5DA' }}
+          title={<Space><ThunderboltOutlined /><span className="serif-heading">Prometheus 原始指标（/metrics）</span></Space>}
+        >
+          <pre style={{ fontSize: 11, color: '#4A5568', maxHeight: 240, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+            {promText}
+          </pre>
+        </Card>
+      )}
 
       {error && (
         <Card style={{ marginBottom: 20, background: '#FDECEC', border: '1px solid #fecaca', borderRadius: 10 }}>

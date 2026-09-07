@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""学业快照工具 — evaluation 反幻觉分层第①层（代码唯一事实源，零 LLM）。
+"""学业快照工具 — evaluation 反幻觉分层第1层（代码唯一事实源，零 LLM）。
 
 直查 document_chunks.metadata_json 的结构化课程（摄入时写入），派生统计全部
 确定性计算；无数据 → 结构化错误（不空跑 LLM）。
@@ -19,7 +19,7 @@ from pydantic import BaseModel
 class GetAcademicSnapshotInput(BaseModel):
     """get_academic_snapshot 工具输入参数（user_id 从请求上下文注入）。"""
 
-    pass  # noqa: PIE790
+    pass  
 
 
 def _dedupe_courses(chunks: list[dict]) -> list[dict]:

@@ -100,28 +100,6 @@ docker compose logs --tail 100 python-api                        # 后端最近�
 netstat -ano | findstr :8000                          # 端口 8000 是否被占（PID 在最后一列）
 ```
 
-### SSE 流挂起 / 响应体为空（前端报 network error）
-
-特征：接口返回 **200**、没有 5xx，但响应体长时间为空，前端等到超时后报 network error。
-
-第一步看日志，**务必滤掉前端 15s 一次的 health 轮询噪声**，否则业务日志会被完全淹没：
-
-```bash
-docker compose logs python-api 2>&1 | grep -v "GET /health HTTP" | tail -80
-```
-
-第二步给 SSE 事件打相对时间戳，定位具体是哪一段没有输出：
-
-```bash
-start=$(date +%s)
-curl -sS -N --max-time 75 -X POST http://127.0.0.1:8000/api/v1/recommend/stream \
-  -H "Content-Type: application/json" \
-  -d '{"user_id":"debug","prompt":"想选好过的公选课，南校区，最好不要考试","num_items":5,"mode":"pipeline"}' \
-  | grep --line-buffered -E '"phase"|event: done' \
-  | while IFS= read -r line; do
-      now=$(date +%s); printf 'T+%03ds | %s\n' $((now-start)) "${line:0:130}"
-    done
-```
 
 排查要点：
 

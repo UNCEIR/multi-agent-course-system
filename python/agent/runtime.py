@@ -167,9 +167,15 @@ async def init() -> None:
     # ── v2.0.0 主 agent（deepagents 记忆 + 意图识别 + 渐进式 skill） ──
     # 主 agent 工具白名单由 MAIN_AGENT_SPEC.allowed_tools 声明（specs.py），
     # factory 在 tools=None 时从 registry 按白名单取；此处不传 tools。
-    from agent.main import build_main_agent
+    from agent.main import build_business_subagents, build_main_agent
 
-    main_agent = await build_main_agent()
+    # 子 agent 实例挂载（skill 非空心化）：预编译 recommend/report/evaluation/ppt
+    # 业务子 agent（各带 spec.skills=SKILL.md + allowed_tools 业务工具），作为
+    # CompiledSubAgent 传给 main_agent；deepagents 据此给主 agent 注入 task() 委派
+    # 工具——教师端"出报告/写评语"类意图可委派子 agent 读 SKILL.md 走真实流程，
+    # 而非只返回模块名引导跳页。
+    business_subagents = await build_business_subagents()
+    main_agent = await build_main_agent(subagents=business_subagents)
 
     # 2026-08-25：DocumentsPage 上传链路 —— DocumentIngestionService 在
     # api/documents.py 模块级 new 时没传 repos，导致 vector_repo / embedding_client /

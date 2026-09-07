@@ -6,7 +6,8 @@
 // - consumeSSE 解析后用 schema.safeParse 校验：失败则丢弃（不抛错影响流）
 // - api.ts 类型注解：SSEEvent = ChatEvent | ReportEvent | EvaluationEvent | RecommendEvent
 //
-// 注意：zod schema 仅校验必要字段（type-safe 最小集），允许未声明字段通过。
+// 注意：zod `z.object` 默认是 **strip** 行为 —— 未声明的字段会被丢弃，不会"放行"。
+// 新增后端字段（如 agent_tree / tool result）必须在此显式声明，否则解析后丢失（Phase 4 R4）。
 
 import { z } from 'zod'
 
@@ -26,8 +27,34 @@ export const ChatToolDataSchema = z.object({
   status: z.enum(['start', 'end']),
   session_id: sessionIdField,
   args: z.record(z.unknown()).optional(),
+  // Phase 4 E4：tool end 事件附 result（observe 载体，on_tool_end data.output 摘要化后）
+  result: z.string().optional(),
 })
 export type ChatToolData = z.infer<typeof ChatToolDataSchema>
+
+// ── Phase 4 E3：agent_tree（委派树）契约 ──
+export const AgentTreeNodeSchema: z.ZodType<AgentTreeNode> = z.lazy(() =>
+  z.object({
+    run_id: z.string(),
+    name: z.string(),
+    kind: z.enum(['main', 'subagent']),
+    status: z.string(),
+    args_summary: z.string().nullable().optional(),
+    result_summary: z.string().nullable().optional(),
+    latency_ms: z.number().nullable().optional(),
+    children: z.array(AgentTreeNodeSchema),
+  }),
+)
+export type AgentTreeNode = {
+  run_id: string
+  name: string
+  kind: 'main' | 'subagent'
+  status: string
+  args_summary?: string | null
+  result_summary?: string | null
+  latency_ms?: number | null
+  children: AgentTreeNode[]
+}
 
 export const ChatDoneDataSchema = z.object({
   reply: z.string(),
@@ -36,6 +63,7 @@ export const ChatDoneDataSchema = z.object({
   usage: z.record(z.unknown()).optional(),
   latency_ms: z.number().nullable().optional(),
   ttft_ms: z.number().nullable().optional(),
+  agent_tree: z.array(AgentTreeNodeSchema).optional(),
   last_event_id: z.number().nullable().optional(),
 })
 export type ChatDoneData = z.infer<typeof ChatDoneDataSchema>
@@ -197,7 +225,8 @@ export type RecommendEvent = z.infer<typeof RecommendEventSchema>
 
 /**
  * 安全解析 SSE 事件：schema 不匹配时返回 null（不抛错影响流）。
- * 路 2 SSE 协议扩展（id: 字段）兼容：新字段未知时 schema 用 .passthrough() 行为由 zod 默认放行未知键。
+ * 路 2 SSE 协议扩展（id: 字段）兼容：新字段必须显式声明（zod 默认 strip 丢弃未知键，
+ * 若确需透传未知键才用 .passthrough()）。
  */
 export function safeParseEvent<S extends z.ZodTypeAny>(
   schema: S,

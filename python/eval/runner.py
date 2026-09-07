@@ -217,6 +217,11 @@ def _execute_live_case(case: dict, t0: float) -> dict:
         output = _live_kb(case["input"]["query"], case["input"].get("top_k", 5))
         ok, failures = run_assertions(case, output)
         metrics = context_metrics(case, output)
+        k = case["input"].get("top_k", 5)
+        expected = set(case.get("expected", {}).get("chunk_ids", []))
+        # Phase 4 G1：NDCG@k / F1@k（_live_kb 已透出 rank/score）
+        metrics["ndcg_at_k"] = _ndcg_at_k(output.get("ranked", []), expected, k)
+        metrics["f1_at_k"] = _f1_at_k(output.get("hit_chunk_ids", []), expected, k)
         return {
             "case_id": case["case_id"], "type": case["type"], "difficulty": case.get("difficulty", ""),
             "pass": ok, "failures": failures, "metrics": metrics,
@@ -306,6 +311,11 @@ def _smoke_output(case: dict) -> dict:
         out["tool_chain"] = case.get("expected", {}).get("tool_chain", [])
     if t == "kb_retrieval":
         out["hit_chunk_ids"] = case.get("expected", {}).get("chunk_ids", [])
+    if t == "image_recognize":
+        # 预置识别输出（input.recognized）：正例=结构化 JSON，反例=结构化错误，保持容错语义
+        recognized = (case.get("input") or {}).get("recognized") or {}
+        if isinstance(recognized, dict):
+            out.update(recognized)
 
     for a in case.get("assertions", []):
         kind = a["kind"]
@@ -336,29 +346,41 @@ def _smoke_output(case: dict) -> dict:
 
 
 def _live_kb(query: str, top_k: int) -> dict:
+    """真实手册检索（B3 断链修复：query_knowledge 已删 → query_handbook 公开分区）。
+
+    透出每命中的 rank/score（G1 NDCG 计算需要）。
+    """
     import asyncio
     import json as _json
 
     from agent import runtime
-    from tools.knowledge.query_knowledge import query_knowledge
+    from tools.knowledge.query_handbook import query_handbook
 
     async def _run() -> str:
         if runtime.document_vector_repo is None:
             await runtime.init()
-        return await query_knowledge.ainvoke({"query": query, "top_k": top_k})
+        return await query_handbook.ainvoke({"query": query, "top_k": top_k})
 
     result = asyncio.run(_run())
     text = str(result)
     ids: list[str] = []
+    ranked: list[dict] = []
     try:
         data = _json.loads(text)
         for m in data.get("matches", []) or []:
             cid = m.get("chunk_id")
             if cid:
                 ids.append(str(cid))
+                ranked.append(
+                    {
+                        "rank": int(m.get("rank", len(ranked) + 1)),
+                        "chunk_id": str(cid),
+                        "score": m.get("score"),
+                    }
+                )
     except _json.JSONDecodeError:
         ids = re.findall(r"chunk_id[=:]\s*[\"']?([\w:]+)", text)
-    return {"hit_chunk_ids": ids}
+    return {"hit_chunk_ids": ids, "ranked": ranked}
 
 
 def _live_web_search(query: str, max_results: int) -> dict:
@@ -461,6 +483,16 @@ def _parse_chat_stream_events(lines) -> dict:
                     intent = args.get("intent") if isinstance(args, dict) else None
                     if intent:
                         tools.append(str(intent))
+                    continue
+                if tool_name == "task":
+                    # deepagents task 委派：subagent_type=report_agent/evaluation_agent/...
+                    # 映射回模块名（report/evaluation/ppt/recommendation），与 dispatch_module 的 intent 语义对齐
+                    sub_type = (args.get("subagent_type") if isinstance(args, dict) else None) or ""
+                    if sub_type.endswith("_agent"):
+                        module = sub_type[: -len("_agent")]
+                        tools.append(module)
+                    elif sub_type:
+                        tools.append(sub_type)
                     continue
                 tools.append(tool_name)
             elif event == "text":
@@ -597,12 +629,90 @@ def _live_evaluation(case: dict) -> dict:
     }
 
 
+# ── LLM-as-judge（Phase 4 B2/B3） ───────────────────────────────────────
+JUDGE_CACHE_DIR = Path(__file__).resolve().parent / "judge_cache"
+
+
+def _judge_output_for(case: dict, result: dict) -> dict:
+    """judge 用的输出：live 用真实结果，非 live 用 smoke 输出（验证管道不耗额度）。"""
+    if result.get("mode") == "live":
+        return result
+    return _smoke_output(case)
+
+
+def _aggregate_judge(judge_results: list[dict]) -> dict:
+    """judge 报告聚合：平均分/分档/逐 case/judge_failed 计数。"""
+    metrics = ["faithfulness", "answer_relevancy", "rubric"]
+    out: dict = {}
+    failed = 0
+    for metric in metrics:
+        scores = [
+            r["judge"][metric]["score"]
+            for r in judge_results
+            if r["judge"].get(metric) is not None and not r["judge"][metric].get("judge_failed")
+        ]
+        out[metric] = {
+            "count": len(scores),
+            "avg": round(statistics.mean(scores), 3) if scores else None,
+        }
+    for r in judge_results:
+        for metric in metrics:
+            jm = r["judge"].get(metric) or {}
+            if jm.get("judge_failed"):
+                failed += 1
+    return {
+        "evaluated": len(judge_results),
+        "judge_failed_cases": failed,
+        "by_metric": out,
+    }
+
+
+async def _run_judge(cases: list[dict], results: list[dict], *, model: str | None, sample: int | None, use_cache: bool) -> list[dict]:
+    """对采样 case 跑 LLM-as-judge（触发矩阵见 eval/judge.py）。成本控制：采样 + 缓存。"""
+    import random
+
+    from eval.judge import judge_case
+
+    cache_path = JUDGE_CACHE_DIR / "judge.json"
+    cache: dict = {}
+    if use_cache and cache_path.is_file():
+        try:
+            cache = json.loads(cache_path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            cache = {}
+
+    indices = list(range(len(cases)))
+    if sample and 0 < sample < len(indices):
+        indices = random.Random(42).sample(indices, sample)  # 固定种子：结果可复现
+
+    judge_results: list[dict] = []
+    for i in indices:
+        case = cases[i]
+        result = results[i]
+        out = _judge_output_for(case, result)
+        key = case["case_id"]
+        if use_cache and key in cache:
+            judge_results.append({"case_id": key, "judge": cache[key]})
+            continue
+        j = await judge_case(case, out, model=model)
+        judge_results.append({"case_id": key, "judge": j})
+        if use_cache:
+            cache[key] = j
+
+    if use_cache:
+        JUDGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+    return judge_results
+
+
 # ── 报告聚合 ─────────────────────────────────────────────────────────────
 def aggregate(results: list[dict]) -> dict:
     passed = sum(1 for r in results if r["pass"])
     latencies = [r["latency_ms"] for r in results if r["latency_ms"]]
     recalls = [r["metrics"]["context_recall"] for r in results if r["metrics"].get("context_recall") is not None]
     precisions = [r["metrics"]["context_precision"] for r in results if r["metrics"].get("context_precision") is not None]
+    ndcgs = [r["metrics"]["ndcg_at_k"] for r in results if r["metrics"].get("ndcg_at_k") is not None]
+    f1s = [r["metrics"]["f1_at_k"] for r in results if r["metrics"].get("f1_at_k") is not None]
     # token 消耗聚合（LLM 类集的 usage 回显）
     input_tokens = sum(int(r.get("usage", {}).get("input_tokens", 0) or 0) for r in results)
     output_tokens = sum(int(r.get("usage", {}).get("output_tokens", 0) or 0) for r in results)
@@ -626,8 +736,34 @@ def aggregate(results: list[dict]) -> dict:
         "tokens": {"input": input_tokens, "output": output_tokens, "total": input_tokens + output_tokens},
         "context_recall_avg": round(statistics.mean(recalls), 3) if recalls else None,
         "context_precision_avg": round(statistics.mean(precisions), 3) if precisions else None,
+        "ndcg_at_k_avg": round(statistics.mean(ndcgs), 3) if ndcgs else None,
+        "f1_at_k_avg": round(statistics.mean(f1s), 3) if f1s else None,
         "by_difficulty": by_difficulty,
     }
+
+
+def _ndcg_at_k(ranked: list[dict], expected: set, k: int) -> float:
+    """DCG@k = Σ_{i=1..k} rel_i / log2(i+1)；NDCG@k = DCG@k / IDCG@k（Phase 4 G1）。"""
+    import math
+
+    if not expected or not ranked:
+        return 0.0
+    dcg = 0.0
+    for i, item in enumerate(ranked[:k], start=1):
+        rel = 1.0 if str(item.get("chunk_id", "")) in expected else 0.0
+        dcg += rel / math.log2(i + 1)
+    idcg = sum(1.0 / math.log2(i + 1) for i in range(1, min(len(expected), k) + 1))
+    return round(dcg / idcg, 3) if idcg else 0.0
+
+
+def _f1_at_k(hits: list, expected: set, k: int) -> float:
+    """F1@k = 2·P·R/(P+R)（Phase 4 G1）。"""
+    hit = len(set(hits) & set(expected))
+    precision = hit / k if k else 0.0
+    recall = hit / len(expected) if expected else 0.0
+    if precision + recall == 0:
+        return 0.0
+    return round(2 * precision * recall / (precision + recall), 3)
 
 
 def _pct(vals: list[float], p: float) -> float | None:
@@ -642,12 +778,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="eval_sets 评估运行器 v2")
     parser.add_argument("--set", required=True, help="eval set 名（eval_sets/<name>.jsonl）")
     parser.add_argument("--live", action="store_true", help="live 模式（调真实端点）")
-    parser.add_argument("--judge", action="store_true", help="LLM-as-judge（Phase 4 实装，当前提示未支持）")
+    parser.add_argument("--judge", action="store_true", help="LLM-as-judge（faithfulness/answer_relevancy/rubric，触发矩阵见 eval/judge.py）")
+    parser.add_argument("--judge-model", default=None, help="judge 用模型（默认同主模型，可换便宜模型控量）")
+    parser.add_argument("--judge-sample", type=int, default=None, help="每集采样 N 条跑 judge（成本控制）")
+    parser.add_argument("--judge-cache", action="store_true", help="judge 结果落盘缓存，二次跑不重复花")
     parser.add_argument("--case", help="只跑指定 case_id（逗号分隔，如 intent_17）")
     args = parser.parse_args()
 
-    if args.judge:
-        print("!! LLM-as-judge（faithfulness/answer_relevancy/rubric）为 Phase 4 全量项，当前骨架未实装；仅执行断言式指标。")
+    judge_results: list[dict] = []
 
     cases = load_set(args.set)
     if args.case:
@@ -657,19 +795,36 @@ def main() -> None:
             print(f"!! --case {args.case} 在 {args.set} 中无匹配用例")
             raise SystemExit(1)
     results = [execute_case(c, live=args.live, judge=args.judge) for c in cases]
+    if args.judge:
+        import asyncio
+
+        judge_results = asyncio.run(
+            _run_judge(
+                cases,
+                results,
+                model=args.judge_model,
+                sample=args.judge_sample,
+                use_cache=args.judge_cache,
+            )
+        )
     report = {
         "date": str(date.today()),
         "set": args.set,
         "mode": "live" if args.live else "smoke",
         "judge": args.judge,
+        "judge_metrics": _aggregate_judge(judge_results) if args.judge else None,
         "metrics": aggregate(results),
         "results": results,
+        "judge_results": judge_results if args.judge else None,
     }
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     out = REPORTS_DIR / f"{args.set}-{date.today()}.json"
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     m = report["metrics"]
+    if args.judge:
+        jm = report["judge_metrics"] or {}
+        print(f"== judge: evaluated={jm.get('evaluated')} judge_failed={jm.get('judge_failed_cases')} by_metric={jm.get('by_metric')}")
     print(f"== eval set: {args.set} ({'live' if args.live else 'smoke'})")
     for r in results:
         flag = "PASS" if r["pass"] else "FAIL"
@@ -679,7 +834,7 @@ def main() -> None:
     print(f"== {m['passed']}/{m['total']} passed | p50={m['latency_p50']}ms p95={m['latency_p95']}ms")
     print(f"   tokens={m['tokens']['total']} (in={m['tokens']['input']} out={m['tokens']['output']})"
           f" | ttft_p50={m['ttft_p50']}ms | api_p50={m['api_latency_p50']}ms")
-    print(f"   context_recall={m['context_recall_avg']} context_precision={m['context_precision_avg']}")
+    print(f"   context_recall={m['context_recall_avg']} context_precision={m['context_precision_avg']} ndcg_at_k={m['ndcg_at_k_avg']} f1_at_k={m['f1_at_k_avg']}")
     print(f"   by_difficulty={m['by_difficulty']}")
     print(f"report: {out}")
 

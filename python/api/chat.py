@@ -25,6 +25,75 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 
+_AGENT_RUN_NAMES = {"main_agent", "recommendation_agent", "report_agent", "evaluation_agent", "ppt_agent"}
+
+
+def _is_agent_run_name(name: str) -> bool:
+    """subagent 委派 run 识别（agent_tree 契约 E3）：已知 spec 名或名称含 agent 关键字。"""
+    if not name:
+        return False
+    if name in _AGENT_RUN_NAMES:
+        return True
+    return "agent" in name.lower()
+
+
+def _build_agent_tree(runs: list[dict]) -> list[dict]:
+    """flat run 列表 → 树（契约：run_id/name/kind/status/args_summary/result_summary/latency_ms/children）。"""
+    by_id: dict[str, dict] = {}
+    for r in runs:
+        by_id.setdefault(str(r["run_id"]), r)
+    roots: list[dict] = []
+
+    def _node(r: dict) -> dict:
+        return {
+            "run_id": str(r["run_id"]),
+            "name": str(r.get("name", "")),
+            "kind": "main" if str(r.get("name", "")) == "main_agent" else "subagent",
+            "status": str(r.get("status", "running")),
+            "args_summary": r.get("args_summary"),
+            "result_summary": r.get("result_summary"),
+            "latency_ms": r.get("latency_ms"),
+            "children": [],
+        }
+
+    for r in runs:
+        node = _node(r)
+        parent_id = None
+        for pid in r.get("parent_ids") or []:
+            if str(pid) in by_id:
+                parent_id = str(pid)
+                break
+        if parent_id and parent_id in by_id:
+            by_id[parent_id].setdefault("_children", []).append(node)
+        else:
+            roots.append(node)
+
+    def _attach(n: dict) -> None:
+        n["children"] = by_id.get(n["run_id"], {}).get("_children", [])
+        for ch in n["children"]:
+            _attach(ch)
+
+    for root in roots:
+        _attach(root)
+    return roots
+
+
+def _inject_compaction_summary(repo, session_id: str) -> str | None:
+    """续轮注入压缩摘要（A6 读路径）：chat.py messages 组装点为唯一入口。
+
+    首轮无压缩记录 → None；有则返回 system 前缀消息内容（不落库，仅注入上下文）。
+    """
+    if repo is None:
+        return None
+    try:
+        latest = repo.get_latest_compaction(session_id)
+    except Exception:  # noqa: BLE001 —— 读库失败仅跳过注入，不阻塞对话
+        return None
+    if not latest or not latest.get("summary"):
+        return None
+    return f"会话历史摘要（自动压缩，供续聊上下文）：\n{latest['summary']}"
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., description="用户消息", min_length=1, max_length=8192)
     session_id: str = Field(default="default", description="会话 ID，用于 thread_id 恢复和 compaction")
@@ -79,6 +148,9 @@ async def chat(req: ChatRequest) -> ChatResponse:
     messages: list[dict] = []
     if memory_prefix:
         messages.append({"role": "user", "content": memory_prefix})
+    compaction_prefix = _inject_compaction_summary(repo, req.session_id)
+    if compaction_prefix:
+        messages.append({"role": "system", "content": compaction_prefix})
     image_paths = await _save_images(req.session_id, req.images)
     if image_paths:
         messages.append(
@@ -111,7 +183,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
         await persist_turn(repo, session_id=req.session_id, user_id=req.user_id, user_msg=req.message, assistant_msgs=[last] if all_messages else None)
         from agent.memory.extractor import maybe_extract
 
-        asyncio.create_task(maybe_extract(repo, session_id=req.session_id, user_id=req.user_id))
+        asyncio.create_task(maybe_extract(repo, session_id=req.session_id, user_id=req.user_id, user_text=req.message))
 
     logger.info(
         "chat.response",
@@ -172,6 +244,7 @@ async def chat_stream(req: ChatRequest, raw: Request):
         usage: dict[str, int] = {"input_tokens": 0, "output_tokens": 0}
         first_token_at: float | None = None
         t0 = time.monotonic()
+        agent_runs: list[dict] = []
         try:
             from agent.memory.injector import inject_memory_entries
 
@@ -181,6 +254,9 @@ async def chat_stream(req: ChatRequest, raw: Request):
             messages: list[dict] = []
             if memory_prefix:
                 messages.append({"role": "user", "content": memory_prefix})
+            compaction_prefix = _inject_compaction_summary(repo, req.session_id)
+            if compaction_prefix:
+                messages.append({"role": "system", "content": compaction_prefix})
             image_paths = await _save_images(req.session_id, req.images)
             if image_paths:
                 messages.append(
@@ -222,6 +298,28 @@ async def chat_stream(req: ChatRequest, raw: Request):
                         um = getattr(output, "usage_metadata", None) or {}
                         usage["input_tokens"] += int(um.get("input_tokens", 0) or 0)
                         usage["output_tokens"] += int(um.get("output_tokens", 0) or 0)
+                    elif kind == "on_chain_start":
+                        name = event.get("name", "") or ""
+                        run_id = event.get("run_id")
+                        if name and run_id and _is_agent_run_name(name):
+                            agent_runs.append(
+                                {
+                                    "run_id": str(run_id),
+                                    "name": name,
+                                    "parent_ids": list(event.get("parent_ids") or []),
+                                    "status": "running",
+                                }
+                            )
+                    elif kind == "on_chain_end":
+                        run_id = event.get("run_id")
+                        for _r in agent_runs:
+                            if _r["run_id"] == str(run_id):
+                                _r["status"] = "completed"
+                    elif kind == "on_chain_error":
+                        run_id = event.get("run_id")
+                        for _r in agent_runs:
+                            if _r["run_id"] == str(run_id):
+                                _r["status"] = "error"
                     elif kind in ("on_tool_start", "on_tool_end"):
                         tool_name = event.get("name", "")
                         status = "start" if kind == "on_tool_start" else "end"
@@ -252,11 +350,15 @@ async def chat_stream(req: ChatRequest, raw: Request):
                     user_id=req.user_id,
                     user_msg=req.message,
                     assistant_msgs=[{"content": reply, "role": "assistant"}],
+                    usage_metadata=usage,
                 )
                 persisted = True
                 from agent.memory.extractor import maybe_extract
 
-                asyncio.create_task(maybe_extract(repo, session_id=req.session_id, user_id=req.user_id))
+                asyncio.create_task(maybe_extract(repo, session_id=req.session_id, user_id=req.user_id, user_text=req.message))
+            _metrics = getattr(runtime, "metrics_collector", None)
+            if _metrics is not None:
+                _metrics.record_agent_call("main_agent", True, (time.monotonic() - t0) * 1000)
             done_payload_obj = {
                 "reply": reply,
                 "messages_count": messages_count,
@@ -264,6 +366,7 @@ async def chat_stream(req: ChatRequest, raw: Request):
                 "usage": usage,
                 "latency_ms": round((time.monotonic() - t0) * 1000, 1),
                 "ttft_ms": round((first_token_at - t0) * 1000, 1) if first_token_at else None,
+                "agent_tree": _build_agent_tree(agent_runs),  # Phase 4 E3：委派树契约
                 "last_event_id": None,  # 客户端可在 done 事件里读到当前 stream 的最终 event_id（用于重连）
             }
             done_payload = json.dumps(done_payload_obj, ensure_ascii=False)
@@ -284,7 +387,10 @@ async def chat_stream(req: ChatRequest, raw: Request):
             )
         except Exception as exc:
             logger.error("chat.stream_error", session_id=req.session_id, error=str(exc))
-            err_payload_obj = {"code": type(exc).__name__.upper(), "message": str(exc), "session_id": req.session_id}
+            _metrics = getattr(runtime, "metrics_collector", None)
+            if _metrics is not None:
+                _metrics.record_agent_call("main_agent", False, (time.monotonic() - t0) * 1000, str(exc))
+            err_payload_obj = {"code": getattr(exc, "code", type(exc).__name__.upper()), "message": str(exc), "session_id": req.session_id}
             err_payload = json.dumps(err_payload_obj, ensure_ascii=False)
             err_event_id = await buf.append("error", err_payload)
             yield sse_with_id("error", err_payload, err_event_id)
@@ -314,6 +420,7 @@ async def chat_stream(req: ChatRequest, raw: Request):
                             user_id=req.user_id,
                             user_msg=req.message,
                             assistant_msgs=[{"content": reply_so_far, "role": "assistant"}],
+                            usage_metadata=usage,
                         )
                     )
                     logger.info(

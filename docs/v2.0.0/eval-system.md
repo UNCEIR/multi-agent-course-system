@@ -28,6 +28,7 @@ python/scripts/
 | kb_retrieval | 10 | 手册章节语义标注 | recall@k / context recall·precision | ✅ live |
 | web_search | 5 | 手写 5 类真实查询（tavily 中文 400 约束已规避） | contains / count_ge | ✅ live |
 | image_generate | 5 | 手写（单图/组图语义/scale 对照 0.5·0.7·0.9/违规容错） | count_ge / count_le / is_error | ✅ live |
+| image_recognize | 4 | 手写（结构化趋势识别/成绩单表格/取图失败/非结构化拒绝） | contains / is_error | ⏳ live 依赖真实 images 附件（由 chat_intent intent_15/16 覆盖） |
 
 **case 来源方法论**：① 手写场景（业务边界推导）；② 真实样本行为反推（管线确定性行为的手算期望）；③ 外部服务行为约束（tavily 纯中文 400 → query 加锚点；审核概率 → 容错观察）；④ 反例刻意为证（幻觉 99/120 必须被拦）。
 
@@ -97,5 +98,6 @@ python scripts/import_langsmith_dataset.py --set <name>  # 导入 LangSmith
 | 2026-08-14 | kb_retrieval | 10/10 | 0/10（2026-08-15） | `expected.chunk_ids` 为虚构标注（handbook_chunk_*），真实检索返回真实 chunk_id 体系（handbook_2025_acff6de8:N）——标注需按真实 chunk_id 重写才能做 recall 断言 |
 | 2026-08-15 | web_search | 5/5 | 5/5 | tavily MCP 闭环（0.8-8.9s/用例） |
 | 2026-08-15 | image_generate | 5/5 | 5/5 | 即梦两段式闭环 + scale 对照（30-130s/用例） |
+| 2026-09-02 | image_recognize | 4/4 | 未跑 | 新增 smoke 集（结构化 chart/table 正例 + 取图失败/非结构化拒绝容错反例）；live 需真实 images 附件，暂由 chat_intent intent_15/16 覆盖 |
 
 > **live 状态说明**：六集 live 全部走项目内链路或已打通的外部 MCP，不存在外部依赖阻塞；"未跑/部分"均为执行器覆盖（已补齐）或 case 断言与真实数据映射差异（如上表备注）。LLM 依赖的 live（chat_intent/evaluation_comment）需中转站额度可用。

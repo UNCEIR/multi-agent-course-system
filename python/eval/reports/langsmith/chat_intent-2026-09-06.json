@@ -1,0 +1,141 @@
+{
+  "date": "2026-09-06T08:07:00Z",
+  "feature": "chat_intent",
+  "mode": "dry-run",
+  "total": 10,
+  "passed": 10,
+  "pass_rate": 1.0,
+  "evaluator": "deterministic",
+  "results": [
+    {
+      "case_id": "intent_08",
+      "difficulty": "easy",
+      "mode": "offline",
+      "evaluations": [
+        {
+          "key": "tool_chain",
+          "score": 1.0,
+          "comment": "tool_chain 命中(子序列): 期望 ['query_handbook'] ⊆ 实际 ['query_handbook']"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "case_id": "intent_13",
+      "difficulty": "easy",
+      "mode": "offline",
+      "evaluations": [
+        {
+          "key": "tool_chain",
+          "score": 1.0,
+          "comment": "tool_chain 命中(子序列): 期望 ['writing_assistant'] ⊆ 实际 ['writing_assistant']"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "case_id": "intent_19",
+      "difficulty": "easy",
+      "mode": "offline",
+      "evaluations": [
+        {
+          "key": "tool_chain",
+          "score": 1.0,
+          "comment": "tool_chain 命中(子序列): 期望 [] ⊆ 实际 []"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "case_id": "intent_21",
+      "difficulty": "easy",
+      "mode": "offline",
+      "evaluations": [
+        {
+          "key": "tool_chain",
+          "score": 1.0,
+          "comment": "tool_chain 命中(子序列): 期望 ['image_generate'] ⊆ 实际 ['image_generate']"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "case_id": "intent_05",
+      "difficulty": "medium",
+      "mode": "offline",
+      "evaluations": [
+        {
+          "key": "tool_chain",
+          "score": 1.0,
+          "comment": "tool_chain 命中(子序列): 期望 ['report'] ⊆ 实际 ['report']"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "case_id": "intent_07",
+      "difficulty": "medium",
+      "mode": "offline",
+      "evaluations": [
+        {
+          "key": "tool_chain",
+          "score": 1.0,
+          "comment": "tool_chain 命中(子序列): 期望 ['evaluation'] ⊆ 实际 ['evaluation']"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "case_id": "intent_10",
+      "difficulty": "medium",
+      "mode": "offline",
+      "evaluations": [
+        {
+          "key": "tool_chain",
+          "score": 1.0,
+          "comment": "tool_chain 命中(子序列): 期望 ['query_transcript'] ⊆ 实际 ['query_transcript']"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "case_id": "intent_03",
+      "difficulty": "medium",
+      "mode": "offline",
+      "evaluations": [
+        {
+          "key": "tool_chain",
+          "score": 1.0,
+          "comment": "tool_chain 命中(子序列): 期望 ['recommend_courses'] ⊆ 实际 ['recommend_courses']"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "case_id": "intent_20",
+      "difficulty": "hard",
+      "mode": "offline",
+      "evaluations": [
+        {
+          "key": "tool_chain",
+          "score": 1.0,
+          "comment": "tool_chain 命中(子序列): 期望 ['query_transcript', 'recommend_courses'] ⊆ 实际 ['query_transcript', 'recommend_courses']"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "case_id": "intent_24",
+      "difficulty": "hard",
+      "mode": "offline",
+      "evaluations": [
+        {
+          "key": "tool_chain",
+          "score": 1.0,
+          "comment": "tool_chain 命中(子序列): 期望 ['writing_assistant', 'query_handbook'] ⊆ 实际 ['writing_assistant', 'query_handbook']"
+        }
+      ],
+      "pass": true
+    }
+  ]
+}

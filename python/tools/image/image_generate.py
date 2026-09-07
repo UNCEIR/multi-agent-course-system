@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import uuid
@@ -48,26 +49,62 @@ def _ratio_to_size(ratio: str) -> tuple[int, int] | None:
     return mapping.get(ratio)
 
 
-async def _call_mcp(tool_name: str, args: dict) -> dict:
-    """经 MCP 客户端调用自建即梦 server；返回 dict。
+def _extract_text(result) -> str | None:
+    """从 langchain-mcp-adapters 的不同返回形态里提取第一条 text。
 
-    工具为 async（与 agent/调用方同事件循环），直接 await——MCP stdio 连接
-    在该循环内建立并常驻，避免跨循环调用异常。
+    兼容形态：裸 dict{"text": ...} / {"output": [{"id":..., "text": "...", "type": "text"}]}
+    / list / 带 .content 的对象（AIMessage/ToolMessage）。
+    """
+    if isinstance(result, str):
+        return result
+    if isinstance(result, dict):
+        text = result.get("text")
+        if isinstance(text, str) and text:
+            return text
+        output = result.get("output")
+        if isinstance(output, list):
+            for item in output:
+                t = _extract_text(item)
+                if t:
+                    return t
+        return _extract_text(result.get("content"))
+    if isinstance(result, list):
+        for item in result:
+            t = _extract_text(item)
+            if t:
+                return t
+    content = getattr(result, "content", None)
+    if content is not None:
+        return _extract_text(content)
+    return None
+
+
+async def _call_mcp(tool_name: str, args: dict) -> dict:
+    """经 MCP 客户端调用自建即梦 server；返回业务 dict。
+
+    解析兜底（2026-09-03）：不同 langchain-mcp-adapters 版本对 MCP 返回的包装不同
+    （裸 dict / {"output":[{"text": json}]} / AIMessage），统一先递归取 text 再
+    json.loads；解析失败再透传原始 dict，最后兜底结构化错误。
     """
     from tools.mcp_client import get_mcp_client
 
     client = get_mcp_client()
     result = await client.call_tool("jimeng", tool_name, args)
-    if isinstance(result, dict) and "text" in result and "isError" not in result:
-        return result
-    if isinstance(result, list):
-        for item in result:
-            text = (item or {}).get("text", "")
-            if isinstance(text, str) and text.strip():
-                try:
-                    return json.loads(text)
-                except json.JSONDecodeError:
-                    continue
+    text = _extract_text(result)
+    if text:
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict):
+            return parsed
+    if isinstance(result, str):
+        try:
+            parsed = json.loads(result)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict):
+            return parsed
     if isinstance(result, dict):
         return result
     return {"isError": True, "code": "MCP_RESPONSE_INVALID", "message": "MCP 返回格式异常"}
@@ -125,8 +162,8 @@ async def image_generate(
 
 @tool(args_schema=ImageGenerateGetInput)
 async def image_generate_get(task_id: str, attempt: int = 1) -> str:
-    """查询即梦生成任务；done 时下载转存 MinIO/本地（24h 链接失效兜底）并返回持久化链接。"""
-    result = await _call_mcp("generate_image_get", {"task_id": task_id, "attempt": attempt})
+    """查询即梦生成任务；done 时图片字节直存 MinIO/本地，返回永不过期的内部链接（/api/v1/images/download）。"""
+    result = await _call_mcp("generate_image_get", {"task_id": task_id, "attempt": attempt, "need_base64": True})
     if result.get("isError"):
         return json.dumps(result, ensure_ascii=False)
     status = result.get("status", "")
@@ -141,16 +178,98 @@ async def image_generate_get(task_id: str, attempt: int = 1) -> str:
             },
             ensure_ascii=False,
         )
-    # done：转存（24h URL → MinIO/本地）
-    urls = result.get("image_urls", [])
-    if not urls:
-        return json.dumps({"isError": True, "code": "NO_IMAGE", "message": "任务完成但未返回图片 URL"}, ensure_ascii=False)
-    stored = [_store_image(u) for u in urls]
+    # 转存（24h URL → MinIO/本地）：改为优先用 MCP 返回的图片字节（base64 直存，无外部
+    # 24h URL 依赖），为空时回退 image_urls httpx 下载转存；不再复用 report 下载接口。
+    stored = await _store_done_images(result)
+    if stored is None:
+        return json.dumps(
+            {"isError": True, "code": "NO_STORAGE", "message": "图片转存失败，请稍后重试（未伪造链接）"},
+            ensure_ascii=False,
+        )
     return json.dumps({"task_id": task_id, "status": "done", "image_urls": stored, "count": len(stored)}, ensure_ascii=False)
 
 
-def _store_image(url: str) -> str:
-    """下载图片到 MinIO/本地；失败原样返回 24h URL（标注时效）。"""
+_IMAGE_EXT_CONTENT_TYPE = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+
+
+def _image_ext(data: bytes, ext: str = "png") -> str:
+    """按魔数嗅探真实格式（兜底下载可能丢扩展名）；未知则保持传入 ext。"""
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    return ext if ext in ("png", "jpg", "jpeg", "gif", "webp") else "png"
+
+
+async def _store_done_images(result: dict) -> list[str] | None:
+    """把即梦 done 结果的图片字节转存 MinIO/本地，返回持久化内部链接列表；任一失败返回 None。
+
+    优先级：
+    1. images_base64（MCP get 以 need_base64=true 请求，base64 直存，不依赖外部 24h URL）；
+    2. image_urls（24h 签名 URL 兜底：httpx 下载后转存）。
+    """
+    b64s = result.get("images_base64") or []
+    formats = result.get("image_formats") or []
+    if b64s:
+        stored: list[str] = []
+        for i, raw in enumerate(b64s):
+            try:
+                data = base64.b64decode(str(raw))
+            except Exception:  # noqa: BLE001
+                logger.warning("image base64 decode failed idx=%s err=%s", i, exc)
+                return None
+            ext = _image_ext(data, str(formats[i]).lower() if i < len(formats) and formats[i] else "png")
+            link = _store_image_bytes(data, ext)
+            if link is None:
+                return None
+            stored.append(link)
+        return stored
+    urls = result.get("image_urls") or []
+    if urls:
+        stored = []
+        for u in urls:
+            link = await _store_image_from_url(str(u))
+            if link is None:
+                return None
+            stored.append(link)
+        return stored
+    logger.warning("image done but no images_base64/image_urls")
+    return None
+
+
+def _store_image_bytes(data: bytes, ext: str = "png") -> str | None:
+    """图片字节直存 MinIO/本地（本地兜底），返回永不过期的内部下载链接；失败返回 None。
+
+    不再复用 /api/v1/report/download（report 产物专用、HMAC + pdf/html）；图片走
+    /api/v1/images/download（image/* + inline、无 token、无过期）。
+    """
+    if not data:
+        return None
+    ext = _image_ext(data, ext)
+    key = f"images/{uuid.uuid4().hex[:12]}.{ext}"
+    try:
+        from agent import runtime
+
+        content_type = _IMAGE_EXT_CONTENT_TYPE.get("." + ext, "application/octet-stream")
+        runtime.minio_repo.upload(key, data, content_type=content_type)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("image store failed key=%s err=%s", key, exc)
+        return None
+    return f"/api/v1/images/download?file_key={key}"
+
+
+async def _store_image_from_url(url: str) -> str | None:
+    """24h 签名 URL 兜底：httpx 下载字节后转存；失败返回 None（不静默返回死链）。"""
     import httpx
 
     from config import get_settings
@@ -160,12 +279,5 @@ def _store_image(url: str) -> str:
         resp.raise_for_status()
     except Exception as exc:  # noqa: BLE001
         logger.warning("image download failed: %s", exc)
-        return url  # 原样返回外部 URL（24h 有效，尽力而为）
-    key = f"images/{uuid.uuid4().hex[:12]}.png"
-    try:
-        from agent import runtime
-
-        runtime.minio_repo.upload(key, resp.content, content_type="image/png")
-        return f"/api/v1/report/download?file_key={key}&token=__IMG__"
-    except Exception:  # noqa: BLE001
-        return url
+        return None
+    return _store_image_bytes(resp.content, "png")

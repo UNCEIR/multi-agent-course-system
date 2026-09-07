@@ -94,7 +94,7 @@ async def test_main_agent_is_a_thin_scenario_entrypoint():
         result = await build_main_agent(tools=tools)
 
     assert result is compiled_agent
-    build.assert_awaited_once_with(MAIN_AGENT_SPEC, tools=tools)
+    build.assert_awaited_once_with(MAIN_AGENT_SPEC, tools=tools, subagents=None)
 
 
 @pytest.mark.asyncio
@@ -123,3 +123,69 @@ async def test_factory_passes_streaming_flag_to_llm(factory_settings):
 
     assert build_llm.call_args.kwargs["streaming"] is True
     assert MAIN_AGENT_SPEC.streaming is True
+
+
+@pytest.mark.asyncio
+async def test_main_agent_passes_compiled_subagents_to_factory(factory_settings):
+    """方向 A：main_agent 把预编译业务子 agent（CompiledSubAgent）透传给 deepagent 工厂。"""
+    from agent.main.agent import build_main_agent
+    from agent.main.specs import MAIN_AGENT_SPEC
+
+    compiled_agent = MagicMock()
+    subagents = [{"name": "report_agent", "description": "desc", "runnable": MagicMock()}]
+    with patch("agent.main.agent.build_deep_agent", new_callable=AsyncMock, return_value=compiled_agent) as build:
+        result = await build_main_agent(subagents=subagents)
+
+    assert result is compiled_agent
+    build.assert_awaited_once_with(MAIN_AGENT_SPEC, tools=None, subagents=subagents)
+
+
+@pytest.mark.asyncio
+async def test_factory_forwards_subagents_to_create_deep_agent(factory_settings):
+    """create_deep_agent 收到 subagents 参数（deepagents 据此给主 agent 注入 task 工具）。"""
+    from agent.main.factory import build_deep_agent
+    from agent.main.specs import MAIN_AGENT_SPEC
+
+    backend = MagicMock()
+    checkpointer = MagicMock()
+    llm = MagicMock()
+    compiled_agent = MagicMock()
+    subagents = [{"name": "evaluation_agent", "description": "desc", "runnable": MagicMock()}]
+    with (
+        patch("agent.main.factory.build_agent_backend", return_value=backend),
+        patch("agent.main.factory.build_checkpointer", new_callable=AsyncMock, return_value=checkpointer),
+        patch("agent.main.factory.build_chat_openai", return_value=llm),
+        patch("agent.main.factory.create_deep_agent", return_value=compiled_agent) as create_agent,
+    ):
+        await build_deep_agent(MAIN_AGENT_SPEC, tools=[], subagents=subagents)
+
+    assert create_agent.call_args.kwargs["subagents"] is subagents
+
+
+@pytest.mark.asyncio
+async def test_business_subagents_are_mounted_instances():
+    """4 个业务子 agent 均编译为 CompiledSubAgent：name/description(非空)/runnable 齐全，skill 非空心化。"""
+    from agent.main import subagents as sub
+
+    specs = [
+        sub.RECOMMENDATION_AGENT_SPEC,
+        sub.REPORT_AGENT_SPEC,
+        sub.EVALUATION_AGENT_SPEC,
+        sub.PPT_AGENT_SPEC,
+    ]
+    fake = AsyncMock(return_value=MagicMock())
+    with (
+        patch.object(sub, "build_recommendation_agent", fake),
+        patch.object(sub, "build_report_agent", fake),
+        patch.object(sub, "build_evaluation_agent", fake),
+        patch.object(sub, "build_ppt_agent", fake),
+    ):
+        compiled = await sub.build_business_subagents()
+
+    assert len(compiled) == 4
+    for entry, spec in zip(compiled, specs):
+        assert entry["name"] == spec.name
+        assert entry["description"].strip(), f"{spec.name} description empty"
+        assert entry["runnable"] is fake.return_value
+        assert spec.skills, f"{spec.name} skills empty（skill 必须实例挂载）"
+        assert spec.allowed_tools, f"{spec.name} allowed_tools empty"

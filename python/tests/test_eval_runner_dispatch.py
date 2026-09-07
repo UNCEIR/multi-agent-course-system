@@ -133,3 +133,44 @@ def test_malformed_data_line_does_not_crash():
     out = _parse_chat_stream_events(lines)
     assert out["tool_chain"] == []  # 坏 JSON → data={} → tool_name 空 → 过滤
     assert out["latency_ms"] == 1
+
+
+@pytest.mark.unit
+def test_task_delegation_maps_subagent_type_to_module():
+    """方向 A：task(subagent_type='report_agent') 委派 → tool_chain=['report']，与 dispatch 语义一致。"""
+    from eval.runner import _parse_chat_stream_events
+
+    lines = _sse_lines([
+        ("tool", {"tool": "task", "status": "start", "args": {"subagent_type": "report_agent", "description": "生成报告"}}),
+        ("tool", {"tool": "task", "status": "end"}),
+        ("done", {"reply": "报告已生成", "usage": {}, "latency_ms": 900}),
+    ])
+    out = _parse_chat_stream_events(lines)
+    assert out["tool_chain"] == ["report"]
+
+
+@pytest.mark.unit
+def test_task_evaluation_agent_maps_to_evaluation():
+    """task(subagent_type='evaluation_agent') → tool_chain=['evaluation']。"""
+    from eval.runner import _parse_chat_stream_events
+
+    lines = _sse_lines([
+        ("tool", {"tool": "task", "status": "start", "args": {"subagent_type": "evaluation_agent", "description": "给张三写评语"}}),
+        ("done", {"reply": "", "usage": {}, "latency_ms": 300}),
+    ])
+    out = _parse_chat_stream_events(lines)
+    assert out["tool_chain"] == ["evaluation"]
+
+
+@pytest.mark.unit
+def test_dispatch_plus_task_same_module_no_duplicate_semantics():
+    """dispatch_module(evaluation) + task(evaluation_agent) 并存时均映射 evaluation（断言按集合判定，无冲突）。"""
+    from eval.runner import _parse_chat_stream_events
+
+    lines = _sse_lines([
+        ("tool", {"tool": "dispatch_module", "status": "start", "args": {"intent": "evaluation"}}),
+        ("tool", {"tool": "task", "status": "start", "args": {"subagent_type": "evaluation_agent", "description": "写评语"}}),
+        ("done", {"reply": "", "usage": {}, "latency_ms": 300}),
+    ])
+    out = _parse_chat_stream_events(lines)
+    assert set(out["tool_chain"]) == {"evaluation"}

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 from urllib.parse import urlparse
 
 from fastapi import APIRouter
 
 from agent import runtime
+from models.base_result import BaseResult
 from config import get_settings
 from ai.tracing import get_tracing_status
 
@@ -46,11 +48,13 @@ async def _health_payload() -> dict[str, Any]:
 
 @router.get("/health")
 async def health():
-    return await _health_payload()
+    """运维探活；与 /api/v1/health 一样返回统一信封 {code, success, data, msg}。"""
+    return BaseResult.ok(await _health_payload())
 
 
 @router.get("/api/v1/health")
 async def health_api_v1():
+    # /api/v1/* 由 ApiEnvelopeMiddleware 统一包信封（此处返回裸 payload 即可）
     return await _health_payload()
 
 
@@ -78,9 +82,11 @@ async def get_experiments():
 
 @router.get("/api/v1/metrics")
 async def get_metrics():
+    """冻结 JSON 契约（Phase 4 C2）：data: {agents, business, generated_at}，经统一信封包裹。"""
     return {
         "agents": runtime.metrics_collector.get_agent_stats(),
         "business": runtime.metrics_collector.get_business_stats(),
+        "generated_at": int(time.time()),
     }
 
 

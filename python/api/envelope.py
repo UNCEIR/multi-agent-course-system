@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """ApiEnvelopeMiddleware — 把非流式 /api/v1/* JSON 响应统一封装为 BaseResult 信封。
 
 覆盖：
@@ -27,6 +27,17 @@ from models.base_result import BaseResult, is_base_result
 _ENVELOPE_KEYS = {"code", "success", "data", "msg"}
 
 
+def _strip_body_length_headers(headers: dict) -> dict:
+    """剔除会与新 body 冲突的长度/传输头，交由 JSONResponse 基于实际内容重新计算。
+
+    Bug（2026-09-05）：内层 JSONResponse 的 headers 自带旧 content-length；信封包装后 body
+    长度变化但 header 没更新 → h11 LocalProtocolError: Too much data for declared
+    Content-Length → 客户端拿到 200 但空 body（IncompleteRead），chat sessions/messages 等
+    所有非流式 JSON 端点全部受影响。
+    """
+    return {k: v for k, v in headers.items() if k.lower() not in ("content-length", "transfer-encoding")}
+
+
 class ApiEnvelopeMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
@@ -50,7 +61,7 @@ class ApiEnvelopeMiddleware(BaseHTTPMiddleware):
             return Response(content=body, status_code=response.status_code, headers=dict(response.headers))
 
         if is_base_result(payload):
-            return JSONResponse(content=payload, status_code=response.status_code, headers=dict(response.headers))
+            return JSONResponse(content=payload, status_code=response.status_code, headers=_strip_body_length_headers(response.headers))
 
         if response.status_code < 400:
             enveloped = BaseResult.ok(payload).model_dump(mode="json")
@@ -58,4 +69,4 @@ class ApiEnvelopeMiddleware(BaseHTTPMiddleware):
             detail = payload.get("detail", payload) if isinstance(payload, dict) else payload
             enveloped = BaseResult.from_http_exception(response.status_code, detail).model_dump(mode="json")
 
-        return JSONResponse(content=enveloped, status_code=response.status_code, headers=dict(response.headers))
+        return JSONResponse(content=enveloped, status_code=response.status_code, headers=_strip_body_length_headers(response.headers))

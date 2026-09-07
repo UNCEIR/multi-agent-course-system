@@ -27,16 +27,22 @@ def test_dispatch_report_returns_module_and_hint():
 def test_dispatch_evaluation_returns_module_and_hint():
     out = _invoke("evaluation", {"target_user_id": "张三", "comment_type": "semester_summary"})
     assert out["module"] == "evaluation"
-    assert "/api/v1/evaluation" in out["hint"] or "/evaluation" in out["hint"]
+    # 委派语义：hint 指向已挂载的 evaluation_agent（task 委派走 SKILL.md 流程）
+    assert "evaluation_agent" in out["hint"]
+    assert "task(" in out["hint"]
     assert out["payload"]["target_user_id"] == "张三"
 
 
 @pytest.mark.unit
 def test_dispatch_ppt_and_image_generate():
-    for intent, hint_token in (("ppt", "/ppt"), ("image_generate", "/image-generate")):
-        out = _invoke(intent)
-        assert out["module"] == intent
-        assert hint_token in out["hint"], intent
+    # ppt 引导独立页面；image_generate 指向 chat 内两段式工具（无独立页面）
+    out = _invoke("ppt")
+    assert out["module"] == "ppt"
+    assert "/ppt" in out["hint"]
+    ig = _invoke("image_generate")
+    assert ig["module"] == "image_generate"
+    assert "image_generate" in ig["hint"]
+    assert "image_generate_get" in ig["hint"]
 
 
 @pytest.mark.unit

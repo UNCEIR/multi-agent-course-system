@@ -54,10 +54,59 @@ def import_set(name: str) -> None:
     print(f"== {name}: 导入 {len(cases)} 个 case（inputs/outputs/reference 三分量）到 '{dataset_name}'")
 
 
+def attach_judge_scores(name: str, report_path: Path) -> None:
+    """Phase 4 G2：把 runner 报告的 judge_results 回写 LangSmith Dataset（evaluator 消费）。
+
+    LangSmith 不可达 / 报告无 judge 段 → 告警不阻塞。
+    """
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        print(f"== {name}: 读取报告失败 {report_path}（{str(exc)[:80]}）")
+        return
+    judge_results = report.get("judge_results") or []
+    if not judge_results:
+        print(f"== {name}: 报告无 judge_results（需先 --judge），跳过回写")
+        return
+    from langsmith import Client
+
+    client = Client()
+    dataset_name = f"phase2-{name}"
+    try:
+        datasets = list(client.list_datasets(name=dataset_name))
+        dataset = datasets[0] if datasets else None
+        if dataset is None:
+            print(f"== {name}: dataset '{dataset_name}' 不存在，先 --import 再回写")
+            return
+        examples = list(client.list_examples(dataset_id=dataset.id))
+    except Exception as exc:  # noqa: BLE001
+        print(f"== {name}: LangSmith 不可达，跳过回写（{str(exc)[:80]}）")
+        return
+    by_case = {str((e.inputs or {}).get("case_id", "")): e for e in examples}
+    updated = 0
+    for item in judge_results:
+        example = by_case.get(str(item.get("case_id", "")))
+        if example is None:
+            continue
+        outputs = dict(example.outputs or {})
+        outputs["judge_scores"] = item.get("judge", {})
+        client.update_example(example_id=example.id, outputs=outputs)
+        updated += 1
+    print(f"== {name}: 回写 {updated}/{len(judge_results)} 个 case 的 judge_scores 到 '{dataset_name}'")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--set", default=None, help="单个 eval set 名；缺省导入全部")
+    parser.add_argument(
+        "--judge-results",
+        default=None,
+        help="Phase 4 G2：把 eval/reports/<set>-<date>.json 的 judge_results 回写 Dataset",
+    )
     args = parser.parse_args()
+    if args.judge_results:
+        attach_judge_scores(args.set or "chat_intent", Path(args.judge_results))
+        return
     sets = [args.set] if args.set else [p.stem for p in sorted(EVAL_SETS.glob("*.jsonl")) if p.suffix == ".jsonl"]
     try:
         for name in sets:

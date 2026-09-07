@@ -1,6 +1,6 @@
 ---
 name: document-ingestion
-description: 上传文档到知识库（CSV/PDF/doc），自动完成解析→分块→向量化→元数据入库。当用户需要上传文档、导入数据、构建知识库时使用。
+description: 上传文档到知识库（CSV/PDF/doc），自动完成解析→分块→向量化→元数据入库。当用户需要上传文档、导入数据、构建知识库时使用。 何时不用：仅查询知识库内容时请用 knowledge-query（query_handbook/query_transcript）；上传是写操作，勿在只读场景触发。
 allowed_tools: [parse_document, chunk_document]
 ---
 

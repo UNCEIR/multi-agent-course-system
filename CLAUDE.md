@@ -4,7 +4,8 @@
 
 每次提问后大模型的回答 -- 必须带有问候“主人”二字
 
-window系统调用bash工具时--优先考虑git bash的终端 优先级：git bash > powershell > cmd 
+window系统调用bash工具时--调用 shell 优先级的顺序：window下linux子系统的wsl > powershell > cmd（Windows）> git bash。
+
 
 ## 项目简介
 
@@ -162,6 +163,42 @@ POST /api/v1/recommend
 - **语义缓存阈值 0.95**（1024 维向量对句式模板相似但关键词不同的查询区分度不足）。
 - **无 CI/CD**（无 `.github/workflows`），**前端无 lint/test/format 脚本**。
 - **`_score_candidates` 接受但不使用 `profile` 参数**是有意为之（广度 vs 精度分离）。
+
+
+
+### SSE 流挂起 / 响应体为空（前端报 network error）
+
+特征：接口返回 **200**、没有 5xx，但响应体长时间为空，前端等到超时后报 network error。
+
+第一步看日志，**务必滤掉前端 15s 一次的 health 轮询噪声**，否则业务日志会被完全淹没：
+
+```bash
+docker compose logs python-api 2>&1 | grep -v "GET /health HTTP" | tail -80
+```
+
+第二步给 SSE 事件打相对时间戳，定位具体是哪一段没有输出：
+
+```bash
+start=$(date +%s)
+curl -sS -N --max-time 75 -X POST http://127.0.0.1:8000/api/v1/recommend/stream \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"debug","prompt":"想选好过的公选课，南校区，最好不要考试","num_items":5,"mode":"pipeline"}' \
+  | grep --line-buffered -E '"phase"|event: done' \
+  | while IFS= read -r line; do
+      now=$(date +%s); printf 'T+%03ds | %s\n' $((now-start)) "${line:0:130}"
+    done
+```
+
+排查要点：
+
+- **uvicorn 访问日志在响应完成后才打印**，挂起的 SSE 请求不会留痕，不能据此判断"接口没问题"。
+- 推荐链路正常应依次输出 `start → phase1_complete → phase15_complete → phase2_complete → phase3_start → … → done`。
+  若卡在 `start` 之后、`phase1_complete` 始终不出现，就是 phase1 的 `gather(画像, 召回)` 没完成。
+- 画像 agent 的关键日志是 `student_profile.llm_call.start / .done / .cancelled / .failed`，
+  其中 `.done` 的 `latency_ms` 直接给出 LLM 真实耗时（thinking 开启时常达 20~30s）。
+- 出现 `agent.cancelled` 表示该 agent 被上游取消（客户端断开 / `wait_for` 超时）。
+  注意 `asyncio.CancelledError` 在 Python 3.8+ 继承 `BaseException`，`except Exception` 捕获不到——
+  这正是"无任何报错却卡住"的常见成因，现已补日志。
 
 ## 文档索引
 

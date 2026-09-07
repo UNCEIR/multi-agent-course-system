@@ -7,6 +7,61 @@ from config import get_settings
 from ai.llm_task_name import LLMTaskName
 
 
+class LLMError(RuntimeError):
+    """类型化 LLM 错误（Phase 4 D7）：code 供 SSE 结构化 error / monitor 配额识别。"""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+def classify_llm_error(exc: Exception) -> str:
+    """按异常类型归类 code：auth / quota / provider / model_validation / not_found。"""
+    name = type(exc).__name__.lower()
+    if "auth" in name:
+        return "auth"
+    if "rate" in name or "quota" in name or "insufficient" in name:
+        return "quota"
+    if "timeout" in name or "connect" in name or "apiconnection" in name or "unavailable" in name:
+        return "provider"
+    if "badrequest" in name or "validation" in name or "invalid" in name:
+        return "model_validation"
+    if "notfound" in name:
+        return "not_found"
+    return "provider"
+
+
+class TypedChatOpenAI(ChatOpenAI):
+    """ChatOpenAI 子类：LLM 调用异常统一包成 LLMError(code, message)（不静默吞）。"""
+
+    def get_name(self, suffix: str | None = None, *, name: str | None = None) -> str:
+        """无业务名时保持 ChatOpenAI trace 语义（避免子类名漂移；业务名仍优先）。"""
+        name_ = name or getattr(self, "name", None) or ""
+        if not name_:
+            name_ = "ChatOpenAI"
+        if suffix:
+            if name_[0].isupper():
+                return name_ + suffix.title()
+            return name_ + "_" + suffix.lower()
+        return name_
+
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+        try:
+            return await super()._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
+        except Exception as exc:  # noqa: BLE001
+            if isinstance(exc, LLMError):
+                raise
+            raise LLMError(classify_llm_error(exc), str(exc)) from exc
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        try:
+            return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+        except Exception as exc:  # noqa: BLE001
+            if isinstance(exc, LLMError):
+                raise
+            raise LLMError(classify_llm_error(exc), str(exc)) from exc
+
+
 def build_chat_openai(
     *,
     temperature: float,
@@ -101,7 +156,7 @@ def _create_chat_openai(
     if not isinstance(llm_max_retries, int):
         llm_max_retries = None  # None → 沿用 langchain / openai SDK 默认
 
-    return ChatOpenAI(
+    return TypedChatOpenAI(
         api_key=api_key if api_key is not None else settings.llm_api_key,
         base_url=base_url if base_url is not None else settings.llm_base_url,
         model=model if model is not None else settings.llm_model,

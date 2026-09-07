@@ -12,8 +12,14 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import unicodedata
+from datetime import datetime, timezone
 
 import structlog
+
+
+def _utcnow_naive() -> datetime:
+    """naive UTC 当前时间（避免 MySQL/SQLite 时区差异）。"""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 from sqlalchemy import bindparam, text
 
 from .base import MySQLRepository
@@ -217,8 +223,19 @@ class ChatSessionRepository(MySQLRepository):
             )
 
     # ── chat_memory_entries ───────────────────────────────────────────
-    def upsert_memory_entry(self, user_id: str, kind: str, content: str, source_session_id: str = "") -> None:
-        """记忆条目 upsert：NFKC 归一 + md5 唯一键精确去重。"""
+    def upsert_memory_entry(
+        self,
+        user_id: str,
+        kind: str,
+        content: str,
+        source_session_id: str = "",
+        agent_name: str = "main_agent",
+        expires_at=None,
+    ) -> None:
+        """记忆条目 upsert：NFKC 归一 + md5 唯一键精确去重（Phase 4 D6：按 agent_name 隔离）。
+
+        expires_at: 记忆过期时间（naive UTC）。再次提取命中同一条（content_hash 相同）时刷新续期。
+        """
         if not self.ping():
             return
         assert self._engine is not None
@@ -229,23 +246,46 @@ class ChatSessionRepository(MySQLRepository):
         with self._engine.begin() as conn:
             conn.execute(
                 text(
-                    "INSERT INTO chat_memory_entries (user_id, kind, content, content_hash, source_session_id) "
-                    "VALUES (:uid, :kind, :content, :hash, :src) "
-                    "ON DUPLICATE KEY UPDATE content = VALUES(content), source_session_id = VALUES(source_session_id)"
+                    "INSERT INTO chat_memory_entries (user_id, agent_name, kind, content, content_hash, source_session_id, expires_at) "
+                    "VALUES (:uid, :agent, :kind, :content, :hash, :src, :exp) "
+                    "ON DUPLICATE KEY UPDATE content = VALUES(content), source_session_id = VALUES(source_session_id), "
+                    "expires_at = VALUES(expires_at)"
                 ),
-                {"uid": user_id, "kind": kind, "content": norm, "hash": digest, "src": source_session_id},
+                {
+                    "uid": user_id,
+                    "agent": agent_name,
+                    "kind": kind,
+                    "content": norm,
+                    "hash": digest,
+                    "src": source_session_id,
+                    "exp": expires_at,
+                },
             )
 
-    def list_memory_entries(self, user_id: str, limit: int = 50, max_chars: int = 2000) -> list[dict]:
+    def list_memory_entries(
+        self,
+        user_id: str,
+        limit: int = 50,
+        max_chars: int = 2000,
+        agent_name: str = "main_agent",
+        include_expired: bool = False,
+    ) -> list[dict]:
+        """列出记忆条目（默认隐藏已过期；include_expired=True 供合并/清理使用）。"""
         if not self.ping():
             return []
         assert self._engine is not None
+        where = "WHERE user_id = :uid AND agent_name = :agent"
+        params: dict = {"uid": user_id, "agent": agent_name, "limit": limit}
+        if not include_expired:
+            where += " AND (expires_at IS NULL OR expires_at > :cutoff)"
+            params["cutoff"] = _utcnow_naive()
         sql = text(
             "SELECT kind, content, source_session_id, updated_at FROM chat_memory_entries "
-            "WHERE user_id = :uid ORDER BY updated_at DESC LIMIT :limit"
+            + where
+            + " ORDER BY updated_at DESC LIMIT :limit"
         )
         with self._engine.connect() as conn:
-            rows = conn.execute(sql, {"uid": user_id, "limit": limit}).mappings().all()
+            rows = conn.execute(sql, params).mappings().all()
         entries = [dict(r) for r in rows]
         # 总字符上限（注入容量保护）
         total = 0
@@ -257,37 +297,59 @@ class ChatSessionRepository(MySQLRepository):
             total += len(str(e["content"]))
         return trimmed
 
-    def delete_memory_entries(self, user_id: str, contents: list[str]) -> None:
-        """按内容精确删除记忆条目（consolidation 替换旧条目用）。"""
+    def delete_expired(self, user_id: str, agent_name: str = "main_agent") -> int:
+        """物理清理已过期记忆条目（consolidation 顺带调用）。返回删除行数。"""
+        if not self.ping():
+            return 0
+        assert self._engine is not None
+        with self._engine.begin() as conn:
+            result = conn.execute(
+                text(
+                    "DELETE FROM chat_memory_entries "
+                    "WHERE user_id = :uid AND agent_name = :agent AND expires_at IS NOT NULL AND expires_at <= :cutoff"
+                ),
+                {"uid": user_id, "agent": agent_name, "cutoff": _utcnow_naive()},
+            )
+        return int(result.rowcount or 0)
+
+    def delete_memory_entries(self, user_id: str, contents: list[str], agent_name: str = "main_agent") -> None:
+        """按内容精确删除记忆条目（consolidation 替换旧条目用；按 agent_name 隔离）。"""
         if not self.ping() or not contents:
             return
         assert self._engine is not None
         norms = [unicodedata.normalize("NFKC", str(c)).strip() for c in contents]
         sql = text(
-            "DELETE FROM chat_memory_entries WHERE user_id = :uid AND content IN :contents"
+            "DELETE FROM chat_memory_entries WHERE user_id = :uid AND agent_name = :agent AND content IN :contents"
         ).bindparams(bindparam("contents", expanding=True))
         with self._engine.begin() as conn:
-            conn.execute(sql, {"uid": user_id, "contents": norms})
+            conn.execute(sql, {"uid": user_id, "agent": agent_name, "contents": norms})
 
     def replace_memory_entries(
-        self, user_id: str, delete_contents: list[str], upsert_entries: list[tuple[str, str]]
+        self,
+        user_id: str,
+        delete_contents: list[str],
+        upsert_entries: list[tuple[str, str]],
+        agent_name: str = "main_agent",
+        upsert_expires=None,
     ) -> None:
-        """原子替换记忆条目：单事务内 DELETE 旧内容 + INSERT/UPDATE 新条目（consolidation 用）。
+        """原子替换记忆条目：单事务内 DELETE 旧内容 + INSERT/UPDATE 新条目（按 agent_name 隔离）。
 
         Args:
             delete_contents: 要删除的旧条目内容列表
             upsert_entries: (kind, content) 新条目列表
+            upsert_expires: 与 upsert_entries 等长的过期时间列表（可为 None → 全不设过期）
         """
         if not self.ping():
             return
         assert self._engine is not None
         delete_sql = text(
-            "DELETE FROM chat_memory_entries WHERE user_id = :uid AND content IN :contents"
+            "DELETE FROM chat_memory_entries WHERE user_id = :uid AND agent_name = :agent AND content IN :contents"
         ).bindparams(bindparam("contents", expanding=True))
         upsert_sql = text(
-            "INSERT INTO chat_memory_entries (user_id, kind, content, content_hash, source_session_id) "
-            "VALUES (:uid, :kind, :content, :hash, :src) "
-            "ON DUPLICATE KEY UPDATE content = VALUES(content), source_session_id = VALUES(source_session_id)"
+            "INSERT INTO chat_memory_entries (user_id, agent_name, kind, content, content_hash, source_session_id, expires_at) "
+            "VALUES (:uid, :agent, :kind, :content, :hash, :src, :exp) "
+            "ON DUPLICATE KEY UPDATE content = VALUES(content), source_session_id = VALUES(source_session_id), "
+            "expires_at = VALUES(expires_at)"
         )
         with self._engine.begin() as conn:
             if delete_contents:
@@ -295,20 +357,115 @@ class ChatSessionRepository(MySQLRepository):
                     delete_sql,
                     {
                         "uid": user_id,
+                        "agent": agent_name,
                         "contents": [unicodedata.normalize("NFKC", str(c)).strip() for c in delete_contents],
                     },
                 )
-            for kind, content in upsert_entries:
+            for i, (kind, content) in enumerate(upsert_entries):
                 norm = unicodedata.normalize("NFKC", str(content)).strip()
                 if not norm:
                     continue
+                exp = upsert_expires[i] if upsert_expires is not None and i < len(upsert_expires) else None
                 conn.execute(
                     upsert_sql,
                     {
                         "uid": user_id,
+                        "agent": agent_name,
                         "kind": kind,
                         "content": norm,
                         "hash": hashlib.md5(norm.encode("utf-8")).hexdigest(),
                         "src": "consolidate",
+                        "exp": exp,
                     },
                 )
+
+
+    # ── chat_session_compactions（Phase 4 P0-A） ─────────────────────
+    def append_compaction(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        summary: str,
+        prev_compaction_id: int | None = None,
+        first_kept_message_id: int = 0,
+        tokens_before: int = 0,
+        tokens_after: int = 0,
+        reserve_tokens: int = 0,
+        keep_recent_tokens: int = 0,
+        model: str = "",
+        reason: str = "threshold",
+        status: str = "ok",
+        usage_json: str | None = None,
+        details_json: str | None = None,
+    ) -> int:
+        """落一条压缩记录（写后同步）；返回新行 id。幂等由调用方（middleware 防抖）保证。"""
+        if not self.ping():
+            return 0
+        assert self._engine is not None
+        with self._engine.begin() as conn:
+            result = conn.execute(
+                text(
+                    "INSERT INTO chat_session_compactions "
+                    "(user_id, session_id, summary, prev_compaction_id, first_kept_message_id, "
+                    " tokens_before, tokens_after, reserve_tokens, keep_recent_tokens, model, "
+                    " reason, status, usage_json, details_json) "
+                    "VALUES (:uid, :sid, :summary, :prev, :first_kept, :tb, :ta, :reserve, :keep, :model, "
+                    " :reason, :status, :usage, :details)"
+                ),
+                {
+                    "uid": user_id,
+                    "sid": session_id,
+                    "summary": summary,
+                    "prev": prev_compaction_id,
+                    "first_kept": int(first_kept_message_id or 0),
+                    "tb": int(tokens_before or 0),
+                    "ta": int(tokens_after or 0),
+                    "reserve": int(reserve_tokens or 0),
+                    "keep": int(keep_recent_tokens or 0),
+                    "model": model,
+                    "reason": reason,
+                    "status": status,
+                    "usage": usage_json,
+                    "details": details_json,
+                },
+            )
+        return int(result.lastrowid or 0)
+
+    def get_latest_compaction(self, session_id: str) -> dict | None:
+        """最新一条压缩记录（读路径注入用）；无则 None。"""
+        if not self.ping():
+            return None
+        assert self._engine is not None
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT id, user_id, session_id, summary, prev_compaction_id, first_kept_message_id, "
+                    " tokens_before, tokens_after, reason, status, created_at "
+                    "FROM chat_session_compactions WHERE session_id = :sid "
+                    "ORDER BY id DESC LIMIT 1"
+                ),
+                {"sid": session_id},
+            ).mappings().first()
+        return dict(row) if row else None
+
+    def list_compactions(self, session_id: str, limit: int = 50) -> list[dict]:
+        """按时间倒序列压缩记录（审计/详情）。"""
+        if not self.ping():
+            return []
+        assert self._engine is not None
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT id, user_id, session_id, summary, prev_compaction_id, first_kept_message_id, "
+                    " tokens_before, tokens_after, reason, status, created_at "
+                    "FROM chat_session_compactions WHERE session_id = :sid "
+                    "ORDER BY id DESC LIMIT :limit"
+                ),
+                {"sid": session_id, "limit": limit},
+            ).mappings().all()
+        return [dict(r) for r in rows]
+
+    def list_entries_after_seq(self, session_id: str, seq: int, limit: int = 500) -> list[dict]:
+        """续读：seq 之后的消息（compaction 读路径 / 审计用）。"""
+        return self.list_messages(session_id, after_seq=seq, limit=limit)

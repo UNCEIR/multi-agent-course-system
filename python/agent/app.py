@@ -33,7 +33,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent import runtime
-from api import recommend, health, chat, documents, report, evaluation, auth
+from api import recommend, health, chat, documents, report, evaluation, auth, metrics, images
 from config import get_settings
 
 logger = structlog.get_logger()
@@ -57,8 +57,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="University Campus Multi-Agent Platform",
-    description="学生画像Agent + 课程召回Agent + 课程重排Agent + 选课可行性Agent + 推荐理由Agent",
-    version="1.0.0",
+    description="大学校园多智能体平台",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -80,8 +80,10 @@ app.include_router(recommend.router)
 app.include_router(chat.router)
 app.include_router(documents.router)
 app.include_router(report.router)
+app.include_router(images.router)
 app.include_router(evaluation.router)
 app.include_router(auth.router)
+app.include_router(metrics.router)
 
 
 def _assert_startup_config() -> None:

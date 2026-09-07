@@ -20,11 +20,17 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
+    // suppressHydrationWarning：NightEye 等浏览器扩展会在水合前给 <html>/<body> 注入
+    // nighteye 等属性，导致服务端 HTML 与客户端 props 不匹配刷 Console Error。勿删。
+    // （只跳过该元素自身属性层的告警，不影响子节点内容校验，不会掩盖真实 mismatch）
     <html
       lang="zh-CN"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   );
 }

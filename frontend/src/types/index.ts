@@ -194,6 +194,19 @@ export interface ChatToolData {
   tool: string
   status: 'start' | 'end'
   session_id: string
+  // Phase 4 E4：tool end 附 result（observe 载体）
+  result?: string
+}
+
+export interface AgentTreeNode {
+  run_id: string
+  name: string
+  kind: 'main' | 'subagent'
+  status: string
+  args_summary?: string | null
+  result_summary?: string | null
+  latency_ms?: number | null
+  children: AgentTreeNode[]
 }
 
 export interface ChatDoneData {
@@ -203,6 +216,8 @@ export interface ChatDoneData {
   usage?: Record<string, unknown>
   latency_ms?: number | null
   ttft_ms?: number | null
+  // Phase 4 E3：委派树契约
+  agent_tree?: AgentTreeNode[]
 }
 
 export interface ChatErrorData {

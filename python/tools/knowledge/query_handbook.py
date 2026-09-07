@@ -35,6 +35,10 @@ class QueryHandbookInput(BaseModel):
 async def query_handbook(query: str, top_k: int = 5) -> str:
     """检索学校公开知识库（学生手册 / 校规校纪 / 政策制度）。
 
+    何时用：学生问学校规章、奖学金、转专业、学分/毕业要求等公开制度问题。
+    何时不用：查询本人成绩单 / 已修课程 / 绩点等个人学业数据，请用 query_transcript
+    （个人分区）；公开手册里没有个人成绩，不要拿本工具当成绩单查。
+
     只检索 `user_id=public` 分区，不混入个人成绩单 chunk。无登录态也可调用。
     返回片段带 source_doc_name / page_number，回答时必须引用来源，检索不到不编造。
     """

@@ -44,6 +44,13 @@ class MetricsCollector:
         m.total_latency_ms += latency_ms
         if error:
             m.errors.append(error)
+        # Phase 4 C1：并行输出 Prometheus（避免循环 import，函数内延迟导入）
+        try:
+            from observability.prometheus import record_agent_call as _p
+
+            _p(agent_name, success, latency_ms, error)
+        except Exception:  # noqa: BLE001
+            pass
 
     def record_business_event(self, event_type: str, **kwargs: Any):
         """Record a business event for analytics."""
@@ -52,6 +59,13 @@ class MetricsCollector:
             "timestamp": time.time(),
             **kwargs,
         })
+        # Phase 4 C1：并行输出 Prometheus
+        try:
+            from observability.prometheus import record_business_event as _p
+
+            _p(event_type, kwargs.get("phase", ""))
+        except Exception:  # noqa: BLE001
+            pass
 
     def get_agent_stats(self) -> dict[str, dict[str, Any]]:
         result = {}

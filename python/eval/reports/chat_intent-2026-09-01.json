@@ -1,0 +1,282 @@
+{
+  "date": "2026-09-01",
+  "set": "chat_intent",
+  "mode": "smoke",
+  "judge": false,
+  "judge_metrics": null,
+  "metrics": {
+    "total": 24,
+    "passed": 24,
+    "pass_rate": 1.0,
+    "latency_p50": null,
+    "latency_p95": null,
+    "ttft_p50": null,
+    "api_latency_p50": null,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "total": 0
+    },
+    "context_recall_avg": null,
+    "context_precision_avg": null,
+    "ndcg_at_k_avg": null,
+    "f1_at_k_avg": null,
+    "by_difficulty": {
+      "easy": {
+        "total": 13,
+        "passed": 13
+      },
+      "medium": {
+        "total": 8,
+        "passed": 8
+      },
+      "hard": {
+        "total": 3,
+        "passed": 3
+      }
+    }
+  },
+  "results": [
+    {
+      "case_id": "intent_01",
+      "type": "chat_intent",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_02",
+      "type": "chat_intent",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_03",
+      "type": "chat_intent",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_04",
+      "type": "chat_intent",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_05",
+      "type": "chat_intent",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_06",
+      "type": "chat_intent",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_07",
+      "type": "chat_intent",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_08",
+      "type": "chat_intent",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_09",
+      "type": "chat_intent",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_10",
+      "type": "chat_intent",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_11",
+      "type": "chat_intent",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_12",
+      "type": "chat_intent",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_13",
+      "type": "chat_intent",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_14",
+      "type": "chat_intent",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_15",
+      "type": "chat_intent",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_16",
+      "type": "chat_intent",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_17",
+      "type": "chat_intent",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_18",
+      "type": "chat_intent",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_19",
+      "type": "chat_intent",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_20",
+      "type": "chat_intent",
+      "difficulty": "hard",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_21",
+      "type": "chat_intent",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_22",
+      "type": "chat_intent",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_23",
+      "type": "chat_intent",
+      "difficulty": "hard",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "intent_24",
+      "type": "chat_intent",
+      "difficulty": "hard",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    }
+  ],
+  "judge_results": null
+}
